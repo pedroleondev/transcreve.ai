@@ -1,0 +1,29 @@
+services:
+  transcreveai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: transcreveai-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=turboscribe_super_secret_jwt_key_2026
+      - OPENROUTER_API_KEY=sua_chave_aqui
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./turboscribe.sqlite:/app/turboscribe.sqlite
+      - ./uploads:/app/uploads
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.localhost`) || Host(`transcreveai.local`)"
+      - "traefik.http.routers.transcreveai.entrypoints=web"
+      - "traefik.http.services.transcreveai.loadbalancer.server.port=3000"
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge

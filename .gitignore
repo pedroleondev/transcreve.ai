@@ -1,0 +1,16 @@
+node_modules/
+uploads/
+turboscribe.sqlite
+.env
+*.log
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
