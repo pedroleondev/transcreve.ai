@@ -9,8 +9,8 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - JWT_SECRET=turboscribe_super_secret_jwt_key_2026
-      - OPENROUTER_API_KEY=sua_chave_aqui
+      - JWT_SECRET=${JWT_SECRET:-turboscribe_super_secret_jwt_key_2026}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - .:/app
       - /app/node_modules
