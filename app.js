@@ -3,9 +3,9 @@ const state = {
   currentUser: { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'admin' },
   token: localStorage.getItem('turboscribe_token') || '',
   currentView: 'dashboard',
-  folders: [],
+  projects: [],
   transcriptions: [],
-  currentFolderId: null,
+  currentProjectId: null,
   activeTranscription: null,
   selectedFiles: [],
   selectedMode: 'baleia', // SELEÇÃO PADRÃO SISTEMA = BALEIA (SOLICITAÇÃO CEO)
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) lucide.createIcons();
   fetchSystemSettings();
   fetchOpenRouterModels();
-  fetchFolders();
+  fetchProjects();
   fetchTranscriptions();
   checkAuthUser();
   setupDragAndDrop();
@@ -267,35 +267,36 @@ function handleSearch() {
 }
 
 // ---------------------------------------------------
-// GERENCIAMENTO DE PASTAS & TRANSCRIÇÕES
+// GERENCIAMENTO DE PROJETOS & TRANSCRIÇÕES
 // ---------------------------------------------------
 
-async function fetchFolders() {
+async function fetchProjects() {
   try {
-    const res = await fetch('/api/folders', {
+    const res = await fetch('/api/projects', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
-    const folders = await res.json();
-    state.folders = Array.isArray(folders) ? folders : [];
-    renderFoldersSidebar();
+    const projects = await res.json();
+    state.projects = Array.isArray(projects) ? projects : [];
+    renderProjectsSidebar();
+    populateProjectSelects();
   } catch (e) {
-    console.error('Erro ao buscar pastas:', e);
+    console.error('Erro ao buscar projetos:', e);
   }
 }
 
-function renderFoldersSidebar() {
-  const container = document.getElementById('folders-list');
+function renderProjectsSidebar() {
+  const container = document.getElementById('projects-list');
   if (!container) return;
 
-  container.innerHTML = state.folders.map(f => `
-    <div class="group/folder flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${state.currentFolderId === f.id ? 'bg-slate-800 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'} transition cursor-pointer">
-      <button onclick="filterByFolder('${f.id}')" class="flex items-center space-x-2.5 truncate flex-1 text-left">
+  container.innerHTML = state.projects.map(p => `
+    <div class="group/project flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${state.currentProjectId === p.id ? 'bg-slate-800 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'} transition cursor-pointer">
+      <button onclick="filterByProject('${p.id}')" class="flex items-center space-x-2.5 truncate flex-1 text-left">
         <i data-lucide="folder" class="w-4 h-4 text-slate-400 shrink-0"></i>
-        <span class="truncate">${escapeHtml(f.name)}</span>
+        <span class="truncate">${escapeHtml(p.name)}</span>
       </button>
       <div class="flex items-center space-x-1">
-        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold">${f.file_count || 0}</span>
-        <button onclick="deleteFolder('${f.id}', '${escapeHtml(f.name)}')" class="hidden group-hover/folder:block text-slate-500 hover:text-red-400 p-0.5" title="Excluir Pasta">
+        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold">${p.file_count || 0}</span>
+        <button onclick="deleteProject('${p.id}', '${escapeHtml(p.name)}')" class="hidden group-hover/project:block text-slate-500 hover:text-red-400 p-0.5" title="Excluir Projeto">
           <i data-lucide="trash-2" class="w-3 h-3"></i>
         </button>
       </div>
@@ -305,12 +306,12 @@ function renderFoldersSidebar() {
   if (window.lucide) lucide.createIcons();
 }
 
-async function openNewFolderModal() {
-  const name = prompt('Nome da nova pasta:');
+async function openNewProjectModal() {
+  const name = prompt('Nome do novo projeto:');
   if (!name) return;
 
   try {
-    const res = await fetch('/api/folders', {
+    const res = await fetch('/api/projects', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -319,53 +320,123 @@ async function openNewFolderModal() {
       body: JSON.stringify({ name })
     });
     if (res.ok) {
-      fetchFolders();
+      fetchProjects();
     }
   } catch (e) {
-    alert('Erro ao criar pasta: ' + e.message);
+    alert('Erro ao criar projeto: ' + e.message);
   }
 }
 
-async function deleteFolder(id, name) {
-  if (!confirm(`Tem certeza que deseja excluir a pasta "${name}"? Os arquivos associados não serão excluídos.`)) return;
+async function deleteProject(id, name) {
+  if (!confirm(`Tem certeza que deseja excluir o projeto "${name}"? Os arquivos associados não serão excluídos.`)) return;
 
   try {
-    const res = await fetch(`/api/folders/${id}`, {
+    const res = await fetch(`/api/projects/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     if (res.ok) {
-      if (state.currentFolderId === id) state.currentFolderId = null;
-      fetchFolders();
+      if (state.currentProjectId === id) state.currentProjectId = null;
+      fetchProjects();
       fetchTranscriptions();
     }
   } catch (e) {
-    alert('Erro ao excluir pasta: ' + e.message);
+    alert('Erro ao excluir projeto: ' + e.message);
   }
 }
 
-function filterByFolder(folderId) {
-  state.currentFolderId = folderId;
-  renderFoldersSidebar();
+function filterByProject(projectId) {
+  state.currentProjectId = projectId;
+  renderProjectsSidebar();
 
   const titleEl = document.getElementById('dashboard-title');
-  if (folderId === 'uncategorized') {
-    titleEl.innerText = 'Sem categoria';
-  } else if (folderId) {
-    const folder = state.folders.find(f => f.id === folderId);
-    titleEl.innerText = folder ? folder.name : 'Arquivos recentes';
+  if (projectId === 'uncategorized') {
+    titleEl.innerText = 'Sem projeto';
+  } else if (projectId) {
+    const project = state.projects.find(p => p.id === projectId);
+    titleEl.innerText = project ? project.name : 'Arquivos recentes';
   } else {
     titleEl.innerText = 'Arquivos recentes';
   }
 
+  // Sincronizar o valor selecionado nos modais
+  const transcribeSelect = document.getElementById('transcribe-project-select');
+  const recordSelect = document.getElementById('record-project-select');
+  if (transcribeSelect) transcribeSelect.value = projectId || "";
+  if (recordSelect) recordSelect.value = projectId || "";
+
   fetchTranscriptions();
+}
+
+function populateProjectSelects() {
+  const transcribeSelect = document.getElementById('transcribe-project-select');
+  const recordSelect = document.getElementById('record-project-select');
+  const detailSelect = document.getElementById('detail-project-select');
+
+  const optionsHTML = `
+    <option value="">(Nenhum projeto)</option>
+    ${state.projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+  `;
+
+  if (transcribeSelect) {
+    transcribeSelect.innerHTML = optionsHTML;
+    transcribeSelect.value = state.currentProjectId || "";
+  }
+  if (recordSelect) {
+    recordSelect.innerHTML = optionsHTML;
+    recordSelect.value = state.currentProjectId || "";
+  }
+  if (detailSelect) {
+    detailSelect.innerHTML = optionsHTML;
+    if (state.activeTranscription) {
+      detailSelect.value = state.activeTranscription.project_id || "";
+    }
+  }
+}
+
+async function updateTranscriptionProject() {
+  if (!state.activeTranscription) return;
+  const select = document.getElementById('detail-project-select');
+  if (!select) return;
+
+  const projectId = select.value || null;
+
+  try {
+    const res = await fetch(`/api/transcriptions/${state.activeTranscription.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ project_id: projectId })
+    });
+
+    if (res.ok) {
+      state.activeTranscription.project_id = projectId;
+      // Atualizar o nome do projeto no meta da visualização de detalhes
+      const projectObj = state.projects.find(p => p.id === projectId);
+      state.activeTranscription.project_name = projectObj ? projectObj.name : null;
+      
+      const modeName = state.activeTranscription.mode === 'chita' ? 'Chita' : state.activeTranscription.mode === 'golfinho' ? 'Golfinho' : 'Baleia';
+      const modelUsed = state.systemSettings[`${state.activeTranscription.mode}_model`] || (state.activeTranscription.mode === 'chita' ? 'openai/whisper-1' : state.activeTranscription.mode === 'golfinho' ? 'openai/whisper-large-v3-turbo' : 'openai/whisper-large-v3');
+      const projectDisplay = projectObj ? ` • Projeto: ${projectObj.name}` : '';
+      document.getElementById('detail-meta').innerText = `${new Date(state.activeTranscription.created_at).toLocaleString('pt-BR')} • ${formatDuration(state.activeTranscription.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
+
+      await fetchProjects();
+      await fetchTranscriptions();
+    } else {
+      alert('Erro ao atualizar projeto da transcrição.');
+    }
+  } catch (e) {
+    alert('Erro ao salvar projeto: ' + e.message);
+  }
 }
 
 async function fetchTranscriptions() {
   try {
     let url = '/api/transcriptions';
-    if (state.currentFolderId) {
-      url += `?folder_id=${state.currentFolderId}`;
+    if (state.currentProjectId) {
+      url += `?project_id=${state.currentProjectId}`;
     }
     const res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${state.token}` }
@@ -379,6 +450,11 @@ async function fetchTranscriptions() {
 }
 
 function renderTranscriptionsTable() {
+  const masterCheckbox = document.getElementById('select-all-checkbox');
+  if (masterCheckbox) masterCheckbox.checked = false;
+  const bar = document.getElementById('bulk-actions-bar');
+  if (bar) bar.classList.add('hidden');
+
   const tbody = document.getElementById('transcriptions-tbody');
   if (!tbody) return;
 
@@ -418,11 +494,11 @@ function renderTranscriptionsTable() {
 
     return `
       <tr class="hover:bg-slate-50 transition border-b border-slate-100 group">
-        <td class="p-4"><input type="checkbox" class="rounded text-blue-600 focus:ring-blue-500"></td>
+        <td class="p-4"><input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 focus:ring-blue-500"></td>
         <td class="p-4 font-bold text-slate-800">
           <div class="flex items-center space-x-2">
             <button onclick="openTranscriptionDetail('${item.id}')" class="hover:text-blue-600 text-left truncate max-w-xs">
-              ${item.folder_name ? `<span class="text-[10px] text-slate-400 block font-normal">📁 ${escapeHtml(item.folder_name)}</span>` : ''}
+              ${item.project_name ? `<span class="text-[10px] text-slate-400 block font-normal">📁 ${escapeHtml(item.project_name)}</span>` : ''}
               <span class="font-bold">${escapeHtml(item.file_name)}</span>
             </button>
           </div>
@@ -483,12 +559,19 @@ async function openTranscriptionDetail(id) {
 
     const modeName = data.mode === 'chita' ? 'Chita' : data.mode === 'golfinho' ? 'Golfinho' : 'Baleia';
     const modelUsed = state.systemSettings[`${data.mode}_model`] || (data.mode === 'chita' ? 'openai/whisper-1' : data.mode === 'golfinho' ? 'openai/whisper-large-v3-turbo' : 'openai/whisper-large-v3');
-    document.getElementById('detail-meta').innerText = `${new Date(data.created_at).toLocaleString('pt-BR')} • ${formatDuration(data.duration_seconds)} • Modo ${modeName} (${modelUsed})`;
+    const projectDisplay = data.project_name ? ` • Projeto: ${data.project_name}` : '';
+    document.getElementById('detail-meta').innerText = `${new Date(data.created_at).toLocaleString('pt-BR')} • ${formatDuration(data.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
 
     // Configurar áudio player
     const audioPlayer = document.getElementById('audio-player');
     if (audioPlayer) {
       audioPlayer.src = data.file_path || '';
+    }
+
+    // Atualizar seletor de projeto na barra lateral de detalhes
+    const detailSelect = document.getElementById('detail-project-select');
+    if (detailSelect) {
+      detailSelect.value = data.project_id || "";
     }
 
     renderCurrentTranscript();
@@ -705,7 +788,10 @@ async function submitTranscription() {
   formData.append('mode', state.selectedMode);
   formData.append('model_id', chosenModel);
 
-  if (state.currentFolderId) formData.append('folder_id', state.currentFolderId);
+  const projectSelect = document.getElementById('transcribe-project-select');
+  const chosenProjectId = projectSelect ? projectSelect.value : state.currentProjectId;
+  if (chosenProjectId) formData.append('project_id', chosenProjectId);
+
   if (document.getElementById('diarization-check').checked) formData.append('speaker_diarization', 'true');
 
   try {
@@ -809,6 +895,10 @@ async function submitRecordedAudio() {
   formData.append('language', 'pt');
   formData.append('mode', state.selectedMode);
   formData.append('model_id', state.selectedModelId);
+
+  const projectSelect = document.getElementById('record-project-select');
+  const chosenProjectId = projectSelect ? projectSelect.value : state.currentProjectId;
+  if (chosenProjectId) formData.append('project_id', chosenProjectId);
 
   try {
     const res = await fetch('/api/transcribe', {
@@ -1211,6 +1301,118 @@ async function loadAdminLogs() {
     `).join('');
   } catch (e) {
     console.error('Erro ao carregar logs:', e);
+  }
+}
+// ---------------------------------------------------
+// AÇÕES EM MASSA (BULK ACTIONS)
+// ---------------------------------------------------
+function toggleSelectAll(masterCheckbox) {
+  const checkboxes = document.querySelectorAll('.row-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = masterCheckbox.checked;
+  });
+  updateBulkActionsBar();
+}
+
+function handleRowCheckboxChange() {
+  const masterCheckbox = document.getElementById('select-all-checkbox');
+  const checkboxes = document.querySelectorAll('.row-checkbox');
+  const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+  if (masterCheckbox) {
+    masterCheckbox.checked = allChecked;
+  }
+  updateBulkActionsBar();
+}
+
+function updateBulkActionsBar() {
+  const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+  const bar = document.getElementById('bulk-actions-bar');
+  const countEl = document.getElementById('selected-count');
+  
+  if (checkboxes.length > 0) {
+    if (countEl) countEl.innerText = checkboxes.length;
+    if (bar) bar.classList.remove('hidden');
+  } else {
+    if (bar) bar.classList.add('hidden');
+    const masterCheckbox = document.getElementById('select-all-checkbox');
+    if (masterCheckbox) masterCheckbox.checked = false;
+  }
+}
+
+async function deleteSelectedTranscriptions() {
+  const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+  const ids = Array.from(checkedBoxes).map(cb => cb.value);
+  if (ids.length === 0) return;
+
+  if (!confirm(`Tem certeza que deseja excluir as ${ids.length} gravações selecionadas?`)) return;
+
+  const btn = document.querySelector('#bulk-actions-bar button[onclick="deleteSelectedTranscriptions()"]');
+  const oldText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerText = 'Excluindo...';
+
+  try {
+    const promises = ids.map(id => 
+      fetch(`/api/transcriptions/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${state.token}` }
+      })
+    );
+    await Promise.all(promises);
+    
+    await fetchProjects();
+    await fetchTranscriptions();
+    alert('Gravações excluídas com sucesso!');
+  } catch (e) {
+    alert('Erro ao excluir gravações selecionadas: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = oldText;
+  }
+}
+
+function openBulkMoveModal() {
+  const select = document.getElementById('bulk-move-project-select');
+  if (select) {
+    select.innerHTML = `
+      <option value="">(Sem projeto)</option>
+      ${state.projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+    `;
+  }
+  document.getElementById('bulk-move-modal').classList.remove('hidden');
+}
+
+function closeBulkMoveModal() {
+  document.getElementById('bulk-move-modal').classList.add('hidden');
+}
+
+async function submitBulkMove() {
+  const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+  const ids = Array.from(checkedBoxes).map(cb => cb.value);
+  if (ids.length === 0) return;
+
+  const select = document.getElementById('bulk-move-project-select');
+  const projectId = select ? select.value : null;
+
+  try {
+    const promises = ids.map(id =>
+      fetch(`/api/transcriptions/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ project_id: projectId || null })
+      })
+    );
+    await Promise.all(promises);
+
+    closeBulkMoveModal();
+    await fetchProjects();
+    await fetchTranscriptions();
+    alert('Gravações movidas com sucesso!');
+  } catch (e) {
+    alert('Erro ao mover gravações selecionadas: ' + e.message);
   }
 }
 

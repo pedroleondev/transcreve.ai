@@ -133,36 +133,36 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 });
 
 // ----------------------------------------------------
-// ROTAS DE PASTAS (FOLDERS)
+// ROTAS DE PROJETOS (PROJECTS)
 // ----------------------------------------------------
-app.get('/api/folders', authenticateToken, async (req, res) => {
+app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const folders = await allAsync(
-      `SELECT f.*, COUNT(t.id) as file_count FROM folders f LEFT JOIN transcriptions t ON f.id = t.folder_id GROUP BY f.id ORDER BY f.created_at ASC`
+    const projects = await allAsync(
+      `SELECT p.*, COUNT(t.id) as file_count FROM projects p LEFT JOIN transcriptions t ON p.id = t.project_id GROUP BY p.id ORDER BY p.created_at ASC`
     );
-    res.json(folders);
+    res.json(projects);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/folders', authenticateToken, async (req, res) => {
+app.post('/api/projects', authenticateToken, async (req, res) => {
   const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Nome da pasta é obrigatório.' });
+  if (!name) return res.status(400).json({ error: 'Nome do projeto é obrigatório.' });
 
   try {
-    const folderId = uuidv4();
-    await runAsync(`INSERT INTO folders (id, user_id, name) VALUES (?, ?, ?)`, [folderId, req.user.id || 'admin-local', name]);
-    await logAction(req.user.id, 'FOLDER_CREATED', { name }, req.ip);
-    res.json({ id: folderId, name, file_count: 0 });
+    const projectId = uuidv4();
+    await runAsync(`INSERT INTO projects (id, user_id, name) VALUES (?, ?, ?)`, [projectId, req.user.id || 'admin-local', name]);
+    await logAction(req.user.id, 'PROJECT_CREATED', { name }, req.ip);
+    res.json({ id: projectId, name, file_count: 0 });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/api/folders/:id', authenticateToken, async (req, res) => {
+app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
-    await runAsync(`DELETE FROM folders WHERE id = ?`, [req.params.id]);
+    await runAsync(`DELETE FROM projects WHERE id = ?`, [req.params.id]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -174,15 +174,15 @@ app.delete('/api/folders/:id', authenticateToken, async (req, res) => {
 // ----------------------------------------------------
 app.get('/api/transcriptions', authenticateToken, async (req, res) => {
   try {
-    const { folder_id, search } = req.query;
-    let sql = `SELECT t.*, f.name as folder_name FROM transcriptions t LEFT JOIN folders f ON t.folder_id = f.id WHERE 1=1`;
+    const { project_id, search } = req.query;
+    let sql = `SELECT t.*, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE 1=1`;
     const params = [];
 
-    if (folder_id === 'uncategorized') {
-      sql += ` AND t.folder_id IS NULL`;
-    } else if (folder_id) {
-      sql += ` AND t.folder_id = ?`;
-      params.push(folder_id);
+    if (project_id === 'uncategorized') {
+      sql += ` AND t.project_id IS NULL`;
+    } else if (project_id) {
+      sql += ` AND t.project_id = ?`;
+      params.push(project_id);
     }
 
     if (search) {
@@ -201,7 +201,7 @@ app.get('/api/transcriptions', authenticateToken, async (req, res) => {
 app.get('/api/transcriptions/:id', authenticateToken, async (req, res) => {
   try {
     const transcription = await getAsync(
-      `SELECT t.*, f.name as folder_name FROM transcriptions t LEFT JOIN folders f ON t.folder_id = f.id WHERE t.id = ?`,
+      `SELECT t.*, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?`,
       [req.params.id]
     );
 
@@ -225,7 +225,7 @@ app.get('/api/openrouter/models', (req, res) => {
 
 // Upload & Processamento de Transcrição
 app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req, res) => {
-  const { language = 'pt', mode = 'baleia', model_id = null, folder_id = null, speaker_diarization = false } = req.body;
+  const { language = 'pt', mode = 'baleia', model_id = null, project_id = null, speaker_diarization = false } = req.body;
 
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
@@ -244,12 +244,12 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req
 
       // Salva transcrição principal no SQLite
       await runAsync(
-        `INSERT INTO transcriptions (id, user_id, folder_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, speaker_diarization)
+        `INSERT INTO transcriptions (id, user_id, project_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, speaker_diarization)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           transcriptionId,
           req.user.id || 'admin-local',
-          folder_id || null,
+          project_id || null,
           file.originalname,
           relativePath,
           file.size,
@@ -285,13 +285,13 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req
 
 // Atualizar nome / mover pasta
 app.put('/api/transcriptions/:id', authenticateToken, async (req, res) => {
-  const { file_name, folder_id, raw_text } = req.body;
+  const { file_name, project_id, raw_text } = req.body;
   try {
     if (file_name !== undefined) {
       await runAsync(`UPDATE transcriptions SET file_name = ? WHERE id = ?`, [file_name, req.params.id]);
     }
-    if (folder_id !== undefined) {
-      await runAsync(`UPDATE transcriptions SET folder_id = ? WHERE id = ?`, [folder_id || null, req.params.id]);
+    if (project_id !== undefined) {
+      await runAsync(`UPDATE transcriptions SET project_id = ? WHERE id = ?`, [project_id || null, req.params.id]);
     }
     if (raw_text !== undefined) {
       await runAsync(`UPDATE transcriptions SET raw_text = ? WHERE id = ?`, [raw_text, req.params.id]);

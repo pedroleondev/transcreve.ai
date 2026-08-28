@@ -42,6 +42,27 @@ function allAsync(sql, params = []) {
 
 // Inicializar Esquema de Tabelas
 async function initDatabase() {
+  try {
+    // 0. Migração de Folders para Projects se necessário
+    const foldersTableExists = await getAsync(`SELECT name FROM sqlite_master WHERE type='table' AND name='folders'`);
+    if (foldersTableExists) {
+      console.log('Migrando tabela "folders" para "projects"...');
+      await runAsync(`ALTER TABLE folders RENAME TO projects`);
+    }
+
+    const transcriptionsTableExists = await getAsync(`SELECT name FROM sqlite_master WHERE type='table' AND name='transcriptions'`);
+    if (transcriptionsTableExists) {
+      const columns = await allAsync(`PRAGMA table_info(transcriptions)`);
+      const hasFolderId = columns.some(col => col.name === 'folder_id');
+      if (hasFolderId) {
+        console.log('Renomeando coluna "folder_id" para "project_id" em "transcriptions"...');
+        await runAsync(`ALTER TABLE transcriptions RENAME COLUMN folder_id TO project_id`);
+      }
+    }
+  } catch (err) {
+    console.error('Erro durante a migração do banco de dados:', err.message);
+  }
+
   db.serialize(async () => {
     // 1. Tabela de Usuários
     await runAsync(`
@@ -89,9 +110,9 @@ async function initDatabase() {
       )
     `);
 
-    // 5. Tabela de Pastas
+    // 5. Tabela de Projetos
     await runAsync(`
-      CREATE TABLE IF NOT EXISTS folders (
+      CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -105,7 +126,7 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS transcriptions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        folder_id TEXT,
+        project_id TEXT,
         file_name TEXT NOT NULL,
         file_path TEXT NOT NULL,
         file_size INTEGER DEFAULT 0,
@@ -118,7 +139,7 @@ async function initDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL
       )
     `);
 
@@ -156,12 +177,6 @@ async function initDatabase() {
         [userId, 'Pedro León', 'pedro.leon23@gmail.com', userPassHash, 'user', 3, 'active']
       );
       console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
-
-      // Criar pastas padrão para o usuário demo
-      const folderNames = ['Audios WPP', 'CURSO MA360', 'MA360 - CONTEÚDOS', 'PROTEGE SEGUROS', 'TREINAMENTO MA360'];
-      for (const name of folderNames) {
-        await runAsync(`INSERT INTO folders (id, user_id, name) VALUES (?, ?, ?)`, [uuidv4(), userId, name]);
-      }
     }
 
     // Seed / Sync Chave OpenRouter
