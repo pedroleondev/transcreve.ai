@@ -374,7 +374,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
   if (!prompt) return res.status(400).json({ error: 'Prompt é obrigatório.' });
 
   try {
-    const answer = await chatWithTranscript(transcript_text || '', prompt);
+    const answer = await generateChatCompletion(transcript_text || '', prompt);
     res.json({ answer });
   } catch (e) {
     res.status(500).json({ error: e.message });
