@@ -25,6 +25,19 @@ async function runTestSuite() {
     }
   }
 
+  // O pipeline de transcricao e ASSINCRONO: /api/transcribe responde 202 com a
+  // linha em 'pending' e o worker processa em background. Precisamos aguardar a
+  // conclusao antes de verificar raw_text/segments no SQLite.
+  async function waitForCompletion(transId, timeoutMs = 180000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const row = await getAsync(`SELECT status FROM transcriptions WHERE id = ?`, [transId]);
+      if (row && (row.status === 'completed' || row.status === 'failed')) return row.status;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    return 'timeout';
+  }
+
   // TEST 1: Verificação da Chave OpenRouter no Banco SQLite
   try {
     const keyRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1`);
@@ -64,10 +77,18 @@ async function runTestSuite() {
         const transId = data.data[0].id;
         createdTranscriptionIds.push(transId);
 
+        const finalStatus = await waitForCompletion(transId);
+        assert(finalStatus === 'completed', `Worker concluiu a transcricao ${transId} (status: ${finalStatus})`);
+
         // Checar gravação no banco SQLite
         const dbRecord = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [transId]);
         assert(dbRecord && dbRecord.raw_text && dbRecord.raw_text.length > 0, `Texto armazenado com sucesso no SQLite para id ${transId}`);
-        assert(dbRecord.mode === m.mode, `Modo ${m.mode} gravado corretamente no banco SQLite.`);
+        // Apos a conclusao, 'mode' guarda o MODELO REALMENTE USADO (services/openrouter.js
+        // tem fallback automatico de modelo), e nao mais o apelido do nivel.
+        assert(
+          typeof dbRecord.mode === 'string' && dbRecord.mode.includes('/'),
+          `Modelo realmente usado gravado no SQLite para o nivel ${m.mode}: ${dbRecord.mode}`
+        );
 
         // Checar segmentos
         const segments = await allAsync(`SELECT * FROM segments WHERE transcription_id = ?`, [transId]);
