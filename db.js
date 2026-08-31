@@ -58,6 +58,24 @@ async function initDatabase() {
         console.log('Renomeando coluna "folder_id" para "project_id" em "transcriptions"...');
         await runAsync(`ALTER TABLE transcriptions RENAME COLUMN folder_id TO project_id`);
       }
+
+      const hasProgress = columns.some(col => col.name === 'progress');
+      if (!hasProgress) {
+        console.log('Adicionando coluna "progress" na tabela "transcriptions"...');
+        await runAsync(`ALTER TABLE transcriptions ADD COLUMN progress INTEGER DEFAULT 0`);
+      }
+
+      const hasErrorMessage = columns.some(col => col.name === 'error_message');
+      if (!hasErrorMessage) {
+        console.log('Adicionando coluna "error_message" na tabela "transcriptions"...');
+        await runAsync(`ALTER TABLE transcriptions ADD COLUMN error_message TEXT`);
+      }
+
+      const hasAiSummary = columns.some(col => col.name === 'ai_summary');
+      if (!hasAiSummary) {
+        console.log('Adicionando coluna "ai_summary" na tabela "transcriptions"...');
+        await runAsync(`ALTER TABLE transcriptions ADD COLUMN ai_summary TEXT`);
+      }
     }
   } catch (err) {
     console.error('Erro durante a migração do banco de dados:', err.message);
@@ -136,6 +154,9 @@ async function initDatabase() {
         status TEXT DEFAULT 'completed',
         raw_text TEXT,
         speaker_diarization INTEGER DEFAULT 0,
+        progress INTEGER DEFAULT 0,
+        error_message TEXT,
+        ai_summary TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
