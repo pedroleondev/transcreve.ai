@@ -5,7 +5,10 @@ const path = require('path');
 const { getAsync, allAsync } = require('./db');
 
 const BASE_URL = 'http://localhost:3000';
-const SAMPLE_AUDIO_PATH = path.join(__dirname, 'uploads', '1786120820167-469915558-WhatsApp Ptt 2026-07-31 at 7.02.33 PM.ogg');
+// Arquivo base versionado no repo (voz sintetica TTS, sem dado real de cliente) —
+// nao depende de uploads/ (gitignored) nem de audio de atendimento real.
+// Ver docs/workflow.md #Teste com arquivo base.
+const SAMPLE_AUDIO_PATH = process.env.AUDIO_SAMPLE || path.join(__dirname, 'tests', 'fixtures', 'sample.ogg');
 
 async function runTestSuite() {
   console.log('=======================================================');

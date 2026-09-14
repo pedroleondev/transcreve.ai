@@ -1,113 +1,64 @@
-# Plano de Saúde DF - Integração n8n, PostgreSQL e EvolutionAPI
+# TranscreveAI
 
-Este projeto contém a landing page refatorada para rodar localmente no seu computador, com suporte integrado a Webhooks para envio de dados em formato JSON.
+SaaS local de **transcrição de áudio e vídeo com IA**, self-hosted em Docker, com painel administrativo. Sobe áudios de atendimento/WhatsApp e devolve texto pesquisável, editável e exportável, com resumo de IA.
 
-## Arquivos Criados
-1. **[index.html](file:///c:/Users/pedro/Documents/antigravity/keen-einstein/index.html)**: O site contendo o formulário de 4 etapas construído com Tailwind CSS e Alpine.js.
-2. **[config.js](file:///c:/Users/pedro/Documents/antigravity/keen-einstein/config.js)**: Arquivo de configuração onde você define a URL do Webhook do seu n8n e outras opções (como números de contato do WhatsApp).
+Roda inteiro na sua máquina ou servidor: Node.js + Express + SQLite + ffmpeg, transcrição via [OpenRouter](https://openrouter.ai/) (Whisper), sem dependência de nenhum SaaS de terceiros além da própria OpenRouter para transcrever.
 
----
+## O que ele faz
 
-## 🚀 Como Executar Localmente
-Você pode abrir o arquivo `index.html` diretamente em qualquer navegador, ou rodar um servidor local simples na pasta do projeto:
+- Upload múltiplo, drag & drop e gravação direta pelo navegador
+- Pré-processamento de áudio (normalização, divisão automática de áudios longos) antes de transcrever
+- 3 níveis de qualidade/custo: **Chita** (rápido), **Golfinho** (equilibrado), **Baleia** (precisão)
+- Transcrição com timestamps clicáveis, edição inline, resumo de IA focado num assunto
+- Exportação em PDF, DOCX, TXT, SRT, VTT
+- Chat com IA sobre a transcrição e tradução
+- Organização em projetos, busca por conteúdo
+- Painel admin: usuários, chaves de API, métricas, logs
+
+Detalhe completo do produto em [docs/product.md](docs/product.md).
+
+## ⚠️ Antes de instalar
+
+Este sistema **hoje não isola dados entre usuários** — qualquer pessoa com acesso à instância vê e pode apagar o conteúdo de todo mundo, e existe um bypass de autenticação conhecido. É seguro para **uso pessoal ou em rede privada**; não exponha publicamente para múltiplos usuários sem um proxy de autenticação na frente. Detalhe da auditoria em [docs/MULTIUSER.md](docs/MULTIUSER.md).
+
+## Instalação rápida
+
+Requisitos: Docker + Docker Compose, e uma chave de API da [OpenRouter](https://openrouter.ai/).
 
 ```bash
-# Se tiver Python instalado
-python -m http.server 8000
-
-# Se tiver Node.js instalado (usando http-server)
-npx http-server -p 8000
-```
-Depois, basta acessar `http://localhost:8000`.
-
----
-
-## 🛠️ Configuração da Integração
-
-### 1. No Frontend (`config.js`)
-Abra o arquivo [config.js](file:///c:/Users/pedro/Documents/antigravity/keen-einstein/config.js) e altere as variáveis:
-
-*   **`N8N_WEBHOOK_URL`**: A URL que o n8n gera ao criar um nó de Webhook (lembre-se de usar a URL de produção no n8n quando colocar no ar).
-*   **`REDIRECT_TO_WHATSAPP`**: Se definido como `true`, além de enviar para o n8n, o site abrirá o WhatsApp do cliente com uma mensagem pronta para mandar para o corretor. Se `false`, o site apenas exibirá a tela de conclusão sem abrir o WhatsApp.
-*   **`WHATSAPP_CONTACT_1`** e **`WHATSAPP_CONTACT_2`**: Os números de WhatsApp de destino.
-
----
-
-### 2. Formato do JSON Enviado para o n8n
-Quando o formulário é submetido, o site envia uma requisição `POST` com os cabeçalhos `'Content-Type': 'application/json'` e o corpo no formato abaixo:
-
-```json
-{
-  "nome": "João da Silva",
-  "telefone": "(61) 99999-9999",
-  "email": "joao@email.com",
-  "cidade": "Brasília/DF",
-  "vidas": "3 a 5 pessoas",
-  "motivo": "Troca de plano",
-  "cnpj": "Sim",
-  "data_envio": "2026-08-06T22:57:28Z",
-  "mensagem_formatada": "Olá! Acabei de fazer minha cotação no planodsaudedf.com.br 🏥\n\n*Nome:* João da Silva\n*Telefone:* (61) 99999-9999\n*E-mail:* joao@email.com\n*Cidade:* Brasília/DF\n*Vidas:* 3 a 5 pessoas\n*Motivo:* Troca de plano\n*Possui CNPJ:* Sim\n\nAguardo retorno com as melhores opções! 😊"
-}
+git clone https://github.com/pedroleondev/transcreve.ai.git
+cd transcreve.ai
+cp .env.example .env
+# edite .env: cole sua OPENROUTER_API_KEY e gere um JWT_SECRET próprio
+docker compose up -d
 ```
 
----
+Acesse `http://localhost:3000`. Login inicial: `admin@turboscribe.local` / `admin123` — **troque essa senha assim que entrar**.
 
-### 3. Configurando o Banco de Dados PostgreSQL
-Para armazenar os leads que chegam pelo site, você pode criar uma tabela no seu banco de dados PostgreSQL com a seguinte estrutura SQL:
+Sem Docker, ou quer domínio próprio com Traefik? Guia completo, com as duas rotas passo a passo, backup e troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
-```sql
-CREATE TABLE leads_planos_saude (
-    id SERIAL PRIMARY KEY,
-    nome VARCHAR(255) NOT NULL,
-    telefone VARCHAR(50) NOT NULL,
-    email VARCHAR(255),
-    cidade VARCHAR(100),
-    vidas VARCHAR(50),
-    motivo VARCHAR(100),
-    cnpj VARCHAR(10),
-    data_envio TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
+## Documentação
 
----
+| Documento | Responde |
+|---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | Como instalar (Docker, Docker+Traefik, ou Node direto) e configurar a chave da OpenRouter |
+| [docs/product.md](docs/product.md) | O que o sistema é, para quem, e o que existe de fato |
+| [docs/stack.md](docs/stack.md) | Tecnologias, schema do banco, rotas de API, limites técnicos |
+| [docs/system_design.md](docs/system_design.md) | Arquitetura e por que cada decisão de design foi tomada |
+| [docs/system_product.md](docs/system_product.md) | Onde produto e sistema técnico se acoplam |
+| [docs/workflow.md](docs/workflow.md) | Como o projeto é desenvolvido (contexto sob demanda, testes, pré-infra) |
+| [docs/MULTIUSER.md](docs/MULTIUSER.md) | Auditoria de segurança e capacidade multiusuário |
+| [docs/TASKS.md](docs/TASKS.md) | Backlog executável com critérios de aceite |
+| [pipeline.md](pipeline.md) | Pipeline técnico de transcrição, deploy Docker e Git Flow |
 
-### 4. Estrutura Recomendada do Fluxo no n8n
+## Stack
 
-O seu fluxo do n8n deve conter os seguintes nós conectados em sequência:
+Node.js 20 · Express · SQLite · ffmpeg · OpenRouter (Whisper) · Tailwind (CDN) · JS vanilla, sem build step. Sem framework de front, sem ORM, sem fila externa — proposital, baixo custo operacional. Detalhe em [docs/stack.md](docs/stack.md).
 
-```mermaid
-graph LR
-    A[Webhook Node] --> B[PostgreSQL Node]
-    B --> C[HTTP Request - EvolutionAPI]
-```
+## Contribuindo
 
-1.  **Nó Webhook (Trigger)**:
-    *   **Method**: `POST`
-    *   **Path**: `cotacao-lead` (ou o de sua preferência)
-    *   **Response Mode**: `On Received` (com Status `200`) ou `Last Node` se você quiser retornar alguma resposta específica para o site.
+Este projeto segue desenvolvimento orientado a contexto: uma tarefa por sessão, lida em [docs/TASKS.md](docs/TASKS.md), com protocolo descrito em [docs/workflow.md](docs/workflow.md) e [AGENTS.md](AGENTS.md). Antes de abrir uma mudança, rode `node test_suite.js` (usa o áudio de teste versionado em `tests/fixtures/sample.ogg`, sem dado real de cliente).
 
-2.  **Nó PostgreSQL (Insert)**:
-    *   **Operation**: `Insert`
-    *   **Table**: `leads_planos_saude`
-    *   **Columns**: Mapeie os campos que vêm do Webhook (`nome`, `telefone`, `email`, `cidade`, `vidas`, `motivo`, `cnpj`) para as colunas do seu banco PostgreSQL.
+## Licença
 
-3.  **Nó HTTP Request (EvolutionAPI)**:
-    *   **Method**: `POST`
-    *   **URL**: `https://sua-evolution-api.domain.com/message/sendText/{sua-instancia}`
-    *   **Headers**:
-        *   `apikey`: `sua-chave-api-da-evolution`
-        *   `Content-Type`: `application/json`
-    *   **Body (JSON)**:
-        ```json
-        {
-          "number": "5561985475886", // Número do corretor ou ID do grupo do whatsapp
-          "options": {
-            "delay": 1200,
-            "presence": "composing"
-          },
-          "textMessage": {
-            "text": "🚨 *Novo Lead Recebido no Site!* 🚨\n\n{{ $json.mensagem_formatada }}"
-          }
-        }
-        ```
+MIT — ver [LICENSE](LICENSE).
