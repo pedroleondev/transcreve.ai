@@ -18,7 +18,10 @@ const state = {
   audioChunks: [],
   recordingInterval: null,
   recordingSeconds: 0,
-  recordedBlob: null
+  recordedBlob: null,
+  // Polling de progresso
+  pollingInterval: null,
+  activeJobIds: [] // IDs de transcrições em pending/processing para polling
 };
 
 // Inicialização
@@ -492,6 +495,48 @@ function renderTranscriptionsTable() {
     const durationFormatted = formatDuration(item.duration_seconds || 0);
     const dateFormatted = new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+    // Badge de Status dinâmico com barra de progresso
+    let statusBadge = '';
+    const progress = item.progress || 0;
+    if (item.status === 'completed') {
+      statusBadge = `
+        <span class="inline-flex items-center space-x-1 text-emerald-600 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+          <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+          <span>Concluído</span>
+        </span>`;
+    } else if (item.status === 'processing') {
+      statusBadge = `
+        <div class="flex flex-col items-start space-y-1 min-w-[80px]">
+          <div class="flex items-center space-x-1.5">
+            <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+            <span class="text-blue-700 font-bold text-xs">Processando</span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full transition-all duration-700" style="width: ${progress}%"></div>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono font-bold">${progress}%</span>
+        </div>`;
+    } else if (item.status === 'pending') {
+      statusBadge = `
+        <div class="flex flex-col items-start space-y-1">
+          <div class="flex items-center space-x-1.5">
+            <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+            <span class="text-amber-700 font-bold text-xs">Na Fila</span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-amber-400 h-1.5 rounded-full animate-pulse" style="width: 8%"></div>
+          </div>
+        </div>`;
+    } else if (item.status === 'failed') {
+      statusBadge = `
+        <div title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="cursor-help">
+          <span class="inline-flex items-center space-x-1 text-red-600 font-bold text-xs bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+            <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+            <span>Falhou</span>
+          </span>
+        </div>`;
+    }
+
     return `
       <tr class="hover:bg-slate-50 transition border-b border-slate-100 group">
         <td class="p-4"><input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 focus:ring-blue-500"></td>
@@ -507,10 +552,7 @@ function renderTranscriptionsTable() {
         <td class="p-4 text-slate-700 font-medium text-xs">${durationFormatted}</td>
         <td class="p-4 text-xs font-semibold">${modeBadge}</td>
         <td class="p-4">
-          <span class="inline-flex items-center space-x-1 text-emerald-600 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-            <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
-            <span>Concluído</span>
-          </span>
+          ${statusBadge}
         </td>
         <td class="p-4 text-right relative">
           <div class="inline-block text-left group/menu">
@@ -540,6 +582,38 @@ function renderTranscriptionsTable() {
   }).join('');
 
   if (window.lucide) lucide.createIcons();
+
+  // Inicia polling se houver jobs ativos
+  const activeJobs = state.transcriptions.filter(t => t.status === 'pending' || t.status === 'processing');
+  state.activeJobIds = activeJobs.map(t => t.id);
+  if (activeJobs.length > 0) {
+    startProgressPolling();
+  } else {
+    stopProgressPolling();
+  }
+}
+
+// ---------------------------------------------------
+// POLLING DE PROGRESSO EM TEMPO REAL
+// ---------------------------------------------------
+
+function startProgressPolling() {
+  if (state.pollingInterval) return; // já está rodando
+  state.pollingInterval = setInterval(async () => {
+    if (state.activeJobIds.length === 0) {
+      stopProgressPolling();
+      return;
+    }
+    // Busca novamente a lista para ver o progresso atualizado
+    await fetchTranscriptions();
+  }, 3000); // a cada 3 segundos
+}
+
+function stopProgressPolling() {
+  if (state.pollingInterval) {
+    clearInterval(state.pollingInterval);
+    state.pollingInterval = null;
+  }
 }
 
 // ---------------------------------------------------
@@ -738,6 +812,24 @@ function closeTranscribeModal() {
   const preview = document.getElementById('selected-files-preview');
   if (preview) preview.innerText = '';
   updatePriceAndPrecisionEstimate();
+
+  // Reseta o painel de progresso e restaura o conteúdo original do modal
+  const modalContent = document.getElementById('transcribe-modal-content');
+  const progressPanel = document.getElementById('transcribe-progress-panel');
+  if (modalContent) modalContent.classList.remove('hidden');
+  if (progressPanel) progressPanel.classList.add('hidden');
+
+  // Restaura o botão de transcrição
+  const btn = document.getElementById('btn-submit-transcribe');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerText = 'TRANSCREVER';
+    btn.onclick = submitTranscription;
+  }
+
+  // Limpa campo ai_focus
+  const aiFocusInput = document.getElementById('ai-focus-input');
+  if (aiFocusInput) aiFocusInput.value = '';
 }
 
 function selectMode(mode) {
@@ -777,7 +869,7 @@ async function submitTranscription() {
 
   const btn = document.getElementById('btn-submit-transcribe');
   btn.disabled = true;
-  btn.innerText = 'PROCESSANDO TRANSCRIÇÃO...';
+  btn.innerText = 'ENVIANDO...';
 
   const select = document.getElementById('openrouter-model-select');
   const chosenModel = select ? select.value : state.selectedModelId;
@@ -794,6 +886,11 @@ async function submitTranscription() {
 
   if (document.getElementById('diarization-check').checked) formData.append('speaker_diarization', 'true');
 
+  // Campo opcional: Assunto para focar / instrução de busca
+  const aiFocusInput = document.getElementById('ai-focus-input');
+  const aiFocusVal = aiFocusInput ? aiFocusInput.value.trim() : '';
+  if (aiFocusVal) formData.append('ai_focus', aiFocusVal);
+
   try {
     const res = await fetch('/api/transcribe', {
       method: 'POST',
@@ -801,21 +898,98 @@ async function submitTranscription() {
       body: formData
     });
     const data = await res.json();
-    if (data.success) {
-      closeTranscribeModal();
-      await fetchTranscriptions();
-      if (data.data && data.data[0]) {
-        openTranscriptionDetail(data.data[0].id);
-      }
+
+    if (data.success && data.data && data.data[0]) {
+      const jobId = data.data[0].id;
+      const fileName = data.data[0].file_name || state.selectedFiles[0].name;
+
+      // Transiciona o modal para o painel de acompanhamento
+      showTranscriptionProgressPanel(jobId, fileName);
+      await fetchTranscriptions(); // Atualiza a tabela imediatamente
     } else {
-      alert('Erro na transcrição: ' + (data.error || 'Desconhecido'));
+      alert('Erro ao enviar para a fila: ' + (data.error || 'Desconhecido'));
+      btn.disabled = false;
+      btn.innerText = 'TRANSCREVER';
     }
   } catch (e) {
     alert('Erro ao enviar áudio: ' + e.message);
-  } finally {
     btn.disabled = false;
     btn.innerText = 'TRANSCREVER';
   }
+}
+
+// Exibe o painel de progresso no modal após o upload ser aceito
+function showTranscriptionProgressPanel(jobId, fileName) {
+  const modalContent = document.getElementById('transcribe-modal-content');
+  const progressPanel = document.getElementById('transcribe-progress-panel');
+  const jobNameEl = document.getElementById('progress-job-name');
+  const progressBar = document.getElementById('modal-progress-bar');
+  const progressPct = document.getElementById('modal-progress-pct');
+  const progressMsg = document.getElementById('modal-progress-msg');
+
+  if (modalContent) modalContent.classList.add('hidden');
+  if (progressPanel) progressPanel.classList.remove('hidden');
+  if (jobNameEl) jobNameEl.innerText = fileName;
+
+  const btnClose = document.getElementById('btn-submit-transcribe');
+  if (btnClose) {
+    btnClose.disabled = false;
+    btnClose.innerText = 'ACOMPANHAR EM SEGUNDO PLANO';
+    btnClose.onclick = () => closeTranscribeModal();
+  }
+
+  // Polling do progresso do job específico
+  const pollJob = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/transcriptions/${jobId}/status`, {
+        headers: { 'Authorization': `Bearer ${state.token}` }
+      });
+      const statusData = await res.json();
+
+      if (!statusData.success) {
+        clearInterval(pollJob);
+        return;
+      }
+
+      const pct = statusData.progress || 0;
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      if (progressPct) progressPct.innerText = `${pct}%`;
+
+      // Mensagens de etapa por faixa de progresso
+      let msg = 'Aguardando início...';
+      if (pct >= 1 && pct < 10) msg = '🔍 Analisando o arquivo...';
+      else if (pct >= 10 && pct < 16) msg = '✂️ Extraindo e preparando o áudio...';
+      else if (pct >= 16 && pct < 20) msg = '🔪 Fatiando áudio em partes de 15 min...';
+      else if (pct >= 20 && pct < 92) {
+        const chunk = Math.ceil(((pct - 20) / 70) * 24);
+        msg = `🎙️ Transcrevendo parte ${chunk} com Whisper...`;
+      }
+      else if (pct >= 92 && pct < 96) msg = '🤖 Gerando resumo com foco no assunto...';
+      else if (pct >= 96 && pct < 100) msg = '💾 Gravando transcrição no banco...';
+      else if (pct === 100) msg = '✅ Transcrição concluída com sucesso!';
+      if (progressMsg) progressMsg.innerText = msg;
+
+      if (statusData.status === 'completed' || statusData.status === 'failed') {
+        clearInterval(pollJob);
+        await fetchTranscriptions();
+
+        if (statusData.status === 'completed') {
+          if (progressMsg) progressMsg.innerText = '✅ Transcrição concluída! Clique em fechar para ver o resultado.';
+          if (btnClose) {
+            btnClose.innerText = 'VER TRANSCRIÇÃO';
+            btnClose.onclick = () => {
+              closeTranscribeModal();
+              openTranscriptionDetail(jobId);
+            };
+          }
+        } else {
+          if (progressMsg) progressMsg.innerText = '❌ Falha no processamento. Verifique os logs.';
+        }
+      }
+    } catch (e) {
+      console.warn('Erro no polling do progresso:', e);
+    }
+  }, 2000);
 }
 
 // ---------------------------------------------------

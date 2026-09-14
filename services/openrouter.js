@@ -95,9 +95,14 @@ async function resolveWhisperModel(modeOrModelId) {
 /**
  * Envia o arquivo de áudio para transcrição via OpenRouter API com fallback automático de modelos
  */
-async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'openai/whisper-large-v3') {
+const DEFAULT_PROMPT_PTBR =
+  'Transcrição de uma ligação de atendimento comercial em português do Brasil sobre planos de saúde ' +
+  '(Amil, Bradesco, SulAmérica, PME, adesão, co-participação, carência, boleto, cotação, corretor).';
+
+async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'openai/whisper-large-v3', opts = {}) {
   const apiKey = await getActiveOpenRouterKey();
   const primaryModel = await resolveWhisperModel(modeOrModelId);
+  const promptText = opts.prompt || DEFAULT_PROMPT_PTBR;
 
   // Fila de modelos para tentar em ordem de prioridade
   const modelsToTry = [
@@ -118,6 +123,9 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
       formData.append('model', model);
       formData.append('language', language || 'pt');
       formData.append('response_format', 'verbose_json');
+      // temperature 0 + prompt reduzem drasticamente alucinações do Whisper em silêncio/ruído
+      formData.append('temperature', '0');
+      formData.append('prompt', promptText);
 
       const response = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
         method: 'POST',

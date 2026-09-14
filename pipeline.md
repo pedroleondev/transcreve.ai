@@ -11,7 +11,10 @@ Este documento estabelece a metodologia de **Desenvolvimento Orientado a Context
 3. **Validação Dupla Mandatória**: Toda funcionalidade precisa ser validada por:
    - **Suíte de Testes Automatizados (`node test_suite.js`)**
    - **Navegador e Evidência Visual (`browser_subagent` com capturas de tela)**
-4. **Sincronização Docker Live**: O container Docker é configurado com *volume bind-mount* (`.:/app`). As alterações no código refletem instantaneamente no ambiente containerizado sem necessidade de re-builds manuais da imagem.
+4. **Sincronização Docker Live — com uma ressalva crítica**: O container é configurado com *volume bind-mount* (`.:/app`), então alterações em **código JavaScript** refletem no container sem rebuild (basta `docker compose restart transcreveai` para o Node recarregar).
+   - ⚠️ **O bind-mount NÃO instala dependências de sistema.** Qualquer coisa vinda do `Dockerfile` (binários via `apk add`, como o `ffmpeg`, variáveis `ENV`, `npm ci`) só existe no container após **rebuild da imagem**.
+   - Isso é traiçoeiro: o código novo *parece* implantado (e está, via mount) enquanto o binário que ele invoca não existe. Foi exatamente a causa do incidente de 31/08/2026 (`/bin/sh: ffmpeg: not found`), em que 100% das transcrições falhavam com a imagem de 21/08.
+   - **Regra:** mexeu no `Dockerfile` → `docker compose build && docker compose up -d`. Mexeu só em `.js` → `docker compose restart transcreveai`.
 
 ---
 
@@ -59,20 +62,63 @@ graph TD
   ```bash
   node test_suite.js
   ```
-  *(Todas as 29+ asserções devem ser aprovadas com 100% de sucesso).*
+  *(Todas as 32 asserções devem ser aprovadas com 100% de sucesso — ver Definition of Done na seção 6.2).*
 - [ ] Executar o sub-agente de navegador (`browser_subagent`) para acessar a aplicação em `http://localhost:3000`, interagir com os novos elementos de UI e capturar screenshots de confirmação.
 
 ### FASE 5: Documentação e Versionamento (Commit & Walkthrough)
 - [ ] Criar o relatório de entrega em `walkthrough.md` anexando as capturas de tela e evidências de sucesso.
-- [ ] Realizar o commit no Git com mensagem padronizada:
-  ```bash
-  git add .
-  git commit -m "feat: [Nome da Funcionalidade] - [Breve resumo dos arquivos e benefícios]"
-  ```
+- [ ] Versionar seguindo o **Git Flow** da seção 6 — nunca commitar direto na `main`.
 
 ---
 
-## ⚙️ 4. Guia de Referência Rápida de Modelos de IA e Preços
+## 🌱 6. Git Flow: a `main` sempre funcional
+
+**Princípio:** a `main` é a linha do que comprovadamente funciona. Todo commit nela deve ter passado pelo Definition of Done abaixo. Trabalho em andamento vive em branch, não na `main`.
+
+### 6.1 Branches
+Branches curtas, com prefixo por tipo, criadas a partir da `main`:
+
+| Prefixo | Uso |
+|---|---|
+| `feat/` | Nova funcionalidade (`feat/projetos-kanban`) |
+| `fix/` | Correção de bug (`fix/ffmpeg-docker-build`) |
+| `chore/` | Infra, build, deps, documentação (`chore/pipeline-git-flow`) |
+
+```bash
+git switch -c fix/nome-curto-do-problema main
+```
+
+### 6.2 Definition of Done (gate obrigatório antes de merge na `main`)
+- [ ] `node test_suite.js` → **32/32**. Se um teste ficou obsoleto porque o comportamento mudou de propósito, **corrija o teste junto com a mudança** — suíte cronicamente vermelha não protege nada.
+- [ ] Se mexeu no `Dockerfile`: imagem reconstruída e dependência verificada **dentro** do container.
+- [ ] Fluxo validado de ponta a ponta no ambiente real (não só unitário) — para transcrição, um áudio real concluindo com `status='completed'` e texto coerente.
+- [ ] Nenhum segredo no diff (`.env`, `turboscribe.sqlite` e `uploads/` são ignorados — mantenha assim).
+
+### 6.3 Merge
+Merge com `--no-ff` para preservar o agrupamento lógico da entrega:
+
+```bash
+git switch main
+git merge --no-ff fix/nome-curto-do-problema
+git branch -d fix/nome-curto-do-problema
+```
+
+### 6.4 Mensagens de commit (Conventional Commits)
+Formato `tipo: resumo no imperativo`, com corpo explicando **causa e efeito**, não só o arquivo alterado.
+
+```
+fix: instala ffmpeg na imagem Docker para destravar a fila
+
+O bind-mount .:/app publica o codigo novo, mas nao instala binarios.
+services/audio.js passou a invocar ffmpeg, ausente na imagem de 21/08,
+entao todo job morria em preprocessAudio.
+```
+
+**Commits atômicos:** uma correção de infra e uma nova funcionalidade são commits separados, ainda que descobertos na mesma sessão. Isso é o que torna `git revert` viável.
+
+---
+
+## ⚙️ 7. Guia de Referência Rápida de Modelos de IA e Preços
 
 | Modelo OpenRouter | Preço / Minuto (USD) | Acurácia PT-BR | Recomendação |
 |---|---|---|---|
@@ -83,14 +129,23 @@ graph TD
 
 ---
 
-## 🛠️ 5. Comandos Úteis de Operação
+## 🛠️ 8. Comandos Úteis de Operação
 
 ```bash
 # Inicializar o ambiente Docker em background com live mount
 docker compose up -d
 
-# Reiniciar o serviço TurboScribe
-docker compose restart turboscribe
+# Reiniciar o servico (recarrega o Node; use apos alterar arquivos .js)
+docker compose restart transcreveai
+
+# Rebuild da imagem (OBRIGATORIO apos alterar o Dockerfile - ex.: novos binarios)
+docker compose build && docker compose up -d
+
+# Conferir se as dependencias de sistema existem DENTRO do container
+docker exec transcreveai-app sh -c 'ffmpeg -version | head -1'
+
+# Reprocessar uma transcricao que falhou (o worker repolla a fila a cada 5s)
+node -e "const s=require('sqlite3');const d=new s.Database('turboscribe.sqlite');d.run(\"UPDATE transcriptions SET status='pending', progress=0, error_message=NULL WHERE id='<ID>'\",()=>process.exit(0));"
 
 # Executar a suíte de testes de integração
 node test_suite.js
