@@ -2,7 +2,10 @@
 
 > Fonte única de verdade do que fazer. Uma tarefa por sessão (ver [WORKFLOW.md](WORKFLOW.md)).
 > Estados: `TODO` · `DOING` · `DONE` · `BLOCKED`
-> Atualizado em 31/08/2026.
+> Atualizado em 14/09/2026.
+> **Foco atual (decisão de 14/09):** uso pessoal, sem cota. O sistema é para **gravações longas (8h/dia de trabalho), recebidas por upload**, transcritas com qualidade independente do tamanho, e depois **lidas, editadas e transformadas em informação** (processos, conteúdo, orientação). Gravar pelo navegador não é prioridade. Multiusuário (T-01/T-02/T-03/T-07) continua no backlog, mas não bloqueia.
+>
+> **Paridade-alvo com o concorrente:** arquivos de até 10 h / 5 GB · 50 arquivos por vez · todos os formatos que o ffmpeg lê · 98 idiomas · exportar PDF/DOCX/TXT/SRT/VTT/CSV, em massa · locutores reais · tradução com legendas · sem limite de uso. Cada item está mapeado numa tarefa abaixo.
 
 ## Quadro
 
@@ -11,13 +14,28 @@
 | T-01 | Fechar autenticação (remover bypass e senhas mestras) | 🔴 P0 | TODO |
 | T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | TODO |
 | T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | TODO |
-| T-04 | UI de leitura da transcrição (Markdown/HTML formatado) | 🟠 P1 | TODO |
+| T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | TODO |
 | T-05 | Tema escuro | 🟠 P1 | TODO |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | TODO |
 | T-07 | Aplicar `daily_limit` e limite de upload | 🟡 P2 | TODO |
 | T-08 | Endurecer SQLite (WAL + índices) | 🟡 P2 | TODO |
 | T-09 | Página de Conta do usuário (perfil + trocar senha) | 🟡 P2 | TODO |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
+| T-11 | Gravador de voz: waveform, pausar, idioma, transcrever direto | 🟢 P3 | TODO |
+| T-12 | Player fixo no rodapé da tela de detalhe | 🟠 P1 | TODO |
+| T-13 | Baixar áudio original (rota autenticada) + Exportar em massa | 🟠 P1 | TODO |
+| T-14 | UX de modais: Esc/clique fora fecham, foco, sem `prompt()` | 🟢 P3 | TODO |
+| T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | TODO |
+| T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | TODO |
+| T-17 | Layout responsivo: celular e tablet | 🔴 P0 | TODO |
+| T-18 | Análise estruturada por IA (processos, conteúdo, ruído, orientação) | 🔴 P0 | TODO |
+| T-19 | Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos) | 🔴 P0 | TODO |
+| T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 98 idiomas + auto-detecção | 🟠 P1 | TODO |
+| T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
+| T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
+
+**Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
+T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
 
 ---
 
@@ -180,6 +198,279 @@
 - [x] Conteúdo antigo preservado em `docs/legado-landing-n8n.md`
 
 **Evidência (14/09/2026):** `README.md` reescrito com visão geral, aviso de segurança multiusuário, quickstart Docker e mapa de documentação; conteúdo antigo (n8n/PostgreSQL/EvolutionAPI) movido para `docs/legado-landing-n8n.md` com nota de que `config.js` ficou órfão (não referenciado por `server.js`/`app.js`/`index.html` atuais). De quebra: criado `docs/INSTALL.md` (guia self-hosting completo — Docker standalone, Docker+Traefik, Node direto, backup, troubleshooting) e `tests/fixtures/sample.ogg` (áudio sintético via TTS, sem dado real de cliente) substituindo o arquivo de cliente que `test_suite.js` e `tests/load_multiuser.js` usavam antes.
+
+---
+
+### T-11 — Gravador de voz: waveform, pausar, idioma, transcrever direto
+**Estado:** TODO · **Prioridade:** 🟢 P3 · **Decisão 14/09:** gravar pelo navegador não é o caso de uso principal (o fluxo é receber arquivo). Fica como polimento.
+**Por quê:** o gravador atual (`app.js:996-1050`) é um timer `00:00` estático com botão "Iniciar gravação". Não tem feedback visual de que o microfone está captando, não pausa, não pergunta idioma, e o fluxo pós-gravação não leva direto à transcrição. Comparado à referência (waveform ao vivo + "Pausar gravação" + idioma + botão TRANSCREVER), é o gap visual mais gritante.
+**Contexto:** `app.js:996-1050`, `index.html` (modal `#recorder-modal` ou equivalente — localizar por `recording-timer`), `server.js:228-280` (`/api/transcribe`)
+**Toca:** `app.js`, `index.html`
+**Aceite:**
+- [ ] Waveform ao vivo via `AudioContext` + `AnalyserNode` desenhado em `<canvas>` (sem lib)
+- [ ] Botões: Iniciar → (Pausar ⇄ Retomar) → Parar; `MediaRecorder.pause()/resume()` reais, timer congela na pausa
+- [ ] Seletor de idioma com **apenas** 4 opções: Português (Brasil) `pt` (padrão), English `en`, Español `es`, 日本語 `ja`
+- [ ] Seletor de projeto mantido (já existe)
+- [ ] Ao parar: botão principal vira **TRANSCREVER** e envia direto para `/api/transcribe` com `language` e `project_id`; sem passo intermediário de "baixar e subir"
+- [ ] Nome do arquivo gerado: `Gravação {dd-mm-aaaa HH-mm}.webm` (ou `.ogg` se o navegador suportar)
+- [ ] Permissão de microfone negada → mensagem clara no modal, não `alert()`
+
+**Fora de escopo (decidido 14/09):** gravação de dia inteiro pelo navegador. O dia de vendas é gravado em aparelho e enviado como arquivo (T-19).
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-12 — Player fixo no rodapé da tela de detalhe
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Faz par com:** T-04, T-17
+**Por quê:** o player hoje fica no topo de `#view-details` e some ao rolar. Numa transcrição de 10 min com timestamps clicáveis, o usuário rola o texto e perde o controle do áudio. A referência mantém o player sempre visível no rodapé (nome do arquivo, play, barra, tempo, volume).
+**Contexto:** `index.html:221-260` (`#view-details`), `app.js` (`renderCurrentTranscript`, handlers de seek por timestamp)
+**Toca:** `index.html`, `app.js`
+**Aceite:**
+- [ ] Player em barra `position: sticky; bottom: 0` (ou `fixed`) dentro de `#view-details`, com nome do arquivo, play/pause, barra de progresso arrastável, tempo atual/total, volume, velocidade (1x/1.25x/1.5x/2x)
+- [ ] Clique em timestamp continua dando seek e o player reflete a posição
+- [ ] Segmento atual em reprodução ganha destaque visual e a página faz auto-scroll suave para ele (desligável)
+- [ ] O conteúdo da transcrição ganha `padding-bottom` para não ficar escondido atrás do player
+- [ ] Funciona em largura de celular (integra com T-17)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-13 — Baixar áudio original + Exportar em massa
+**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** nada para funcionar; T-02 para ser seguro em multiusuário
+**Por quê:** (a) o painel de detalhe da referência oferece "Baixar áudio (4,46 MB)"; o nosso não tem. Hoje o áudio só é acessível pela URL pública `/uploads/...` (risco R-04). A forma certa de oferecer o download é uma **rota autenticada**, o que já adianta parte de T-02. (b) A barra de ações em massa da referência tem Exportar; a nossa só tem Mover e Excluir.
+**Contexto:** `server.js` (rotas `/api/export/:id/:format`, `express.static('/uploads')`), `app.js` (barra `#bulk-actions` — localizar por "selecionados"), `services/exporter.js`
+**Toca:** `server.js`, `app.js`, `index.html`
+**Aceite:**
+- [ ] `GET /api/transcriptions/:id/audio` autenticada, `Content-Disposition: attachment` com o nome original, tamanho exibido no botão do painel ("Baixar áudio · 4,4 MB")
+- [ ] `express.static('/uploads')` removido — o áudio do player passa a vir da rota autenticada (com `Range` para seek funcionar)
+- [ ] Barra de ações em massa ganha **Exportar** → escolhe formato (PDF/DOCX/TXT/SRT/VTT) → baixa um `.zip` com um arquivo por transcrição (`archiver` ou stream zip mínimo; avaliar peso da dependência)
+- [ ] `test_suite.js` cobre a rota de áudio (200 com token, 401 sem)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-14 — UX de modais
+**Estado:** TODO · **Prioridade:** 🟢 P3
+**Por quê:** testado em 14/09: `Esc` não fecha o modal de upload; clique fora também não. A tela de admin cadastra chave via `prompt()` nativo do navegador (`app.js:1368`). São detalhes pequenos que, somados, fazem o app parecer inacabado.
+**Contexto:** `app.js` (funções `open*Modal`/`close*Modal`), `index.html` (todos os `[id$="-modal"]`)
+**Toca:** `app.js`, `index.html`
+**Aceite:**
+- [ ] Um único helper de modal: abre, fecha por `Esc`, fecha por clique no backdrop, devolve o foco ao elemento que abriu, trava scroll do body
+- [ ] Todos os modais existentes migrados para o helper
+- [ ] Nenhum `prompt()`/`alert()`/`confirm()` nativo sobrando no `app.js` — confirmações viram modal próprio
+- [ ] Botão de fechar (X) com `aria-label`
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-15 — Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Substitui** a cota diária na sidebar
+**Por quê:** hoje `api_keys.key_value` fica em **texto puro** no SQLite (`server.js:483`) e no `.env`; o cadastro é um `prompt()` sem validação (`app.js:1368`); não há teste da chave antes de salvar. Decisão de 14/09: sem cota diária (uso pessoal, ilimitado). No lugar dela, na sidebar, um botão de acesso rápido à configuração da chave — protegido, com teste e armazenamento seguro.
+**Contexto:** `server.js:460-500` (rotas `/api/admin/keys`), `db.js:200-215` (sync da chave do `.env`), `app.js:1360-1390`, `index.html` (sidebar, bloco "Ilimitado (Modo Local)")
+**Toca:** `server.js`, `db.js`, `app.js`, `index.html`, `.env.example`, `docs/INSTALL.md`
+
+**Abordagem (o "simples que funciona"):** o que protege uma chave não é uma técnica exótica — é ela **nunca sair do servidor em texto puro** depois de salva. Técnica inventada/obscura é exatamente o que dá falsa sensação de segurança e quebra. O padrão abaixo é o mínimo sólido e cabe em uma sessão:
+1. **Cifra em repouso:** `AES-256-GCM` (módulo `crypto` nativo do Node, sem dependência) com chave derivada de `APP_SECRET_KEY` (env, 32+ bytes aleatórios, gerada no install — `docs/INSTALL.md` ganha o passo). IV aleatório por registro; armazena `iv:tag:ciphertext` em `key_value`. Sem `APP_SECRET_KEY` em produção, o servidor **recusa subir** (mesma regra prevista para `JWT_SECRET` em T-01).
+2. **Teste antes de salvar:** `POST /api/admin/keys/test` chama `GET https://openrouter.ai/api/v1/auth/key` com a chave informada; só salva se retornar 200. A UI mostra o resultado (limite/crédito que o endpoint devolve) e só então libera "Salvar".
+3. **Nunca devolve a chave:** a API retorna só `sk-or-v1-…abcd` (já existe `masked_key`, `server.js:468`). Sem rota que devolva o valor cifrado ou decifrado. Decifra apenas dentro de `services/openrouter.js`, no momento da chamada.
+4. **Troca exige re-autenticação:** o modal pede a senha do admin para salvar/trocar (valida com bcrypt). Tentativas falhas em `system_logs` com IP; 5 falhas em 10 min → bloqueio temporário.
+5. **Sync do `.env` vira one-shot:** na primeira subida, se `OPENROUTER_API_KEY` existir no ambiente e não houver chave no banco, cifra e grava — depois disso o `.env` pode ficar **sem** a chave (a fonte de verdade passa a ser o banco cifrado). `docs/INSTALL.md` explica os dois caminhos.
+
+**Aceite:**
+- [ ] Bloco "Ilimitado (Modo Local)" da sidebar substituído por botão **"Chave de API"** com indicador de estado (✅ válida · ⚠️ não configurada · ❌ inválida na última verificação)
+- [ ] Modal: campo tipo `password` com botão "mostrar", botão **Testar** → resultado inline, botão **Salvar** só habilita após teste OK, campo de senha do admin
+- [ ] `key_value` no SQLite cifrado com AES-256-GCM; `sqlite3 turboscribe.sqlite "SELECT key_value FROM api_keys"` **não** mostra `sk-or-v1-`
+- [ ] Nenhuma rota devolve a chave em claro ou cifrada; `masked_key` é o único formato exposto
+- [ ] Migração idempotente no boot: chave existente em texto puro é cifrada in-place na primeira subida
+- [ ] Transcrição, chat e tradução continuam funcionando (a decifragem acontece só em `services/openrouter.js`)
+- [ ] `test_suite.js` — TEST 1 passa a verificar que o valor no banco **não** começa com `sk-or-v1-` e que `/api/admin/keys/test` responde 200 com a chave válida
+- [ ] `.env.example` e `docs/INSTALL.md` atualizados (`APP_SECRET_KEY`, passo de gerar, fluxo de cadastrar pela UI)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-16 — Renomear níveis → Base / Pro / Max
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Antes de** T-04/T-17/T-18 (evita retrabalho de UI)
+**Por quê:** os três animais são a identidade do TurboScribe. Ao virar comercial, vira "whitelabel inspirado" na cara. Decisão de 14/09: manter o **formato** badge com nome + modelo, trocar nomes e ícones. Layout/estilo geral fica para depois — aqui é só funcional.
+**Contexto:** `db.js:220-230` (`chita_model`, `chita_enabled`…), `services/openrouter.js:80-100` (switch de nível), `app.js` (38 refs), `index.html` (27 refs), `test_suite.js:50-54`
+**Toca:** `db.js`, `services/openrouter.js`, `server.js`, `app.js`, `index.html`, `test_suite.js`, `docs/product.md`, `docs/stack.md`
+
+**Nomes (decididos 14/09):**
+
+| Nível | Nome | Chave interna | Ícone (Lucide) | Subtítulo |
+|---|---|---|---|---|
+| 1 | **Base** | `base` | `zap` | Mais veloz, menor custo |
+| 2 | **Pro** | `pro` | `gauge` | Velocidade e precisão |
+| 3 | **Max** | `max` | `award` | Máxima precisão PT-BR |
+
+**Aceite:**
+- [ ] Chaves internas `base`/`pro`/`max` em `system_settings` (`base_model`, `base_enabled`…), migração idempotente renomeando as chaves antigas no boot
+- [ ] `/api/transcribe` aceita `mode` em `base|pro|max`; aceita os antigos (`chita`…) como alias **por uma versão**, com `console.warn` — remover na seguinte
+- [ ] `services/openrouter.js` usa só as chaves novas
+- [ ] Front sem nenhuma ocorrência de `chita|golfinho|baleia` (`grep -ci` → 0 em `app.js` e `index.html`), ícones e emojis trocados
+- [ ] Badge da tabela e cards do modal de upload refletem os nomes novos; painel admin (modelo por nível) também
+- [ ] `test_suite.js` usa os nomes novos e continua 32/32
+- [ ] `docs/product.md` e `docs/stack.md` atualizados
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-17 — Layout responsivo: celular e tablet
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Antes de** T-04 e T-18
+**Por quê:** `grep -c "md:\|lg:\|sm:" index.html` → **5**. O layout é desktop fixo: sidebar de largura fixa, tabela de 6 colunas, detalhe em 2 colunas. No celular não dá para usar. O objetivo declarado (14/09) é "abrir no notebook, computador ou celular e ler de forma agradável" — sem isso, T-04 e T-18 entregam valor só no desktop.
+**Contexto:** `index.html` (inteiro — é estrutural; usar `grep -n "class=\"" | head` por seção, não ler tudo), `app.js:240-257` (`showView`), config Tailwind inline em `index.html:12-53`
+**Toca:** `index.html`, `app.js`
+**Aceite:**
+- [ ] Breakpoints: `< 768px` celular · `768–1024px` tablet · `> 1024px` desktop
+- [ ] **Sidebar** vira drawer off-canvas no celular (botão hambúrguer no header), fixa no desktop
+- [ ] **Tabela de transcrições** vira lista de cards no celular: nome, data, duração, badge de nível, status, ação — sem scroll horizontal
+- [ ] **Tela de detalhe** em coluna única no celular: texto em cima, painel (Projeto/Exportar/IA) vira sheet inferior ou seção colapsável abaixo do texto; player fixo (T-12) ocupa o rodapé
+- [ ] Modais em tela cheia no celular (`inset-0`), centralizados no desktop
+- [ ] Alvos de toque ≥ 44px em botões e timestamps
+- [ ] Texto da transcrição com `font-size` mínimo 16px no celular, linha de ~65 caracteres no desktop (`max-w-prose`)
+- [ ] Testado em 375px (iPhone), 768px (iPad) e 1440px — screenshots na evidência
+- [ ] Nada de horizontal scroll no `body` em nenhuma largura
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-18 — Análise estruturada por IA
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** **T-19** (sem transcrição confiável de 8 h não há o que analisar), T-04 (renderização Markdown), idealmente T-17
+**Por quê:** é o **propósito do app** (decisão de 14/09): não é ouvir, é transformar a transcrição em dados, conteúdo, direcionamento, lista de processos, orientação de vendas. Caso de uso alvo: gravar um dia inteiro de vendas/ligações num escritório, transcrever, e extrair **processos estruturados usados**, **conteúdo principal** (rejeitando ruído e o que está fora de contexto) e **interpretação** da transcrição. Hoje existe só `ai_focus` → `ai_summary` (um resumo livre) e o chat pergunta-resposta.
+**Contexto:** `server.js:680-720` (geração de `ai_summary`), `server.js` (`/api/chat`), `services/openrouter.js` (chamada de chat/LLM), `app.js` (painel IA em `#view-details`), `db.js` (tabela `transcriptions`)
+**Toca:** `server.js`, `db.js`, `services/openrouter.js`, `app.js`, `index.html`, `docs/product.md`, `docs/stack.md`
+
+**Desenho:**
+- Nova tabela `ai_analyses(id, transcription_id → transcriptions, preset, prompt_used, model, result_md, tokens_in, tokens_out, cost_usd, created_at)`. Uma transcrição pode ter N análises; `ai_summary` existente vira a primeira análise migrada (`preset='resumo'`).
+- **Presets** (prompt fixo + instruções de formato Markdown), selecionáveis no painel IA:
+  1. **Resumo executivo** — 5–10 linhas
+  2. **Processos estruturados** — passos numerados que a pessoa/equipe usou, na ordem em que aparecem, com quem faz o quê
+  3. **Conteúdo principal, sem ruído** — reescreve a transcrição mantendo só o que é substantivo; remove conversa paralela, repetição, fora de contexto; marca `[trecho removido: motivo]` quando relevante
+  4. **Orientação de vendas** — objeções ouvidas, respostas que funcionaram, próximos passos, sinais de compra
+  5. **Lista de ações** — checklist `- [ ]` com responsável e prazo quando dito
+  6. **Interpretação** — o que a transcrição revela além do dito (tom, gargalos, oportunidades), com citações curtas do texto como evidência
+  7. **Personalizado** — o campo livre atual (`ai_focus`) continua existindo
+- Para transcrições longas (um dia = horas de áudio), o backend **fatia** o `raw_text` por tokens (~12k por bloco), roda o preset em cada bloco e depois uma passada de consolidação — sem isso, o prompt estoura o contexto ou o custo.
+- Cada análise mostra modelo, tokens e custo estimado; o usuário escolhe o modelo LLM (default: o mais barato que aguenta o preset; configurável no admin).
+
+**Aceite:**
+- [ ] Tabela `ai_analyses` criada em `initDatabase()` (idempotente); `ai_summary` existente migrado
+- [ ] `POST /api/transcriptions/:id/analyze` com `{preset, custom_prompt?, model?}` → **202** e processamento em background pelo mesmo worker (ou fila separada leve), status consultável; `GET /api/transcriptions/:id/analyses` lista
+- [ ] Os 6 presets + personalizado implementados com prompts versionados em um arquivo próprio (`services/prompts.js`), não inline no `server.js`
+- [ ] Fatiamento + consolidação para `raw_text` acima do limite; testado com uma transcrição ≥ 60 min (concatenar áudios de teste ou usar `AUDIO_SAMPLE`)
+- [ ] Painel IA no detalhe: escolher preset → rodar → resultado renderizado em Markdown (usa o renderizador de T-04) numa aba/seção por análise, com "Copiar Markdown", "Exportar" (PDF/DOCX/TXT via `services/exporter.js`) e "Rodar de novo"
+- [ ] Chat existente passa a receber o contexto da análise selecionada além do `raw_text` (ex.: "ajusta o passo 3 do processo")
+- [ ] Nenhum texto inventado: falha de API → erro explícito na análise, nunca conteúdo placeholder
+- [ ] Custo por análise gravado e somado nas métricas do admin
+- [ ] `test_suite.js` cobre pelo menos 2 presets contra o áudio base
+- [ ] `docs/product.md` (§ funcionalidades) e `docs/stack.md` (schema + rotas) atualizados
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-19 — Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos)
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Fundação de** T-18
+**Por quê:** o caso de uso principal é 8 h de gravação por dia. Hoje o pipeline "funciona" só porque os áudios têm 30 s. Auditado em 14/09 (`server.js:592-745`):
+- Os blocos de 600 s são transcritos **em série** num `for` (`server.js:656`) — 8 h = 48 chamadas sequenciais, ~40–60 min de espera.
+- **Nenhum resultado parcial é persistido.** Se a chamada 40 falhar (timeout, 429, queda de rede) ou o processo reiniciar, os 39 blocos prontos são jogados fora e o job volta para `failed` ou recomeça do zero.
+- **Sem retry.** Uma falha transitória da OpenRouter mata o job inteiro.
+- Progresso é um número (20→90) sem ETA, sem "bloco X de Y".
+- Multer sem limite (`server.js:33`), sem validação por `ffprobe` antes de enfileirar, sem limite de arquivos por requisição.
+
+**Contexto:** `server.js:26-40` (Multer), `server.js:228-280` (`/api/transcribe`), `server.js:592-745` (worker), `services/audio.js` (`preprocessAudio`, `splitAudioSmart`), `services/openrouter.js:100-170` (`transcribeAudio`), `db.js` (schema)
+**Toca:** `server.js`, `services/audio.js`, `services/openrouter.js`, `db.js`, `app.js` (barra de progresso), `docs/stack.md`, `docs/system_design.md`, `pipeline.md`
+
+**Desenho:**
+1. **Tabela `transcription_chunks`**`(id, transcription_id, idx, offset_sec, duration_sec, path, status pending|processing|done|failed, attempts, text, segments_json, error, updated_at)`. O job vira um conjunto de blocos; cada bloco é a unidade de trabalho, persistida ao concluir.
+2. **Blocos em paralelo com limite:** `CHUNK_CONCURRENCY` (env, default 3). Pool simples com `Promise` + fila, sem dependência. 48 blocos a 3 por vez ≈ 15 min em vez de 45.
+3. **Retry por bloco:** até 3 tentativas com backoff exponencial (2 s, 8 s, 30 s) em erros transitórios (timeout, 429, 5xx, rede). Erro definitivo (400, arquivo corrompido) marca só o bloco como `failed`; o job termina como `completed_with_errors` com o texto dos blocos bons e marcação `[bloco 40 falhou: motivo]` no lugar do trecho — **nunca** texto inventado.
+4. **Retomada:** no boot e a cada poll, jobs `processing` com blocos `pending` retomam de onde pararam. Reprocessar um job = reprocessar só os blocos `failed`.
+5. **Progresso real:** `progress` = blocos `done` / total; `GET /:id/status` devolve `chunks_done`, `chunks_total`, `eta_seconds` (média móvel do tempo por bloco × restantes) e `stage` (`uploading|preprocessing|splitting|transcribing|assembling|analyzing`).
+6. **Limites e validação:** Multer `limits: { fileSize: 5 GB, files: 50 }`; `ffprobe` na hora do upload — rejeita sem trilha de áudio, rejeita > 10 h, grava `duration_seconds` já no `INSERT`. Erro **por arquivo** (um inválido não derruba os outros 49).
+7. **Pré-processamento sem travar o servidor:** `ffmpeg` via `spawn` (stream), não `exec` com buffer; `loudnorm` em uma passada (não duas) — 10 h de áudio não podem segurar o event loop nem estourar `maxBuffer`.
+8. **Disco:** arquivo original + FLAC 16 kHz + blocos ≈ 2× o tamanho do original em pico. Blocos apagados ao concluir; FLAC intermediário apagado; original fica (T-13 depende dele). `df` mínimo verificado antes de iniciar o pré-processamento.
+
+**Aceite:**
+- [ ] Tabela `transcription_chunks` criada de forma idempotente; migração não quebra transcrições existentes
+- [ ] Upload de 50 arquivos numa requisição funciona; o 51º é rejeitado com mensagem clara; arquivo de 5 GB sobe (testar com arquivo gerado por `ffmpeg -f lavfi`)
+- [ ] `ffprobe` rejeita arquivo sem áudio e > 10 h com erro por arquivo, sem afetar os demais
+- [ ] Blocos processados em paralelo (`CHUNK_CONCURRENCY`), resultados montados na ordem correta com timestamps contínuos
+- [ ] Matar o processo no meio de um job de ≥ 1 h e subir de novo → retoma dos blocos `pending`, sem repetir os `done` (evidência: log com "retomando 12/48")
+- [ ] Simular 429/timeout num bloco → retry com backoff, job conclui; simular falha definitiva → `completed_with_errors` com marcação explícita no texto
+- [ ] `/status` devolve `chunks_done/chunks_total/eta_seconds/stage`; UI mostra "Bloco 12 de 48 · ~9 min restantes"
+- [ ] Servidor continua respondendo (`GET /api/transcriptions` < 500 ms) durante o pré-processamento de um áudio de 2 h
+- [ ] Teste de referência: **áudio de 2 h** (gerado concatenando `tests/fixtures/sample.ogg`, ou `AUDIO_SAMPLE` real) conclui com `completed`, texto contínuo e custo registrado — resultado colado na evidência
+- [ ] `docs/stack.md` (schema, limites), `docs/system_design.md` (decisão de blocos/concorrência) e `pipeline.md` §2 atualizados
+
+**Custo de referência (large-v3 a US$ 0,006/min):** 8 h/dia ≈ US$ 2,90; 22 dias ≈ US$ 63/mês. Em `pro` (turbo, US$ 0,003/min): metade. Sem limite de uso no sistema — o limite é o crédito da OpenRouter.
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-20 — Formatos e idiomas
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-19 (validação por `ffprobe`)
+**Por quê:** paridade: o concorrente lista 24 formatos e 98 idiomas. Nós já aceitamos "o que o ffmpeg lê" — mas sem lista visível, sem `accept` no input, sem extração explícita de trilha de vídeo e com idioma hardcoded em `pt`.
+**Contexto:** `index.html` (input de arquivo do modal de upload, select de idioma), `services/audio.js` (`preprocessAudio`), `services/openrouter.js` (parâmetro `language`), `docs/product.md` §4.1
+**Toca:** `index.html`, `app.js`, `services/audio.js`, `docs/product.md`
+**Aceite:**
+- [ ] Input com `accept` cobrindo: MP3, M4A, MP4, MOV, AAC, WAV, OGG, OPUS, MPEG, WMA, WMV, AVI, FLAC, AIFF, ALAC, 3GP, MKV, WEBM, VOB, RMVB, MTS, TS — e o modal lista os formatos
+- [ ] Vídeo: `ffmpeg -vn` extrai só a trilha de áudio (primeira trilha, ou a de idioma padrão se houver várias) no pré-processamento
+- [ ] Select de idioma com os **98 idiomas do Whisper** (lista em `services/languages.js`, código ISO-639-1 + nome nativo), com busca, `pt` no topo e os 4 mais usados (pt, en, es, ja) fixados acima da lista
+- [ ] Opção **"Detectar automaticamente"** (omite `language` na chamada); o idioma detectado é gravado em `transcriptions.language`
+- [ ] Arquivo com formato fora do `accept` mas legível pelo ffmpeg ainda passa (o `accept` é conveniência, o `ffprobe` de T-19 é a validação real)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-21 — Exportar CSV + Ferramenta de Tradução com legendas
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-04 (para exibir traduções), T-13 (para exportar em massa)
+**Por quê:** paridade: falta CSV; e `/api/translate` hoje devolve só texto corrido — o concorrente traduz **mantendo os timestamps** e exporta legendas SRT/VTT no idioma escolhido.
+**Contexto:** `services/exporter.js`, `server.js` (`/api/translate`, `/api/export/:id/:format`), `app.js` (painel IA do detalhe)
+**Toca:** `services/exporter.js`, `server.js`, `db.js`, `app.js`, `index.html`
+**Aceite:**
+- [ ] `GET /api/export/:id/csv` → uma linha por segmento: `inicio,fim,locutor,texto` (UTF-8 com BOM para abrir no Excel)
+- [ ] Tabela `translations(id, transcription_id, language, segments_json, model, created_at)` — tradução **por segmento**, preservando `start/end/speaker`; feita em lotes de ~50 segmentos por chamada com instrução de manter o número de itens
+- [ ] Modal "Traduzir": idioma alvo (lista de T-20) + formato de download (PDF/DOCX/TXT/SRT/VTT/CSV) → gera e baixa; a tradução fica salva e aparece como aba no detalhe
+- [ ] Todos os formatos de exportação aceitam `?lang=xx` e usam a tradução salva quando existir
+- [ ] Exportação em massa (T-13) inclui CSV e aceita `lang`
+- [ ] `test_suite.js` cobre CSV e uma tradução por segmento (contagem de segmentos igual antes e depois)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-22 — Reconhecimento de locutores real (diarização)
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-19
+**Por quê:** hoje a caixa "Reconhecimento de locutores" **não faz nada**: grava um flag e todo segmento sai como `Locutor 1` (`services/openrouter.js:147,155`). Whisper não diariza. Para 8 h de vendas, saber **quem falou** é o que separa "texto" de "processo" — sem isso T-18 não consegue extrair "quem faz o quê".
+
+**Opções (decidir na sessão, pela ordem de custo/esforço):**
+| Opção | Como | Prós | Contras |
+|---|---|---|---|
+| **A. LLM multimodal via OpenRouter** (`google/gemini-2.5-flash` ou superior, com o **áudio** do bloco + a transcrição Whisper) | Pede ao modelo para atribuir locutor a cada segmento ouvindo o áudio | Sem infra nova; mesma chave; ~US$ 0,002/min | Rótulos consistentes só dentro do bloco (precisa passo de reconciliação entre blocos por amostra de voz descrita); não é diarização acústica de verdade |
+| **B. pyannote local** (Python, `pyannote.audio`) | Serviço auxiliar em container separado, CPU | Diarização real, timestamps de troca de locutor precisos, offline | Container + modelo (~1 GB), lento em CPU (≈ tempo real), papel Dev Python entra |
+| **C. API de diarização** (Deepgram, AssemblyAI) | Substitui o Whisper por um provedor que já diariza | Melhor qualidade, mais simples | Segunda chave/serviço, custo por minuto maior, foge do "só OpenRouter" |
+
+Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação com 2–4 pessoas), **B depois** se a precisão não bastar.
+
+**Aceite (independente da opção):**
+- [ ] Caixa de locutores marcada → segmentos saem com `Locutor 1..N` **reais**, consistentes ao longo do arquivo inteiro (não reiniciam a cada bloco)
+- [ ] Caixa desmarcada → sem custo/tempo extra (comportamento atual)
+- [ ] Usuário pode **renomear** locutores no detalhe ("Locutor 2" → "Cliente") e a renomeação vale para todos os segmentos e exportações
+- [ ] Tempo/custo extra exibido na estimativa do modal de upload quando marcado
+- [ ] `docs/product.md` passa a listar diarização em §4 só quando esta tarefa fechar; até lá, a caixa na UI ganha aviso "em breve" ou some
+- [ ] Teste com um áudio de 2 pessoas (gerar 2ª voz com TTS `Microsoft Zira` + concatenar com o `sample.ogg`) → ≥ 90% dos segmentos com o locutor certo
+
+**Evidência:** _(preencher)_
 
 ---
 

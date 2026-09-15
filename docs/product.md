@@ -68,6 +68,8 @@ Detalhado em [../pipeline.md](../pipeline.md). Resumo: `pending` → pré-proces
 | P-04 | UI de leitura da transcrição é crua | Conteúdo longo é difícil de consumir |
 | P-05 | Sem tema escuro | Uso prolongado cansa |
 | P-06 | Fila com concorrência 1 | 10 usuários = fila serial |
+| P-07 | "Reconhecimento de locutores" é só um flag — todo segmento sai `Locutor 1` | Sem "quem falou" em reuniões/vendas (T-22) |
+| P-08 | Blocos de áudio longo transcritos em série, sem retry nem resultado parcial salvo | 8 h de áudio = 45 min de espera e qualquer falha perde tudo (T-19) |
 
 Ver [MULTIUSER.md](MULTIUSER.md) para o detalhe de risco/segurança por trás de P-01/P-02/P-06.
 
