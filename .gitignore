@@ -14,3 +14,6 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Fixtures longos gerados localmente (ver docs/TASKS.md T-19) - nao versionar
+tests/fixtures/long/
