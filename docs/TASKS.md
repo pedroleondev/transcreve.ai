@@ -397,6 +397,9 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 6. **Limites e validação:** Multer `limits: { fileSize: 5 GB, files: 50 }`; `ffprobe` na hora do upload — rejeita sem trilha de áudio, rejeita > 10 h, grava `duration_seconds` já no `INSERT`. Erro **por arquivo** (um inválido não derruba os outros 49).
 7. **Pré-processamento sem travar o servidor:** `ffmpeg` via `spawn` (stream), não `exec` com buffer; `loudnorm` em uma passada (não duas) — 10 h de áudio não podem segurar o event loop nem estourar `maxBuffer`.
 8. **Disco:** arquivo original + FLAC 16 kHz + blocos ≈ 2× o tamanho do original em pico. Blocos apagados ao concluir; FLAC intermediário apagado; original fica (T-13 depende dele). `df` mínimo verificado antes de iniciar o pré-processamento.
+9. **Provedor mock para testar sem gastar (decisão 15/09):** `TRANSCRIBE_PROVIDER=mock` (env) faz `services/openrouter.js` devolver, por bloco, segmentos determinísticos (`[MOCK bloco N] ...`, timestamps espaçados) sem chamar a API. Controles por env para simular o que importa no T-19: `MOCK_LATENCY_MS` (tempo por bloco), `MOCK_FAIL_ONCE=12` (bloco 12 falha com 429 na 1ª tentativa e passa na 2ª — testa retry), `MOCK_FAIL_ALWAYS=30` (bloco 30 falha sempre — testa `completed_with_errors`). Regras: **recusado quando `NODE_ENV=production`**; todo texto sai com prefixo `[MOCK]` para nunca ser confundido com transcrição real (respeita a regra "sem dados fictícios" — o mock é explícito, nunca silencioso); `test_suite.js` continua usando a API real (é a suíte de integração); o mock é usado só pelos testes de mecânica de T-19 (`tests/long_audio.js`).
+
+**Custo real da tarefa com essa estratégia:** ~US$ 0 na mecânica (dezenas de execuções do áudio de 2 h em mock) + **uma** execução real curta para qualidade (15 min de áudio ≈ US$ 0,05 no Pro) + **uma** execução real do áudio de 2 h no final como evidência (≈ US$ 0,36 no Pro). Total < US$ 0,50.
 
 **Aceite:**
 - [ ] Tabela `transcription_chunks` criada de forma idempotente; migração não quebra transcrições existentes
@@ -407,7 +410,8 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 - [ ] Simular 429/timeout num bloco → retry com backoff, job conclui; simular falha definitiva → `completed_with_errors` com marcação explícita no texto
 - [ ] `/status` devolve `chunks_done/chunks_total/eta_seconds/stage`; UI mostra "Bloco 12 de 48 · ~9 min restantes"
 - [ ] Servidor continua respondendo (`GET /api/transcriptions` < 500 ms) durante o pré-processamento de um áudio de 2 h
-- [ ] Teste de referência: **áudio de 2 h** (gerado concatenando `tests/fixtures/sample.ogg`, ou `AUDIO_SAMPLE` real) conclui com `completed`, texto contínuo e custo registrado — resultado colado na evidência
+- [ ] `tests/long_audio.js` roda os cenários acima (paralelo, kill+retomada, retry, falha definitiva, servidor responsivo) contra `tests/fixtures/long/sample-2h.ogg` em **mock**, com `PASS/FAIL` por cenário — custo zero
+- [ ] Teste de referência **real**, uma vez: o áudio de 2 h em `pro` conclui com `completed`, texto contínuo (as 8 frases em ordem, alternando pt/en) e custo registrado — resultado colado na evidência
 - [ ] `docs/stack.md` (schema, limites), `docs/system_design.md` (decisão de blocos/concorrência) e `pipeline.md` §2 atualizados
 
 **Custo de referência (large-v3 a US$ 0,006/min):** 8 h/dia ≈ US$ 2,90; 22 dias ≈ US$ 63/mês. Em `pro` (turbo, US$ 0,003/min): metade. Sem limite de uso no sistema — o limite é o crédito da OpenRouter.
