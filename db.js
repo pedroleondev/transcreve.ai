@@ -76,6 +76,12 @@ async function initDatabase() {
         console.log('Adicionando coluna "ai_summary" na tabela "transcriptions"...');
         await runAsync(`ALTER TABLE transcriptions ADD COLUMN ai_summary TEXT`);
       }
+
+      const hasStage = columns.some(col => col.name === 'stage');
+      if (!hasStage) {
+        console.log('Adicionando coluna "stage" na tabela "transcriptions"...');
+        await runAsync(`ALTER TABLE transcriptions ADD COLUMN stage TEXT`);
+      }
     }
   } catch (err) {
     console.error('Erro durante a migração do banco de dados:', err.message);
@@ -176,6 +182,28 @@ async function initDatabase() {
         FOREIGN KEY(transcription_id) REFERENCES transcriptions(id) ON DELETE CASCADE
       )
     `);
+
+    // 7. Blocos de audio de uma transcricao longa: cada bloco e a unidade de
+    //    trabalho persistida, o que permite paralelismo, retry e retomada.
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS transcription_chunks (
+        id TEXT PRIMARY KEY,
+        transcription_id TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        offset_sec REAL NOT NULL,
+        duration_sec REAL NOT NULL,
+        path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        model_used TEXT,
+        segments_json TEXT,
+        error TEXT,
+        started_at DATETIME,
+        finished_at DATETIME,
+        FOREIGN KEY(transcription_id) REFERENCES transcriptions(id) ON DELETE CASCADE
+      )
+    `);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_chunks_transcription ON transcription_chunks(transcription_id, idx)`);
 
     console.log('Tabelas SQLite verificadas/criadas com sucesso.');
 

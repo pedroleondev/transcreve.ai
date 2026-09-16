@@ -1,4 +1,4 @@
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,6 +14,47 @@ function execPromise(command, opts = {}) {
   });
 }
 
+// spawn com args em array: sem shell, sem maxBuffer. Guarda so o rabo do stderr
+// para diagnostico — 10h de audio geram MB de log de progresso que nao interessam.
+function runProcess(bin, args, { keepStderr = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => {
+      stderr += d;
+      if (!keepStderr && stderr.length > 8192) stderr = stderr.slice(-4096);
+    });
+    child.on('error', err => reject(new Error(`${bin} nao encontrado ou falhou ao iniciar: ${err.message}`)));
+    child.on('close', code => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`${bin} ${args[0] || ''}... saiu com codigo ${code}\n${stderr.trim().split('\n').slice(-5).join('\n')}`));
+    });
+  });
+}
+
+/**
+ * Inspeciona um arquivo de midia: duracao e se tem trilha de audio.
+ * Usado no upload para rejeitar arquivos invalidos ANTES de enfileirar.
+ * @returns {Promise<{duration: number, hasAudio: boolean, codec: string|null}>}
+ */
+async function probeMedia(inputPath) {
+  const { stdout } = await runProcess('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'format=duration:stream=codec_type,codec_name',
+    '-of', 'json',
+    inputPath
+  ]);
+  const info = JSON.parse(stdout || '{}');
+  const audio = (info.streams || []).find(s => s.codec_type === 'audio');
+  return {
+    duration: parseFloat((info.format || {}).duration) || 0,
+    hasAudio: Boolean(audio),
+    codec: audio ? audio.codec_name : null
+  };
+}
+
 /**
  * Normaliza qualquer áudio/vídeo para o formato ideal do Whisper:
  * 16 kHz, mono, FLAC (lossless e compacto), com filtro passa-alta para
@@ -23,26 +64,69 @@ function execPromise(command, opts = {}) {
  * @returns {Promise<{path: string, duration: number}>}
  */
 async function preprocessAudio(inputPath, outputPath) {
+  // Ordem importa: reamostra ANTES de filtrar. Um lowpass em 8 kHz sobre fonte
+  // de 16 kHz (WhatsApp PTT) cai exatamente em Nyquist, o biquad degenera e a
+  // saida vira lixo apos ~2 min — bug encontrado em 15/09/2026 com audio de 2 h.
+  // 16 kHz ja limita a banda em 8 kHz; lowpass e desnecessario.
+  // loudnorm sobe internamente para 192 kHz, por isso o aresample final.
   const filters = [
+    'aresample=16000',
     'highpass=f=90',
-    'lowpass=f=8000',
     'loudnorm=I=-16:TP=-1.5:LRA=11',
     'aresample=16000'
   ].join(',');
 
-  await execPromise(
-    `ffmpeg -y -i "${inputPath}" -vn -ac 1 -af "${filters}" -c:a flac "${outputPath}"`
-  );
+  await runProcess('ffmpeg', [
+    '-y', '-nostdin', '-loglevel', 'error',
+    '-i', inputPath,
+    '-vn', '-ac', '1', '-af', filters, '-c:a', 'flac',
+    outputPath
+  ]);
 
   let duration = 0;
   try {
-    const { stdout } = await execPromise(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`
-    );
-    duration = parseFloat(stdout.trim()) || 0;
+    duration = (await probeMedia(outputPath)).duration;
   } catch (_) { /* ignore */ }
 
   return { path: outputPath, duration };
+}
+
+/**
+ * Volume medio em dBFS (volumedetect). Serve para distinguir "bloco em silencio"
+ * de "bloco com fala que o modelo nao transcreveu".
+ * @returns {Promise<number>} ex.: -25.3; -91 e silencio digital
+ */
+async function measureMeanVolume(inputPath) {
+  let stderr = '';
+  try {
+    stderr = (await runProcess('ffmpeg', [
+      '-hide_banner', '-nostdin', '-nostats', '-i', inputPath, '-af', 'volumedetect', '-f', 'null', '-'
+    ], { keepStderr: true })).stderr;
+  } catch (e) {
+    stderr = e.message;
+  }
+  const m = stderr.match(/mean_volume:\s*(-?[\d.]+)\s*dB/);
+  return m ? parseFloat(m[1]) : -91;
+}
+
+/**
+ * Corta um trecho em pedacos de duracao fixa (sem deteccao de silencio).
+ * Usado para re-transcrever um bloco suspeito em janelas menores.
+ * @returns {Promise<Array<{path: string, offset: number, duration: number}>>}
+ */
+async function splitFixed(inputPath, outDir, totalDuration, pieceSec) {
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const pieces = [];
+  for (let start = 0, i = 0; start < totalDuration; start += pieceSec, i++) {
+    const end = Math.min(start + pieceSec, totalDuration);
+    const outPath = path.join(outDir, `sub_${String(i).padStart(2, '0')}.flac`);
+    await runProcess('ffmpeg', [
+      '-y', '-nostdin', '-loglevel', 'error',
+      '-ss', String(start), '-to', String(end), '-i', inputPath, '-c:a', 'flac', outPath
+    ]);
+    pieces.push({ path: outPath, offset: start, duration: end - start });
+  }
+  return pieces;
 }
 
 /**
@@ -52,9 +136,12 @@ async function preprocessAudio(inputPath, outputPath) {
 async function detectSilences(inputPath, noiseDb = -32, minDuration = 0.6) {
   let stderr = '';
   try {
-    const res = await execPromise(
-      `ffmpeg -hide_banner -i "${inputPath}" -af "silencedetect=noise=${noiseDb}dB:d=${minDuration}" -f null -`
-    );
+    const res = await runProcess('ffmpeg', [
+      '-hide_banner', '-nostdin', '-nostats',
+      '-i', inputPath,
+      '-af', `silencedetect=noise=${noiseDb}dB:d=${minDuration}`,
+      '-f', 'null', '-'
+    ], { keepStderr: true });
     stderr = res.stderr;
   } catch (e) {
     stderr = e.message; // silencedetect ainda imprime no stderr mesmo em erro
@@ -85,7 +172,7 @@ async function splitAudioSmart(inputPath, chunksDir, totalDuration, targetChunkS
   if (!fs.existsSync(chunksDir)) fs.mkdirSync(chunksDir, { recursive: true });
 
   if (!totalDuration || totalDuration <= targetChunkSec) {
-    return [{ path: inputPath, offset: 0 }];
+    return [{ path: inputPath, offset: 0, duration: totalDuration || 0 }];
   }
 
   // Constrói pontos de corte preferencialmente no meio de silêncios
@@ -121,10 +208,12 @@ async function splitAudioSmart(inputPath, chunksDir, totalDuration, targetChunkS
     const start = cutPoints[i];
     const end = cutPoints[i + 1];
     const outPath = path.join(chunksDir, `chunk_${String(i).padStart(3, '0')}.flac`);
-    await execPromise(
-      `ffmpeg -y -ss ${start} -to ${end} -i "${inputPath}" -c:a flac "${outPath}"`
-    );
-    chunks.push({ path: outPath, offset: start });
+    await runProcess('ffmpeg', [
+      '-y', '-nostdin', '-loglevel', 'error',
+      '-ss', String(start), '-to', String(end),
+      '-i', inputPath, '-c:a', 'flac', outPath
+    ]);
+    chunks.push({ path: outPath, offset: start, duration: end - start });
   }
   return chunks;
 }
@@ -183,7 +272,9 @@ function filterHallucinations(segments) {
     if (/^[\s♪♫\-.…]+$/.test(raw)) continue;
 
     // interjeições repetidas típicas de alucinação ("E aí E aí", "Ah Ah Ah", "Hum Hum")
-    if (/^((e\s*a[ií]|ah+|hum+|uh+|hmm+|ei+)[\s,.!?]*){2,}$/i.test(raw.trim())) continue;
+    if (/^((e\s*a[ií]?|ah+|hum+|uh+|hmm+|ei+)[\s,.!?]*){2,}$/i.test(raw.trim())) continue;
+    // "E a" / "E aí" sozinho num segmento longo = modelo em colapso, nao fala
+    if (/^(e\s*a[ií]?)[\s,.!?]*$/i.test(raw.trim()) && dur > 2.0) continue;
 
     // repetição imediata idêntica
     if (norm === lastNorm) {
@@ -218,6 +309,10 @@ function filterHallucinations(segments) {
 
 module.exports = {
   execPromise,
+  runProcess,
+  probeMedia,
+  measureMeanVolume,
+  splitFixed,
   preprocessAudio,
   detectSilences,
   splitAudioSmart,

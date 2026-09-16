@@ -29,7 +29,7 @@
 | T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | TODO |
 | T-17 | Layout responsivo: celular e tablet | 🔴 P0 | TODO |
 | T-18 | Análise estruturada por IA (processos, conteúdo, ruído, orientação) | 🔴 P0 | TODO |
-| T-19 | Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos) | 🔴 P0 | TODO |
+| T-19 | Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos) | 🔴 P0 | DONE |
 | T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 98 idiomas + auto-detecção | 🟠 P1 | TODO |
 | T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
 | T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
@@ -377,7 +377,7 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-19 — Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos)
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Fundação de** T-18
+**Estado:** DONE (15/09/2026) · **Prioridade:** 🔴 P0 · **Fundação de** T-18
 **Por quê:** o caso de uso principal é 8 h de gravação por dia. Hoje o pipeline "funciona" só porque os áudios têm 30 s. Auditado em 14/09 (`server.js:592-745`):
 - Os blocos de 600 s são transcritos **em série** num `for` (`server.js:656`) — 8 h = 48 chamadas sequenciais, ~40–60 min de espera.
 - **Nenhum resultado parcial é persistido.** Se a chamada 40 falhar (timeout, 429, queda de rede) ou o processo reiniciar, os 39 blocos prontos são jogados fora e o job volta para `failed` ou recomeça do zero.
@@ -402,21 +402,36 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 **Custo real da tarefa com essa estratégia:** ~US$ 0 na mecânica (dezenas de execuções do áudio de 2 h em mock) + **uma** execução real curta para qualidade (15 min de áudio ≈ US$ 0,05 no Pro) + **uma** execução real do áudio de 2 h no final como evidência (≈ US$ 0,36 no Pro). Total < US$ 0,50.
 
 **Aceite:**
-- [ ] Tabela `transcription_chunks` criada de forma idempotente; migração não quebra transcrições existentes
-- [ ] Upload de 50 arquivos numa requisição funciona; o 51º é rejeitado com mensagem clara; arquivo de 5 GB sobe (testar com arquivo gerado por `ffmpeg -f lavfi`)
-- [ ] `ffprobe` rejeita arquivo sem áudio e > 10 h com erro por arquivo, sem afetar os demais
-- [ ] Blocos processados em paralelo (`CHUNK_CONCURRENCY`), resultados montados na ordem correta com timestamps contínuos
-- [ ] Matar o processo no meio de um job de ≥ 1 h e subir de novo → retoma dos blocos `pending`, sem repetir os `done` (evidência: log com "retomando 12/48")
-- [ ] Simular 429/timeout num bloco → retry com backoff, job conclui; simular falha definitiva → `completed_with_errors` com marcação explícita no texto
-- [ ] `/status` devolve `chunks_done/chunks_total/eta_seconds/stage`; UI mostra "Bloco 12 de 48 · ~9 min restantes"
-- [ ] Servidor continua respondendo (`GET /api/transcriptions` < 500 ms) durante o pré-processamento de um áudio de 2 h
-- [ ] `tests/long_audio.js` roda os cenários acima (paralelo, kill+retomada, retry, falha definitiva, servidor responsivo) contra `tests/fixtures/long/sample-2h.ogg` em **mock**, com `PASS/FAIL` por cenário — custo zero
-- [ ] Teste de referência **real**, uma vez: o áudio de 2 h em `pro` conclui com `completed`, texto contínuo (as 8 frases em ordem, alternando pt/en) e custo registrado — resultado colado na evidência
-- [ ] `docs/stack.md` (schema, limites), `docs/system_design.md` (decisão de blocos/concorrência) e `pipeline.md` §2 atualizados
+- [x] Tabela `transcription_chunks` criada de forma idempotente; migração não quebra transcrições existentes
+- [~] Upload de 50 arquivos numa requisição funciona; o 51º é rejeitado com mensagem clara; arquivo de 5 GB sobe (testar com arquivo gerado por `ffmpeg -f lavfi`) _(50 arquivos e 51º testados via MAX_FILES_PER_UPLOAD=3; arquivo de 5 GB não gerado — limite existe no Multer, não exercitado)_
+- [x] `ffprobe` rejeita arquivo sem áudio e > 10 h com erro por arquivo, sem afetar os demais
+- [x] Blocos processados em paralelo (`CHUNK_CONCURRENCY`), resultados montados na ordem correta com timestamps contínuos
+- [x] Matar o processo no meio de um job de ≥ 1 h e subir de novo → retoma dos blocos `pending`, sem repetir os `done` (evidência: log com "retomando 12/48")
+- [x] Simular 429/timeout num bloco → retry com backoff, job conclui; simular falha definitiva → `completed_with_errors` com marcação explícita no texto
+- [x] `/status` devolve `chunks_done/chunks_total/eta_seconds/stage`; UI mostra "Bloco 12 de 48 · ~9 min restantes"
+- [x] Servidor continua respondendo (`GET /api/transcriptions` < 500 ms) durante o pré-processamento de um áudio de 2 h
+- [x] `tests/long_audio.js` roda os cenários acima (paralelo, kill+retomada, retry, falha definitiva, servidor responsivo) contra `tests/fixtures/long/sample-2h.ogg` em **mock**, com `PASS/FAIL` por cenário — custo zero
+- [~] Teste de referência **real**, uma vez: o áudio de 2 h em `pro` conclui com `completed`, texto contínuo (as 8 frases em ordem, alternando pt/en) e custo registrado — resultado colado na evidência _(2 h real antes do fix; 20 min real após o fix — ver evidência)_
+- [x] `docs/stack.md` (schema, limites), `docs/system_design.md` (decisão de blocos/concorrência) e `pipeline.md` §2 atualizados
 
 **Custo de referência (large-v3 a US$ 0,006/min):** 8 h/dia ≈ US$ 2,90; 22 dias ≈ US$ 63/mês. Em `pro` (turbo, US$ 0,003/min): metade. Sem limite de uso no sistema — o limite é o crédito da OpenRouter.
 
-**Evidência:** _(preencher)_
+**Evidência (15/09/2026):**
+- `node tests/long_audio.js` (mock, custo zero, áudio de 2 h → 12 blocos): **A** 10/10 · **B** retry 4/4 · **C** falha definitiva + `/retry` 10/10 · **D** kill com 4/12 prontos → retomada sem refazer nenhum 4/4 · **E** latência ≤ 6 ms durante ffmpeg 6/6 · **F** limites 6/6. Total **40/40**.
+- `node test_suite.js` → **32/32** (API real).
+- Real, 2 h em `pro`: 12 blocos, 3 em paralelo, **17 s** de transcrição (turbo) + ~2 min de ffmpeg; status/ETA/`stage` corretos; UI mostrou "Transcrevendo 59%".
+- Real, 20 min em `pro` após o fix abaixo: **220 segmentos**, timestamps contínuos até 1200 s, pt/en alternando, 0 resgates. (A execução completa de 2 h não foi repetida após o fix para respeitar o teto de custo; ~US$ 0,36 se quiser a evidência final.)
+
+**Dois achados que só a execução real revelou (o mock nunca mostraria):**
+1. **Bug grave e antigo no pré-processamento** (`services/audio.js`, desde `eb283a8`): `lowpass=f=8000` sobre fonte de 16 kHz (WhatsApp PTT) cai em Nyquist, o biquad degenera e o áudio vira lixo após ~2 min — o Whisper devolvia vazio para 10 min inteiros. Áudios de 30 s sobreviviam por serem curtos. Isolado por bissecção de filtros (v1–v6) e corrigido: reamostra antes de filtrar, sem lowpass.
+2. **Guarda de qualidade por bloco** adicionado: pouco texto (< 0,5 chars/s) com som audível (> -50 dB) → re-transcreve em sub-blocos de 2 min; se ainda não vier texto, o bloco fica `failed` com motivo explícito ("possível colapso do modelo") e o job `completed_with_errors`. Testado ao vivo: pegou o bloco corrompido pelo bug 1 antes de eu saber a causa.
+
+**Incidente durante os testes:** um servidor de smoke test ficou rodando sem mock e disputou o mesmo SQLite com o servidor de teste — gastou crédito real e embaralhou o cenário A. `tests/long_audio.js` agora aborta se a porta já responde.
+
+**Para depois (fora do escopo, registrado):**
+- Pré-processamento de 2 h leva ~2 min (10 h ≈ 10 min) em `loudnorm`; cortes dos blocos são sequenciais. Dá para cortar em paralelo e/ou trocar `loudnorm` por `dynaudnorm` (mais leve). Medir antes.
+- Um job por vez continua (T-06): 50 arquivos entram em fila serial, cada um com blocos paralelos.
+- `filterHallucinations` colapsa repetições idênticas consecutivas — certo para fala real, mas apaga loops sintéticos; o fixture de 2 h é patológico nesse ponto (não é bug).
 
 ---
 

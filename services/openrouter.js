@@ -3,6 +3,61 @@ const FormData = require('form-data');
 const fs = require('fs');
 const { getAsync } = require('../db');
 
+// ---------------------------------------------------------------------------
+// Provedor MOCK — so para testar a mecanica do pipeline (paralelismo, retry,
+// retomada) sem gastar credito. Explicito por env, recusado em producao, e todo
+// texto sai prefixado com [MOCK] para nunca ser confundido com transcricao real.
+//   TRANSCRIBE_PROVIDER=mock
+//   MOCK_LATENCY_MS=300      tempo simulado por bloco
+//   MOCK_FAIL_ONCE=12        bloco 12 falha com 429 na 1a tentativa (testa retry)
+//   MOCK_FAIL_ALWAYS=30      bloco 30 falha sempre com 400 (testa falha definitiva)
+// ---------------------------------------------------------------------------
+const MOCK_ENABLED = process.env.TRANSCRIBE_PROVIDER === 'mock';
+if (MOCK_ENABLED && process.env.NODE_ENV === 'production') {
+  throw new Error('TRANSCRIBE_PROVIDER=mock e proibido com NODE_ENV=production.');
+}
+if (MOCK_ENABLED) {
+  console.warn('[OpenRouter] *** PROVEDOR MOCK ATIVO — nenhuma transcricao real sera feita ***');
+}
+const mockFailedOnce = new Set();
+
+async function mockTranscribe(filePath, opts = {}) {
+  const idx = Number.isInteger(opts.chunkIndex) ? opts.chunkIndex : 0;
+  const failOnce = process.env.MOCK_FAIL_ONCE !== undefined ? Number(process.env.MOCK_FAIL_ONCE) : null;
+  const failAlways = process.env.MOCK_FAIL_ALWAYS !== undefined ? Number(process.env.MOCK_FAIL_ALWAYS) : null;
+  const latency = Number(process.env.MOCK_LATENCY_MS || 300);
+
+  await new Promise(r => setTimeout(r, latency));
+
+  if (failAlways === idx) {
+    throw new Error('OpenRouter HTTP 400: [MOCK] falha definitiva simulada');
+  }
+  if (failOnce === idx && !mockFailedOnce.has(idx)) {
+    mockFailedOnce.add(idx);
+    throw new Error('OpenRouter HTTP 429: [MOCK] rate limit simulado');
+  }
+
+  let duration = opts.durationHint || 0;
+  if (!duration) {
+    try { duration = (await require('./audio').probeMedia(filePath)).duration; } catch (_) { duration = 30; }
+  }
+  const segments = [];
+  for (let t = 0; t < duration; t += 5) {
+    segments.push({
+      speaker: 'Locutor 1',
+      start: t,
+      end: Math.min(t + 5, duration),
+      text: `[MOCK bloco ${idx}] segmento ${segments.length + 1}`
+    });
+  }
+  return {
+    model_used: 'mock/transcriber',
+    text: segments.map(s => s.text).join(' '),
+    segments,
+    duration
+  };
+}
+
 /**
  * Catálogo de Modelos da OpenRouter para Transcrição de Áudio
  * Preços em USD por minuto de áudio e nível de precisão técnica para Português do Brasil (PT-BR)
@@ -99,7 +154,11 @@ const DEFAULT_PROMPT_PTBR =
   'Transcrição de uma ligação de atendimento comercial em português do Brasil sobre planos de saúde ' +
   '(Amil, Bradesco, SulAmérica, PME, adesão, co-participação, carência, boleto, cotação, corretor).';
 
+const TRANSCRIBE_TIMEOUT_MS = Number(process.env.TRANSCRIBE_TIMEOUT_MS || 10 * 60 * 1000);
+
 async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'openai/whisper-large-v3', opts = {}) {
+  if (MOCK_ENABLED) return mockTranscribe(filePath, opts);
+
   const apiKey = await getActiveOpenRouterKey();
   const primaryModel = await resolveWhisperModel(modeOrModelId);
   const promptText = opts.prompt || DEFAULT_PROMPT_PTBR;
@@ -135,7 +194,8 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
           'X-Title': 'TurboScribe Local SaaS',
           ...formData.getHeaders()
         },
-        body: formData
+        body: formData,
+        timeout: TRANSCRIBE_TIMEOUT_MS
       });
 
       if (response.ok) {
@@ -183,6 +243,8 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
  * Chamada para Chat / ChatGPT via OpenRouter (Resumo e Perguntas sobre o Áudio)
  */
 async function generateChatCompletion(transcriptText, prompt) {
+  if (MOCK_ENABLED) return `[MOCK] resposta simulada para: ${String(prompt).slice(0, 80)}`;
+
   const apiKey = await getActiveOpenRouterKey();
 
   const systemMessage = {

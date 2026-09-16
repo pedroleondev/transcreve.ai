@@ -35,7 +35,7 @@ async function runTestSuite() {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       const row = await getAsync(`SELECT status FROM transcriptions WHERE id = ?`, [transId]);
-      if (row && (row.status === 'completed' || row.status === 'failed')) return row.status;
+      if (row && ['completed', 'completed_with_errors', 'failed'].includes(row.status)) return row.status;
       await new Promise(r => setTimeout(r, 2000));
     }
     return 'timeout';

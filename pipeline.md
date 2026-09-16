@@ -30,10 +30,16 @@ graph TD
     OR --> Whisper[Whisper Large v3 / Turbo / Whisper 1 / Gemini]
 ```
 
-- **Core Backend**: `server.js` (Express + Upload Multer + Autenticação JWT).
-- **Banco de Dados**: `db.js` (SQLite3 com tabelas `users`, `folders`, `transcriptions`, `segments`, `api_keys`, `settings`, `audit_logs`).
-- **Serviço de IA**: `services/openrouter.js` (Integração OpenRouter com cálculo de preços por segundo e métricas de acurácia PT-BR).
+- **Core Backend**: `server.js` (Express + Upload Multer + Autenticação JWT + validação `ffprobe` por arquivo).
+- **Worker de transcrição**: `services/pipeline.js` — um job por vez; dentro do job, blocos em paralelo com retry e retomada (detalhe em `docs/system_design.md` §6).
+- **Áudio**: `services/audio.js` — `ffmpeg`/`ffprobe` via `spawn` (normalização 16 kHz mono FLAC + loudnorm, corte nos silêncios, filtro de alucinações).
+- **Banco de Dados**: `db.js` (SQLite3 com tabelas `users`, `projects`, `transcriptions`, `transcription_chunks`, `segments`, `api_keys`, `system_settings`, `system_logs`).
+- **Serviço de IA**: `services/openrouter.js` (Integração OpenRouter com cálculo de preços por segundo e métricas de acurácia PT-BR; `TRANSCRIBE_PROVIDER=mock` para testes de mecânica sem custo).
 - **Frontend SPA**: `index.html` + `app.js` (Tailwind CSS, Lucide Icons, Audio Web API, Drag & Drop nativo).
+
+### 2.1 Ciclo de um áudio longo (a partir de 15/09/2026)
+`pending` → **preprocessing** (ffmpeg) → **splitting** (blocos de ~600 s no silêncio, 1 linha em `transcription_chunks` por bloco) → **transcribing** (`CHUNK_CONCURRENCY` blocos por vez; cada bloco persistido ao concluir; 429/5xx/rede → nova tentativa com backoff; erro definitivo → só o bloco fica `failed`) → **assembling** (ordem + offset + filtro de alucinações; bloco falho vira `[bloco N falhou: motivo]`) → **analyzing** (resumo focado, opcional) → `completed` | `completed_with_errors`.
+Queda do processo no meio: o worker retoma o job `processing` e refaz só os blocos não concluídos. `POST /api/transcriptions/:id/retry` reprocessa só os `failed`. Testes de mecânica: `node tests/long_audio.js` (mock, custo zero).
 
 ---
 
@@ -144,8 +150,12 @@ docker compose build && docker compose up -d
 # Conferir se as dependencias de sistema existem DENTRO do container
 docker exec transcreveai-app sh -c 'ffmpeg -version | head -1'
 
-# Reprocessar uma transcricao que falhou (o worker repolla a fila a cada 5s)
-node -e "const s=require('sqlite3');const d=new s.Database('turboscribe.sqlite');d.run(\"UPDATE transcriptions SET status='pending', progress=0, error_message=NULL WHERE id='<ID>'\",()=>process.exit(0));"
+# Reprocessar so os blocos que falharam de uma transcricao (ou o job inteiro, se falhou antes de fatiar)
+curl -X POST http://localhost:3000/api/transcriptions/<ID>/retry
+
+# Testar a mecanica de audio longo sem gastar credito (mock; gera o fixture antes)
+powershell -File tests/fixtures/make-long-sample.ps1
+node tests/long_audio.js
 
 # Executar a suíte de testes de integração
 node test_suite.js
