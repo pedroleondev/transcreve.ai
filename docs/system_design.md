@@ -49,10 +49,12 @@ graph TD
 **Tradeoff aceito:** sem type-safety, sem tree-shaking, `app.js` já em 1617 linhas num único arquivo. Cache-busting manual via query string na tag `<script>` (`?v=X.Y.Z`).
 **Quando revisitar:** se a complexidade de estado da SPA continuar crescendo além do que um único arquivo suporta legivelmente.
 
-### 6. Pipeline de transcrição assíncrono com pré-processamento
-**Decisão:** áudio passa por `ffmpeg` (normaliza para 16kHz mono FLAC + `loudnorm`) e, se > 600s, é dividido nos silêncios antes de ir para o Whisper por blocos; depois passa por um filtro de alucinações.
-**Por quê:** Whisper degrada em arquivos longos e em áudio não normalizado; blocos menores custam menos e falham de forma mais isolada (um bloco ruim não derruba o áudio inteiro).
-**Tradeoff aceito:** mais chamadas de API por áudio longo (custo), mais etapas que podem falhar individualmente, complexidade adicional em `services/audio.js`.
+### 6. Pipeline de transcrição: o bloco é a unidade de trabalho
+**Decisão:** áudio passa por `ffmpeg` (16 kHz mono FLAC + `loudnorm`), é dividido em blocos de ~600 s cortados no silêncio mais próximo, e **cada bloco vira uma linha em `transcription_chunks`**. O worker (`services/pipeline.js`) transcreve os blocos pendentes em paralelo (`CHUNK_CONCURRENCY`, default 3), persiste cada resultado assim que chega, tenta de novo em erro transitório (429/5xx/rede, backoff 2 s → 8 s → 30 s), e marca só o bloco em erro definitivo. A montagem lê os blocos na ordem, soma o `offset_sec` aos timestamps e, para bloco falho, insere `[bloco N falhou: motivo]` no lugar do trecho.
+**Por quê:** o caso de uso é 8 h de áudio por dia. Com blocos em série e sem persistência (estado anterior a 15/09/2026), uma falha na chamada 40 de 48 jogava fora 39 blocos prontos — e 8 h levavam ~45 min. Agora: ~15 min, e qualquer queda retoma de onde parou.
+**Retomada:** o worker seleciona jobs `processing` antes de `pending`; um job `processing` com o worker livre é resto de execução interrompida. Blocos presos em `processing` voltam a `pending`; blocos `done` nunca são refeitos. `POST /:id/retry` reseta só os `failed`.
+**Tradeoff aceito:** um job por vez (a concorrência é intra-job) — 50 arquivos enviados juntos ainda entram em fila serial (T-06). Blocos ficam em disco (`uploads/chunks_<id>/`, ~2× o tamanho do original no pico) até o job terminar. `filterHallucinations` roda na montagem, sobre o todo — um bloco isolado não é filtrado.
+**Testado sem custo:** `TRANSCRIBE_PROVIDER=mock` substitui a OpenRouter por segmentos determinísticos prefixados `[MOCK]` (recusado em produção); `tests/long_audio.js` cobre paralelismo, retry, falha definitiva, kill+retomada, responsividade e limites de upload contra um áudio de 2 h.
 **Detalhe completo:** [../pipeline.md](../pipeline.md).
 
 ### 7. Bind-mount Docker para código, imagem para binários
@@ -73,22 +75,28 @@ sequenceDiagram
     participant O as OpenRouter
 
     U->>S: POST /api/transcribe (multipart)
-    S->>DB: INSERT transcriptions (status=pending)
-    S-->>U: 202 + id
+    S->>A: ffprobe (tem áudio? duração ≤ 10h?)
+    S->>DB: INSERT transcriptions (status=pending, duration)
+    S-->>U: 202 + id (erros por arquivo, se houver)
     loop a cada 5s
-        W->>DB: SELECT status='pending' LIMIT 1
+        W->>DB: SELECT status IN (processing, pending) LIMIT 1
     end
-    W->>A: preprocessAudio (normaliza, split se >600s)
-    W->>O: transcribe por bloco (Whisper)
-    O-->>W: texto + timestamps
-    W->>W: filtro de alucinações
+    W->>A: preprocessAudio + splitAudioSmart (blocos ~600s no silêncio)
+    W->>DB: INSERT transcription_chunks (1 linha por bloco, pending)
+    par CHUNK_CONCURRENCY blocos por vez
+        W->>O: transcribe bloco i
+        O-->>W: segmentos (relativos ao bloco)
+        W->>DB: UPDATE chunk i = done + segments_json
+    end
+    Note over W,DB: erro transitório → pending + backoff; definitivo → failed
+    W->>W: monta na ordem, soma offset, filtro de alucinações
     opt ai_focus preenchido
         W->>O: resumo focado
     end
-    W->>DB: UPDATE status=completed, raw_text, segments
+    W->>DB: UPDATE status=completed | completed_with_errors, raw_text, segments
     U->>S: GET /api/transcriptions/:id/status (poll)
-    S->>DB: SELECT
-    S-->>U: status atual
+    S->>DB: SELECT + agregação dos blocos
+    S-->>U: status, stage, chunks_done/total, eta_seconds
 ```
 
 ## Ver também

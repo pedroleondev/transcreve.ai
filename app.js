@@ -504,12 +504,25 @@ function renderTranscriptionsTable() {
           <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
           <span>Concluído</span>
         </span>`;
+    } else if (item.status === 'completed_with_errors') {
+      statusBadge = `
+        <div class="flex flex-col items-start space-y-1">
+          <span title="${escapeHtml(item.error_message || '')}" class="inline-flex items-center space-x-1 text-amber-700 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 cursor-help">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+            <span>Com falhas</span>
+          </span>
+          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 hover:underline font-bold">Reprocessar blocos</button>
+        </div>`;
     } else if (item.status === 'processing') {
+      const stageLabel = {
+        preprocessing: 'Normalizando', splitting: 'Fatiando', transcribing: 'Transcrevendo',
+        assembling: 'Montando', analyzing: 'Resumindo'
+      }[item.stage] || 'Processando';
       statusBadge = `
         <div class="flex flex-col items-start space-y-1 min-w-[80px]">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span class="text-blue-700 font-bold text-xs">Processando</span>
+            <span class="text-blue-700 font-bold text-xs">${stageLabel}</span>
           </div>
           <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
             <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full transition-all duration-700" style="width: ${progress}%"></div>
@@ -529,11 +542,12 @@ function renderTranscriptionsTable() {
         </div>`;
     } else if (item.status === 'failed') {
       statusBadge = `
-        <div title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="cursor-help">
-          <span class="inline-flex items-center space-x-1 text-red-600 font-bold text-xs bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+        <div class="flex flex-col items-start space-y-1">
+          <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="inline-flex items-center space-x-1 text-red-600 font-bold text-xs bg-red-50 px-2 py-0.5 rounded-full border border-red-200 cursor-help">
             <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
             <span>Falhou</span>
           </span>
+          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 hover:underline font-bold">Tentar de novo</button>
         </div>`;
     }
 
@@ -613,6 +627,21 @@ function stopProgressPolling() {
   if (state.pollingInterval) {
     clearInterval(state.pollingInterval);
     state.pollingInterval = null;
+  }
+}
+
+// Reprocessa so os blocos que falharam (ou o job inteiro, se falhou antes de fatiar)
+async function retryTranscription(id) {
+  try {
+    const res = await fetch(`/api/transcriptions/${id}/retry`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao reprocessar');
+    await fetchTranscriptions(); // a lista ja mostra "Na Fila" e liga o polling
+  } catch (e) {
+    alert('Erro ao reprocessar: ' + e.message); // T-14 troca alert() por modal proprio
   }
 }
 
@@ -918,6 +947,37 @@ async function submitTranscription() {
   }
 }
 
+function isFinalStatus(status) {
+  return status === 'completed' || status === 'completed_with_errors' || status === 'failed';
+}
+
+function formatEta(seconds) {
+  if (seconds === null || seconds === undefined) return '';
+  if (seconds < 60) return 'menos de 1 min restante';
+  const m = Math.round(seconds / 60);
+  return `~${m} min restante${m > 1 ? 's' : ''}`;
+}
+
+// Mensagem de etapa a partir do estado REAL do job (stage + blocos + ETA),
+// nao de faixas de porcentagem adivinhadas.
+function describeJobProgress(s) {
+  switch (s.stage) {
+    case 'preprocessing': return '🔍 Normalizando o áudio (16 kHz, volume)...';
+    case 'splitting': return '✂️ Fatiando o áudio nos silêncios...';
+    case 'transcribing': {
+      const total = s.chunks_total || 0;
+      const done = s.chunks_done || 0;
+      const eta = formatEta(s.eta_seconds);
+      if (total <= 1) return '🎙️ Transcrevendo...';
+      return `🎙️ Bloco ${Math.min(done + 1, total)} de ${total}${eta ? ' · ' + eta : ''}`;
+    }
+    case 'assembling': return '🧩 Montando a transcrição...';
+    case 'analyzing': return '🤖 Gerando resumo com foco no assunto...';
+    default:
+      return s.status === 'pending' ? '⏳ Na fila, aguardando o worker...' : 'Processando...';
+  }
+}
+
 // Exibe o painel de progresso no modal após o upload ser aceito
 function showTranscriptionProgressPanel(jobId, fileName) {
   const modalContent = document.getElementById('transcribe-modal-content');
@@ -954,27 +1014,18 @@ function showTranscriptionProgressPanel(jobId, fileName) {
       const pct = statusData.progress || 0;
       if (progressBar) progressBar.style.width = `${pct}%`;
       if (progressPct) progressPct.innerText = `${pct}%`;
+      if (progressMsg) progressMsg.innerText = describeJobProgress(statusData);
 
-      // Mensagens de etapa por faixa de progresso
-      let msg = 'Aguardando início...';
-      if (pct >= 1 && pct < 10) msg = '🔍 Analisando o arquivo...';
-      else if (pct >= 10 && pct < 16) msg = '✂️ Extraindo e preparando o áudio...';
-      else if (pct >= 16 && pct < 20) msg = '🔪 Fatiando áudio em partes de 15 min...';
-      else if (pct >= 20 && pct < 92) {
-        const chunk = Math.ceil(((pct - 20) / 70) * 24);
-        msg = `🎙️ Transcrevendo parte ${chunk} com Whisper...`;
-      }
-      else if (pct >= 92 && pct < 96) msg = '🤖 Gerando resumo com foco no assunto...';
-      else if (pct >= 96 && pct < 100) msg = '💾 Gravando transcrição no banco...';
-      else if (pct === 100) msg = '✅ Transcrição concluída com sucesso!';
-      if (progressMsg) progressMsg.innerText = msg;
-
-      if (statusData.status === 'completed' || statusData.status === 'failed') {
+      if (isFinalStatus(statusData.status)) {
         clearInterval(pollJob);
         await fetchTranscriptions();
 
-        if (statusData.status === 'completed') {
-          if (progressMsg) progressMsg.innerText = '✅ Transcrição concluída! Clique em fechar para ver o resultado.';
+        if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
+          if (progressMsg) {
+            progressMsg.innerText = statusData.status === 'completed'
+              ? '✅ Transcrição concluída! Clique em fechar para ver o resultado.'
+              : `⚠️ Concluída com falhas: ${statusData.error_message || ''}. Você pode reprocessar só os blocos que falharam na lista.`;
+          }
           if (btnClose) {
             btnClose.innerText = 'VER TRANSCRIÇÃO';
             btnClose.onclick = () => {
@@ -983,7 +1034,7 @@ function showTranscriptionProgressPanel(jobId, fileName) {
             };
           }
         } else {
-          if (progressMsg) progressMsg.innerText = '❌ Falha no processamento. Verifique os logs.';
+          if (progressMsg) progressMsg.innerText = `❌ Falha no processamento: ${statusData.error_message || 'erro desconhecido'}`;
         }
       }
     } catch (e) {

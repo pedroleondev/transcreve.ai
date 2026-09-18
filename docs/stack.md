@@ -15,7 +15,7 @@ graph TD
     OR --> WH[Whisper large-v3 / turbo / whisper-1 / Gemini]
 ```
 
-Monolito de processo único: API HTTP e worker de transcrição rodam no mesmo processo Node, com trava global `isWorkerRunning` (`server.js:594`). Isso define o teto de capacidade — ver [docs/MULTIUSER.md](MULTIUSER.md).
+Monolito de processo único: API HTTP e worker de transcrição rodam no mesmo processo Node. O worker (`services/pipeline.js`) processa **um job por vez**, mas dentro do job transcreve os blocos de áudio em paralelo (`CHUNK_CONCURRENCY`, default 3), com retry por bloco e retomada após queda. Ver [system_design.md](system_design.md) §6 e [MULTIUSER.md](MULTIUSER.md).
 
 ## Runtime e dependências
 
@@ -26,8 +26,9 @@ Monolito de processo único: API HTTP e worker de transcrição rodam no mesmo p
 | Upload | Multer 1.4 (disk storage em `uploads/`) | `server.js:26` |
 | Auth | jsonwebtoken 9 (HS256, exp 30d) + bcryptjs 2.4 | `server.js:51` |
 | Banco | SQLite3 5.1 (arquivo único, sem WAL) | `db.js` (260 linhas) |
-| Áudio | ffmpeg / ffprobe (binário de sistema via `apk add`) | `services/audio.js` (225 linhas) |
-| IA | OpenRouter API (`node-fetch` 2 + `form-data` 4) | `services/openrouter.js` (272 linhas) |
+| Áudio | ffmpeg / ffprobe (binário de sistema via `apk add`, invocados por `spawn`) | `services/audio.js` |
+| Fila / worker | Worker in-process, blocos persistidos em `transcription_chunks` | `services/pipeline.js` |
+| IA | OpenRouter API (`node-fetch` 2 + `form-data` 4); provedor `mock` para testes | `services/openrouter.js` |
 | Exportação | `pdfkit` 0.16, `docx` 9.1, geradores próprios SRT/VTT/TXT | `services/exporter.js` (179 linhas) |
 | Front | Tailwind via CDN + Lucide Icons + JS vanilla, sem build step | `index.html` (929 linhas), `app.js` (1617 linhas) |
 | Infra | Docker + docker compose, labels Traefik | `Dockerfile`, `docker-compose.yml` |
@@ -43,15 +44,19 @@ system_settings(key PK, value)
 system_logs(id, user_id, action, details, ip_address, timestamp)
 projects(id, user_id → users, name, created_at)
 transcriptions(id, user_id → users, project_id → projects, file_name, file_path,
-               file_size, duration_seconds, language, mode, status, raw_text,
+               file_size, duration_seconds, language, mode, status, stage, raw_text,
                speaker_diarization, progress, error_message, ai_summary,
                created_at, updated_at)
 segments(id, transcription_id → transcriptions, speaker, start_time, end_time, text)
+transcription_chunks(id, transcription_id → transcriptions, idx, offset_sec, duration_sec,
+               path, status, attempts, model_used, segments_json, error,
+               started_at, finished_at)   -- índice (transcription_id, idx)
 ```
 
 - Migrações imperativas e idempotentes em `initDatabase()` (`db.js:44`): renomeia `folders`→`projects`, `folder_id`→`project_id`, adiciona colunas via `PRAGMA table_info`.
-- `status` da transcrição: `pending` → `processing` → `completed` | `failed`.
-- Sem índice em `transcriptions.user_id`, `transcriptions.status`, `segments.transcription_id`. O worker faz `SELECT ... WHERE status='pending'` a cada 5s — full scan.
+- `status` da transcrição: `pending` → `processing` → `completed` | `completed_with_errors` | `failed`. `stage` (só durante `processing`): `preprocessing` → `splitting` → `transcribing` → `assembling` → `analyzing`.
+- `transcription_chunks.status`: `pending` → `processing` → `done` | `failed`. Bloco `done` guarda `segments_json` (timestamps relativos ao bloco; `offset_sec` é somado na montagem). Blocos são apagados do disco ao concluir o job, mas as linhas ficam (permitem `/retry` e auditoria).
+- Sem índice em `transcriptions.user_id`, `transcriptions.status`, `segments.transcription_id`. O worker faz `SELECT ... WHERE status IN ('processing','pending')` a cada 5s — full scan (T-08).
 
 ## Superfície de API
 
@@ -64,8 +69,9 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET/POST/DELETE | `/api/projects[/:id]` | token | ❌ não |
 | GET | `/api/transcriptions` | token | ❌ não |
 | GET/PUT/DELETE | `/api/transcriptions/:id` | token | ❌ não |
-| GET | `/api/transcriptions/:id/status` | token | ❌ não |
-| POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota |
+| GET | `/api/transcriptions/:id/status` | token | ❌ não — devolve `stage`, `chunks_done/total/failed`, `eta_seconds` |
+| POST | `/api/transcriptions/:id/retry` | token | ❌ não — reprocessa só os blocos `failed` |
+| POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota; valida com `ffprobe` por arquivo |
 | GET | `/api/export/:id/:format` | token | ❌ não |
 | POST | `/api/chat`, `/api/translate` | token | ❌ não |
 | GET | `/api/openrouter/models`, `/api/settings` | pública | — |
@@ -97,11 +103,14 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 
 | Limite | Valor | Onde |
 |---|---|---|
-| Concorrência de transcrição | 1 job por vez, global | `server.js:594` (`isWorkerRunning`) |
-| Poll da fila | 5 s | `server.js:750` |
-| Tamanho de bloco de áudio | 600 s | `CHUNK_TARGET_SEC` |
-| Body JSON | 100 MB | `server.js:37` |
-| Upload | sem limite no Multer | `server.js:33` |
+| Jobs simultâneos | 1 (global); blocos do job em paralelo: `CHUNK_CONCURRENCY` (3) | `services/pipeline.js` |
+| Tentativas por bloco | `CHUNK_MAX_ATTEMPTS` (3), backoff 2 s / 8 s / 30 s | `services/pipeline.js` |
+| Timeout por chamada de transcrição | `TRANSCRIBE_TIMEOUT_MS` (10 min) | `services/openrouter.js` |
+| Poll da fila | 5 s | `services/pipeline.js` |
+| Tamanho de bloco de áudio | `CHUNK_TARGET_SEC` (600 s), corte no silêncio mais próximo | `services/pipeline.js` |
+| Body JSON | 100 MB | `server.js` |
+| Upload | `MAX_UPLOAD_GB` (5) por arquivo, `MAX_FILES_PER_UPLOAD` (50), `MAX_AUDIO_HOURS` (10) | `server.js` (Multer + `ffprobe`) |
+| Disco | recusa iniciar se livre < 2× o tamanho do arquivo | `services/pipeline.js` |
 | Escritas simultâneas SQLite | serializadas, sem WAL → risco de `SQLITE_BUSY` sob carga | `db.js:7` |
 
 ## Ver também

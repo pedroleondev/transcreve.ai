@@ -11,7 +11,8 @@ const { v4: uuidv4 } = require('uuid');
 const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db');
 const { transcribeAudioFile, generateChatCompletion, translateTranscript, getAvailableOpenRouterModels } = require('./services/openrouter');
 const { generateTXT, generateSRT, generateVTT, generateDOCX, generatePDF } = require('./services/exporter');
-const { preprocessAudio, splitAudioSmart, filterHallucinations } = require('./services/audio');
+const { probeMedia } = require('./services/audio');
+const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./services/pipeline');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,7 +31,25 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
-const upload = multer({ storage });
+const MAX_UPLOAD_GB = Number(process.env.MAX_UPLOAD_GB || 5);
+const MAX_FILES_PER_UPLOAD = Number(process.env.MAX_FILES_PER_UPLOAD || 50);
+const MAX_AUDIO_HOURS = Number(process.env.MAX_AUDIO_HOURS || 10);
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_GB * 1024 * 1024 * 1024, files: MAX_FILES_PER_UPLOAD }
+});
+
+// Multer aborta a requisicao inteira ao estourar um limite; traduz para JSON claro.
+function uploadErrorHandler(err, req, res, next) {
+  if (!(err instanceof multer.MulterError)) return next(err);
+  const map = {
+    LIMIT_FILE_SIZE: [413, `Arquivo maior que o limite de ${MAX_UPLOAD_GB} GB.`],
+    LIMIT_FILE_COUNT: [400, `No maximo ${MAX_FILES_PER_UPLOAD} arquivos por envio.`],
+    LIMIT_UNEXPECTED_FILE: [400, `Campo de arquivo inesperado: use "files".`]
+  };
+  const [status, message] = map[err.code] || [400, err.message];
+  res.status(status).json({ success: false, error: message, code: err.code });
+}
 
 // Middlewares
 app.use(cors());
@@ -225,7 +244,7 @@ app.get('/api/openrouter/models', (req, res) => {
 });
 
 // Upload & Processamento de Transcrição (Assíncrono)
-app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req, res) => {
+app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErrorHandler, async (req, res) => {
   const { language = 'pt', mode = 'baleia', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
 
   if (!req.files || req.files.length === 0) {
@@ -236,12 +255,32 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req
   const errors = [];
   const effectiveModel = model_id || mode;
 
+  // Valida cada arquivo com ffprobe ANTES de enfileirar: um invalido nao derruba os outros.
   for (const file of req.files) {
+    const reject = async (message) => {
+      errors.push({ file_name: file.originalname, error: message });
+      await fs.promises.unlink(file.path).catch(() => {});
+    };
     try {
+      let probe;
+      try {
+        probe = await probeMedia(file.path);
+      } catch (e) {
+        await reject('Arquivo nao reconhecido como audio/video (ffprobe falhou).');
+        continue;
+      }
+      if (!probe.hasAudio) {
+        await reject('O arquivo nao contem trilha de audio.');
+        continue;
+      }
+      if (probe.duration > MAX_AUDIO_HOURS * 3600) {
+        await reject(`Duracao de ${(probe.duration / 3600).toFixed(1)} h excede o limite de ${MAX_AUDIO_HOURS} h.`);
+        continue;
+      }
+
       const transcriptionId = uuidv4();
       const relativePath = '/uploads/' + file.filename;
 
-      // Salva a transcrição com status 'pending' no SQLite
       await runAsync(
         `INSERT INTO transcriptions (id, user_id, project_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, speaker_diarization, progress, ai_summary)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -252,33 +291,49 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), async (req
           file.originalname,
           relativePath,
           file.size,
-          0, // A duração será atualizada no processamento pelo ffprobe
+          probe.duration,
           language,
           effectiveModel,
           'pending',
-          '', // raw_text inicia vazio
+          '',
           speaker_diarization ? 1 : 0,
-          0, // progress
-          ai_focus || null // Salvamos temporariamente o assunto/instrução a focar
+          0,
+          ai_focus || null
         ]
       );
 
-      results.push({ id: transcriptionId, file_name: file.originalname, status: 'pending', progress: 0 });
+      results.push({ id: transcriptionId, file_name: file.originalname, status: 'pending', progress: 0, duration_seconds: probe.duration });
     } catch (err) {
       console.error('Erro ao registrar áudio para transcrição na fila:', err);
-      errors.push({ file_name: file.originalname, error: err.message });
+      await reject(err.message);
     }
   }
 
   if (results.length === 0) {
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
-      error: 'Falha ao registrar arquivo(s) na fila de transcrição.',
-      details: errors
+      error: 'Nenhum arquivo valido para transcrever.',
+      errors
     });
   }
 
   res.status(202).json({ success: true, count: results.length, data: results, errors });
+});
+
+// Reprocessa so os blocos que falharam (job em completed_with_errors ou failed)
+app.post('/api/transcriptions/:id/retry', authenticateToken, async (req, res) => {
+  try {
+    const row = await getAsync(`SELECT id, status FROM transcriptions WHERE id = ?`, [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    const reset = await retryFailedChunks(row.id);
+    if (reset === 0 && row.status === 'failed') {
+      // Falhou antes de fatiar (ex.: ffmpeg): recomeca do zero
+      await runAsync(`UPDATE transcriptions SET status = 'pending', error_message = NULL, progress = 0 WHERE id = ?`, [row.id]);
+    }
+    res.json({ success: true, chunks_reset: reset });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Atualizar nome / mover pasta
@@ -561,189 +616,24 @@ app.put('/api/admin/settings', authenticateToken, requireAdmin, async (req, res)
 // Endpoint para obter progresso da transcrição
 app.get('/api/transcriptions/:id/status', authenticateToken, async (req, res) => {
   try {
-    const row = await getAsync(`SELECT status, progress, error_message, ai_summary FROM transcriptions WHERE id = ?`, [req.params.id]);
+    const row = await getAsync(`SELECT status, stage, progress, error_message, ai_summary FROM transcriptions WHERE id = ?`, [req.params.id]);
     if (!row) {
       return res.status(404).json({ error: 'Transcrição não encontrada.' });
     }
+    const chunks = await getJobProgress(req.params.id);
     res.json({
       success: true,
       status: row.status,
+      stage: row.stage,
       progress: row.progress,
       error_message: row.error_message,
-      ai_summary: row.status === 'completed' ? row.ai_summary : null
+      ...chunks,
+      ai_summary: row.status.startsWith('completed') ? row.ai_summary : null
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
-const { exec } = require('child_process');
-
-function execPromise(command) {
-  return new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`Command failed: ${command}\nError: ${error.message}\nStderr: ${stderr}`));
-      } else {
-        resolve({ stdout, stderr });
-      }
-    });
-  });
-}
-
-// Background Worker para Processamento de Transcrições
-let isWorkerRunning = false;
-
-async function startQueueWorker() {
-  setInterval(async () => {
-    if (isWorkerRunning) return;
-    
-    let task = null;
-    try {
-      // Pega a próxima tarefa pendente
-      task = await getAsync(`SELECT * FROM transcriptions WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`);
-      if (!task) return; // Nenhuma tarefa pendente
-      
-      isWorkerRunning = true;
-      console.log(`[Queue Worker] Iniciando processamento da tarefa: ${task.id} (${task.file_name})`);
-      
-      // Atualiza para 'processing' e define progresso inicial
-      await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 5 WHERE id = ?`, [task.id]);
-      
-      const filePath = path.join(__dirname, task.file_path);
-      const tempFiles = [];   // arquivos temporários a limpar no final
-      const tempDirs = [];
-
-      // 1. Pré-processamento: normaliza para 16kHz mono FLAC + loudnorm + filtros.
-      //    Funciona tanto para áudio quanto para vídeo (extrai a trilha de áudio).
-      console.log(`[Queue Worker] Pré-processando áudio de ${task.file_name}...`);
-      await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 10 WHERE id = ?`, [task.id]);
-
-      const preprocessedPath = path.join(path.dirname(filePath), `pp_${task.id}.flac`);
-      const pp = await preprocessAudio(filePath, preprocessedPath);
-      tempFiles.push(preprocessedPath);
-      let duration = pp.duration || 0;
-
-      // 2. Decide se precisa fatiar (Whisper via OpenRouter: limite ~25MB / áudios longos)
-      const CHUNK_TARGET_SEC = 600; // ~10 min por bloco
-      const needSplitting = duration > CHUNK_TARGET_SEC;
-
-      let finalRawText = "";
-      let finalSegments = [];
-      let modelUsed = task.mode;
-
-      if (!needSplitting) {
-        console.log(`[Queue Worker] Arquivo curto (${Math.round(duration)}s) - transcrição direta.`);
-        await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 25 WHERE id = ?`, [task.id]);
-
-        const result = await transcribeAudioFile(preprocessedPath, task.language, task.mode);
-        finalSegments = (result.segments || []).map(s => ({
-          speaker: s.speaker, start: s.start, end: s.end, text: s.text
-        }));
-        modelUsed = result.model_used;
-        duration = result.duration || duration;
-      } else {
-        console.log(`[Queue Worker] Áudio longo (${Math.round(duration)}s). Fatiando em blocos de ~${CHUNK_TARGET_SEC}s nos silêncios...`);
-        await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 15 WHERE id = ?`, [task.id]);
-
-        const chunksDir = path.join(path.dirname(filePath), `chunks_${task.id}`);
-        tempDirs.push(chunksDir);
-
-        const chunks = await splitAudioSmart(preprocessedPath, chunksDir, duration, CHUNK_TARGET_SEC);
-        console.log(`[Queue Worker] Áudio fatiado em ${chunks.length} partes (cortes: ${chunks.map(c => Math.round(c.offset)).join('s, ')}s).`);
-
-        for (let i = 0; i < chunks.length; i++) {
-          const { path: chunkPath, offset } = chunks[i];
-          const progressVal = 20 + Math.round((i / chunks.length) * 70);
-          await runAsync(`UPDATE transcriptions SET status = 'processing', progress = ? WHERE id = ?`, [progressVal, task.id]);
-
-          console.log(`[Queue Worker] Transcrevendo parte ${i + 1}/${chunks.length} (offset ${Math.round(offset)}s)...`);
-          const chunkResult = await transcribeAudioFile(chunkPath, task.language, task.mode);
-
-          (chunkResult.segments || []).forEach(seg => {
-            finalSegments.push({
-              speaker: seg.speaker,
-              start: seg.start + offset,
-              end: seg.end + offset,
-              text: seg.text
-            });
-          });
-          modelUsed = chunkResult.model_used;
-        }
-      }
-
-      // 3. Pós-processamento: remove alucinações do Whisper (silêncio/ruído/música)
-      const beforeCount = finalSegments.length;
-      finalSegments = filterHallucinations(finalSegments);
-      console.log(`[Queue Worker] Filtro de alucinações: ${beforeCount} -> ${finalSegments.length} segmentos.`);
-
-      // Reconstrói o texto corrido a partir dos segmentos já filtrados
-      finalRawText = finalSegments.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
-
-      // 4. Limpeza de temporários
-      for (const d of tempDirs) {
-        try { await fs.promises.rm(d, { recursive: true, force: true }); } catch (_) {}
-      }
-      for (const f of tempFiles) {
-        try { await fs.promises.unlink(f); } catch (_) {}
-      }
-      
-      // Post-Processing: Resumo Focado se houver prompt no ai_summary
-      let finalSummary = null;
-      if (task.ai_summary && task.ai_summary.trim().length > 0) {
-        console.log(`[Queue Worker] Executando resumo IA focado no assunto para ${task.file_name}...`);
-        await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 92 WHERE id = ?`, [task.id]);
-        
-        try {
-          finalSummary = await generateChatCompletion(
-            finalRawText,
-            `O usuário gostaria de focar a análise na seguinte instrução ou assunto a procurar: "${task.ai_summary}".
-Gere um resumo estruturado no formato Markdown destacando apenas as partes que mencionam esse assunto, listando os tópicos e estimando a marcação de tempo (ex: [01:23:45]) se possível.`
-          );
-        } catch (e) {
-          console.warn(`[Queue Worker] Falha ao gerar resumo IA focado:`, e.message);
-          finalSummary = `Não foi possível gerar o resumo automático para o assunto. Erro: ${e.message}`;
-        }
-      }
-      
-      // Insere segmentos ajustados no SQLite
-      console.log(`[Queue Worker] Gravando segmentos no banco SQLite...`);
-      await runAsync(`UPDATE transcriptions SET status = 'processing', progress = 96 WHERE id = ?`, [task.id]);
-      
-      if (finalSegments.length > 0) {
-        for (const seg of finalSegments) {
-          await runAsync(
-            `INSERT INTO segments (id, transcription_id, speaker, start_time, end_time, text) VALUES (?, ?, ?, ?, ?, ?)`,
-            [uuidv4(), task.id, seg.speaker || 'Locutor 1', seg.start, seg.end, seg.text]
-          );
-        }
-      }
-      
-      // Finaliza a transcrição no banco
-      await runAsync(
-        `UPDATE transcriptions 
-         SET status = 'completed', progress = 100, raw_text = ?, duration_seconds = ?, ai_summary = ?, mode = ? 
-         WHERE id = ?`,
-        [finalRawText, duration, finalSummary, modelUsed, task.id]
-      );
-      
-      await logAction(task.user_id, 'TRANSCRIPTION_CREATED_ASYNC', { file_name: task.file_name, duration, model: modelUsed }, '127.0.0.1');
-      console.log(`[Queue Worker] Concluiu com sucesso o processamento da tarefa: ${task.id}`);
-      
-    } catch (err) {
-      console.error(`[Queue Worker] Erro no processamento da tarefa ${task && task.id ? task.id : 'desconhecida'}:`, err);
-      if (task && task.id) {
-        // Atualiza no banco para failed
-        await runAsync(
-          `UPDATE transcriptions SET status = 'failed', progress = 0, error_message = ? WHERE id = ?`,
-          [err.message || 'Erro inesperado no servidor', task.id]
-        );
-      }
-    } finally {
-      isWorkerRunning = false;
-    }
-  }, 5000);
-}
 
 // Iniciar Servidor Express
 app.listen(PORT, () => {
