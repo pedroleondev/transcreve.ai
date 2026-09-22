@@ -270,6 +270,7 @@ function showView(viewName) {
   document.getElementById('view-dashboard').classList.add('hidden');
   document.getElementById('view-details').classList.add('hidden');
   document.getElementById('view-admin').classList.add('hidden');
+  closeSidebar(); // T-17: drawer fecha ao navegar (mobile)
 
   if (viewName === 'dashboard') {
     document.getElementById('view-dashboard').classList.remove('hidden');
@@ -282,18 +283,36 @@ function showView(viewName) {
   }
 }
 
-// Busca em Tempo Real
+// ---------------------------------------------------
+// T-17: SIDEBAR DRAWER (off-canvas no mobile, fixa no desktop)
+// ---------------------------------------------------
+function openSidebar() {
+  const sb = document.getElementById('app-sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (sb) sb.classList.remove('-translate-x-full');
+  if (ov) ov.classList.remove('hidden');
+}
+
+function closeSidebar() {
+  const sb = document.getElementById('app-sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (sb) sb.classList.add('-translate-x-full');
+  if (ov) ov.classList.add('hidden');
+}
+
+// Busca em Tempo Real (tabela no desktop + cards no mobile)
 function handleSearch() {
   const query = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
   const rows = document.querySelectorAll('#transcriptions-tbody tr');
+  const cards = document.querySelectorAll('#transcriptions-cards .transcription-card');
 
   rows.forEach(row => {
     const text = row.innerText.toLowerCase();
-    if (!query || text.includes(query)) {
-      row.style.display = '';
-    } else {
-      row.style.display = 'none';
-    }
+    row.style.display = (!query || text.includes(query)) ? '' : 'none';
+  });
+  cards.forEach(card => {
+    const text = card.innerText.toLowerCase();
+    card.style.display = (!query || text.includes(query)) ? '' : 'none';
   });
 }
 
@@ -421,6 +440,7 @@ async function deleteProject(id, name) {
 function filterByProject(projectId) {
   state.currentProjectId = projectId;
   renderProjectsSidebar();
+  closeSidebar(); // T-17: drawer fecha ao escolher filtro (mobile)
 
   const titleEl = document.getElementById('dashboard-title');
   if (projectId === 'uncategorized') {
@@ -541,41 +561,45 @@ function renderTranscriptionsTable() {
         </td>
       </tr>
     `;
+    const cardsEmpty = document.getElementById('transcriptions-cards');
+    if (cardsEmpty) {
+      cardsEmpty.innerHTML = `
+        <div class="text-center p-12 text-brand-muted dark:text-brand-muted">
+          <i data-lucide="file-audio" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
+          <p class="font-bold text-sm text-brand-copy dark:text-brand-copy">Nenhum arquivo transcrito ainda</p>
+          <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Toque em "+ TRANSCREVER ARQUIVOS" para enviar o seu primeiro áudio.</p>
+        </div>`;
+    }
     if (window.lucide) lucide.createIcons();
     return;
   }
 
-  tbody.innerHTML = state.transcriptions.map(item => {
-    // Badges de MODO com alta visibilidade, contornos marcantes e alto contraste para UX excelente
-    let modeBadge = '';
+  // Badges compartilhados entre a tabela (desktop) e os cards (mobile)
+  function buildModeBadge(item) {
     if (item.mode === 'chita' || item.mode === 'openai/whisper-1') {
-      modeBadge = `<span class="inline-flex items-center space-x-1.5 bg-amber-900 text-amber-100 border-2 border-amber-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-1">
+      return `<span class="inline-flex items-center space-x-1.5 bg-amber-900 text-amber-100 border-2 border-amber-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-1">
         <span class="text-sm">🐆</span><span>Chita (Fast)</span>
       </span>`;
     } else if (item.mode === 'golfinho' || item.mode === 'openai/whisper-large-v3-turbo') {
-      modeBadge = `<span class="inline-flex items-center space-x-1.5 bg-teal-900 text-teal-100 border-2 border-teal-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3-turbo">
+      return `<span class="inline-flex items-center space-x-1.5 bg-teal-900 text-teal-100 border-2 border-teal-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3-turbo">
         <span class="text-sm">🐬</span><span>Golfinho (Turbo)</span>
       </span>`;
-    } else {
-      modeBadge = `<span class="inline-flex items-center space-x-1.5 bg-indigo-900 text-indigo-100 border-2 border-indigo-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3">
-        <span class="text-sm">🐋</span><span>Baleia (v3 Padrão)</span>
-      </span>`;
     }
+    return `<span class="inline-flex items-center space-x-1.5 bg-indigo-900 text-indigo-100 border-2 border-indigo-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3">
+      <span class="text-sm">🐋</span><span>Baleia (v3 Padrão)</span>
+    </span>`;
+  }
 
-    const durationFormatted = formatDuration(item.duration_seconds || 0);
-    const dateFormatted = new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-    // Badge de Status dinâmico com barra de progresso
-    let statusBadge = '';
+  function buildStatusBadge(item) {
     const progress = item.progress || 0;
     if (item.status === 'completed') {
-      statusBadge = `
+      return `
         <span class="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-300 font-bold text-xs bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
           <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
           <span>Concluído</span>
         </span>`;
     } else if (item.status === 'completed_with_errors') {
-      statusBadge = `
+      return `
         <div class="flex flex-col items-start space-y-1">
           <span title="${escapeHtml(item.error_message || '')}" class="inline-flex items-center space-x-1 text-amber-700 dark:text-amber-300 font-bold text-xs bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 cursor-help">
             <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
@@ -588,7 +612,7 @@ function renderTranscriptionsTable() {
         preprocessing: 'Normalizando', splitting: 'Fatiando', transcribing: 'Transcrevendo',
         assembling: 'Montando', analyzing: 'Resumindo'
       }[item.stage] || 'Processando';
-      statusBadge = `
+      return `
         <div class="flex flex-col items-start space-y-1 min-w-[80px]">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
@@ -600,7 +624,7 @@ function renderTranscriptionsTable() {
           <span class="text-[10px] text-brand-muted dark:text-brand-muted font-mono font-bold">${progress}%</span>
         </div>`;
     } else if (item.status === 'pending') {
-      statusBadge = `
+      return `
         <div class="flex flex-col items-start space-y-1">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
@@ -611,7 +635,7 @@ function renderTranscriptionsTable() {
           </div>
         </div>`;
     } else if (item.status === 'failed') {
-      statusBadge = `
+      return `
         <div class="flex flex-col items-start space-y-1">
           <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="inline-flex items-center space-x-1 text-red-600 dark:text-red-300 font-bold text-xs bg-red-50 dark:bg-red-950 px-2 py-0.5 rounded-full border border-red-200 dark:border-red-800 cursor-help">
             <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
@@ -620,6 +644,14 @@ function renderTranscriptionsTable() {
           <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 dark:text-blue-300 hover:underline font-bold">Tentar de novo</button>
         </div>`;
     }
+    return '';
+  }
+
+  tbody.innerHTML = state.transcriptions.map(item => {
+    const modeBadge = buildModeBadge(item);
+    const statusBadge = buildStatusBadge(item);
+    const durationFormatted = formatDuration(item.duration_seconds || 0);
+    const dateFormatted = new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
     return `
       <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas transition border-b border-brand-line dark:border-brand-line group">
@@ -665,6 +697,8 @@ function renderTranscriptionsTable() {
     `;
   }).join('');
 
+  renderTranscriptionsCards(buildModeBadge, buildStatusBadge);
+
   if (window.lucide) lucide.createIcons();
 
   // Inicia polling se houver jobs ativos
@@ -675,6 +709,50 @@ function renderTranscriptionsTable() {
   } else {
     stopProgressPolling();
   }
+}
+
+// ---------------------------------------------------
+// T-17: LISTA EM CARDS (mobile < md) — mesmos dados, ações diretas de toque
+// ---------------------------------------------------
+function renderTranscriptionsCards(buildModeBadge, buildStatusBadge) {
+  const container = document.getElementById('transcriptions-cards');
+  if (!container) return;
+
+  if (state.transcriptions.length === 0) {
+    container.innerHTML = `
+      <div class="text-center p-12 text-brand-muted dark:text-brand-muted">
+        <i data-lucide="file-audio" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
+        <p class="font-bold text-sm text-brand-copy dark:text-brand-copy">Nenhum arquivo transcrito ainda</p>
+        <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Toque em "+ TRANSCREVER ARQUIVOS" para enviar o seu primeiro áudio.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = state.transcriptions.map(item => {
+    const modeBadge = buildModeBadge(item);
+    const statusBadge = buildStatusBadge(item);
+    const durationFormatted = formatDuration(item.duration_seconds || 0);
+    const dateFormatted = new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    return `
+      <div class="transcription-card p-4 space-y-3 hover:bg-brand-canvas dark:hover:bg-brand-canvas transition">
+        <div class="flex items-start gap-3">
+          <input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 dark:text-blue-300 focus:ring-blue-500 mt-1" aria-label="Selecionar ${escapeHtml(item.file_name)}">
+          <button onclick="openTranscriptionDetail('${item.id}')" class="flex-1 min-w-0 text-left touch-target">
+            ${item.project_name ? `<span class="text-[10px] text-brand-muted dark:text-brand-muted block font-normal">📁 ${escapeHtml(item.project_name)}</span>` : ''}
+            <span class="font-bold text-sm text-brand-ink dark:text-brand-ink break-words">${escapeHtml(item.file_name)}</span>
+            <span class="block text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">${dateFormatted} · ${durationFormatted}</span>
+          </button>
+          <button onclick="deleteTranscription('${item.id}')" class="touch-target p-2 text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950 rounded-lg shrink-0" title="Excluir arquivo" aria-label="Excluir ${escapeHtml(item.file_name)}">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-2 pl-8">
+          ${modeBadge}
+          ${statusBadge}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // ---------------------------------------------------
