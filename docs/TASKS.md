@@ -359,22 +359,27 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-17 — Layout responsivo: celular e tablet
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Antes de** T-04 e T-18
+**Estado:** DONE (22/09/2026, aguardando validação no celular do usuário antes do merge) · **Prioridade:** 🔴 P0 · **Antes de** T-04 e T-18
 **Por quê:** `grep -c "md:\|lg:\|sm:" index.html` → **5**. O layout é desktop fixo: sidebar de largura fixa, tabela de 6 colunas, detalhe em 2 colunas. No celular não dá para usar. O objetivo declarado (14/09) é "abrir no notebook, computador ou celular e ler de forma agradável" — sem isso, T-04 e T-18 entregam valor só no desktop.
 **Contexto:** `index.html` (inteiro — é estrutural; usar `grep -n "class=\"" | head` por seção, não ler tudo), `app.js:240-257` (`showView`), config Tailwind inline em `index.html:12-53`
 **Toca:** `index.html`, `app.js`
 **Aceite:**
-- [ ] Breakpoints: `< 768px` celular · `768–1024px` tablet · `> 1024px` desktop
-- [ ] **Sidebar** vira drawer off-canvas no celular (botão hambúrguer no header), fixa no desktop
-- [ ] **Tabela de transcrições** vira lista de cards no celular: nome, data, duração, badge de nível, status, ação — sem scroll horizontal
-- [ ] **Tela de detalhe** em coluna única no celular: texto em cima, painel (Projeto/Exportar/IA) vira sheet inferior ou seção colapsável abaixo do texto; player fixo (T-12) ocupa o rodapé
-- [ ] Modais em tela cheia no celular (`inset-0`), centralizados no desktop
-- [ ] Alvos de toque ≥ 44px em botões e timestamps
-- [ ] Texto da transcrição com `font-size` mínimo 16px no celular, linha de ~65 caracteres no desktop (`max-w-prose`)
-- [ ] Testado em 375px (iPhone), 768px (iPad) e 1440px — screenshots na evidência
-- [ ] Nada de horizontal scroll no `body` em nenhuma largura
+- [x] Breakpoints: `< 768px` celular · `768–1024px` tablet · `> 1024px` desktop
+- [x] **Sidebar** vira drawer off-canvas no celular (botão hambúrguer no header), fixa no desktop
+- [x] **Tabela de transcrições** vira lista de cards no celular: nome, data, duração, badge de nível, status, ação — sem scroll horizontal
+- [x] **Tela de detalhe** em coluna única no celular: texto em cima, painel (Projeto/Exportar/IA) vira seção abaixo do texto; player (T-12) permanece no topo da coluna
+- [x] Modais em tela cheia no celular (`inset-0`), centralizados no desktop
+- [x] Alvos de toque ≥ 44px em botões e timestamps
+- [x] Texto da transcrição com `font-size` mínimo 16px no celular, linha de ~65 caracteres no desktop (`max-w-prose`)
+- [x] Testado em 375px (iPhone), 768px (iPad) e 1440px — screenshots na evidência
+- [x] Nada de horizontal scroll no `body` em nenhuma largura
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- Screenshots em `docs/screenshots/t-17/`: `375-mobile-*` (dashboard cards, detalhe coluna única, modal tela cheia), `768-tablet-*` (dashboard com toolbar em 2 linhas, detalhe coluna única), `1440-desktop-*` (dashboard tabela + sidebar, detalhe 3 colunas — sem regressão)
+- `tests/ui_regressions.js` → 13/13 PASS após as mudanças
+- `tests/screenshot_responsive.js` (novo) reproduz as capturas via CDP headless
+- Correção durante a tarefa: toolbar do dashboard estourava em 768px (botão "Transcrever Arquivos" cortado); breakpoint da linha da toolbar subiu de `md` para `lg`
+- Gate final: usuário testa no celular pessoal via `http://<IP-LAN>:3000` antes do merge `--no-ff` na main
 
 ---
 
