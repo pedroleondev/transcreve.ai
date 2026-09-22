@@ -1,6 +1,6 @@
 // Estado Global da Aplicação Frontend
 const state = {
-  currentUser: { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'admin' },
+  currentUser: { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'user' },
   token: localStorage.getItem('turboscribe_token') || '',
   currentView: 'dashboard',
   projects: [],
@@ -58,8 +58,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   fetchOpenRouterModels();
   fetchProjects();
   fetchTranscriptions();
-  checkAuthUser();
   setupDragAndDrop();
+  await checkAuthUser(); // papel real ANTES de consultar o estado da chave
   loadApiKeyStatus();
 });
 
