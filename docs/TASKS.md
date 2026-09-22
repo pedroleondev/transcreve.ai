@@ -359,7 +359,7 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-17 — Layout responsivo: celular e tablet
-**Estado:** DONE (22/09/2026, aguardando validação no celular do usuário antes do merge) · **Prioridade:** 🔴 P0 · **Antes de** T-04 e T-18
+**Estado:** DONE (22/09/2026) · **Prioridade:** 🔴 P0 · **Antes de** T-04 e T-18
 **Por quê:** `grep -c "md:\|lg:\|sm:" index.html` → **5**. O layout é desktop fixo: sidebar de largura fixa, tabela de 6 colunas, detalhe em 2 colunas. No celular não dá para usar. O objetivo declarado (14/09) é "abrir no notebook, computador ou celular e ler de forma agradável" — sem isso, T-04 e T-18 entregam valor só no desktop.
 **Contexto:** `index.html` (inteiro — é estrutural; usar `grep -n "class=\"" | head` por seção, não ler tudo), `app.js:240-257` (`showView`), config Tailwind inline em `index.html:12-53`
 **Toca:** `index.html`, `app.js`
