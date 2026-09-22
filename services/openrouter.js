@@ -1,7 +1,10 @@
-const fetch = require('node-fetch');
+const nodeFetch = require('node-fetch');
+const { getJobSignal, jobSleep } = require('./job-context');
+const fetch = (url, options = {}) => nodeFetch(url, { ...options, signal: getJobSignal() || options.signal });
 const FormData = require('form-data');
 const fs = require('fs');
 const { getAsync } = require('../db');
+const secrets = require('./secrets');
 
 // ---------------------------------------------------------------------------
 // Provedor MOCK — so para testar a mecanica do pipeline (paralelismo, retry,
@@ -27,7 +30,7 @@ async function mockTranscribe(filePath, opts = {}) {
   const failAlways = process.env.MOCK_FAIL_ALWAYS !== undefined ? Number(process.env.MOCK_FAIL_ALWAYS) : null;
   const latency = Number(process.env.MOCK_LATENCY_MS || 300);
 
-  await new Promise(r => setTimeout(r, latency));
+  await jobSleep(latency);
 
   if (failAlways === idx) {
     throw new Error('OpenRouter HTTP 400: [MOCK] falha definitiva simulada');
@@ -116,16 +119,50 @@ function getAvailableOpenRouterModels() {
 /**
  * Obtém a chave ativa do OpenRouter no banco de dados SQLite
  */
+// Unico ponto do sistema que decifra a chave — e so no momento da chamada.
 async function getActiveOpenRouterKey() {
-  try {
-    const row = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
-    if (row && row.key_value) {
-      return row.key_value;
-    }
-  } catch (err) {
-    console.warn('[OpenRouter] Erro ao buscar chave ativa do banco SQLite:', err.message);
+  const row = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+  if (row && row.key_value) {
+    // O banco e a fonte de verdade: falha de decifragem (APP_SECRET_KEY trocada
+    // ou registro adulterado) e erro EXPLICITO — sem fallback silencioso para
+    // a chave do ambiente, que poderia mascarar a perda do segredo.
+    return secrets.decrypt(row.key_value);
   }
+  // Compat: banco ainda sem chave — usa o ambiente. No boot, o seed one-shot
+  // grava essa chave cifrada no banco e ela passa a ser a fonte de verdade.
   return process.env.OPENROUTER_API_KEY || '';
+}
+
+/**
+ * Valida uma chave contra a OpenRouter sem gastar credito (GET /auth/key).
+ * @returns {Promise<{valid: boolean, status: number, info: object|null, error: string|null}>}
+ */
+async function testOpenRouterKey(apiKey) {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      timeout: 15000
+    });
+    if (!response.ok) {
+      return { valid: false, status: response.status, info: null, error: response.status === 401 ? 'Chave invalida ou revogada.' : `OpenRouter respondeu HTTP ${response.status}.` };
+    }
+    const body = await response.json();
+    const d = body.data || {};
+    return {
+      valid: true,
+      status: 200,
+      info: {
+        label: d.label || null,
+        limit: d.limit ?? null,
+        usage: d.usage ?? null,
+        limit_remaining: d.limit_remaining ?? null,
+        is_free_tier: Boolean(d.is_free_tier)
+      },
+      error: null
+    };
+  } catch (e) {
+    return { valid: false, status: 0, info: null, error: `Falha de rede ao contatar a OpenRouter: ${e.message}` };
+  }
 }
 
 /**
@@ -328,6 +365,7 @@ async function translateTranscript(transcriptText, targetLanguage = 'English') {
 
 module.exports = {
   getAvailableOpenRouterModels,
+  testOpenRouterKey,
   transcribeAudioFile,
   generateChatCompletion,
   translateTranscript

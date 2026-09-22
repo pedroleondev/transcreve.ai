@@ -117,3 +117,9 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 - [product.md](product.md) — o que o sistema entrega
 - [system_design.md](system_design.md) — arquitetura e decisões de design
 - [MULTIUSER.md](MULTIUSER.md) — auditoria de segurança e capacidade
+
+## Edicao de transcricao (T-04, 20/09/2026)
+
+`PUT /api/transcriptions/:id` aceita `{segments: [{id, text}]}` para editar o texto dos segmentos. Exige todos os IDs da transcricao, sem duplicados, com texto string (inclusive vazio). O servidor ordena os segmentos pelo timestamp e recompoe `raw_text` com paragrafos. Timestamps e falantes sao preservados. Metadados devem ser salvos em requisicao separada; o contrato legado de `raw_text` permanece para texto sem segmentos e clientes antigos.
+
+`services/transcript-editor.js` usa conexao SQLite dedicada, `BEGIN IMMEDIATE`, commit e rollback, evitando intercalar a transacao com escritas do worker. Nao altera schema. Respostas: 200 com `raw_text` e `segments`, 400 para payload/IDs invalidos, 404 para transcricao inexistente, 409 durante processamento. O isolamento por dono continua na T-02.

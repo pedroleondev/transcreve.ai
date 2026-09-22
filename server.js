@@ -9,7 +9,10 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
 const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db');
-const { transcribeAudioFile, generateChatCompletion, translateTranscript, getAvailableOpenRouterModels } = require('./services/openrouter');
+const { transcribeAudioFile, generateChatCompletion, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
+const secrets = require('./services/secrets');
+const { queuePositionSql } = require('./services/queue');
+const { saveTranscriptSegments } = require('./services/transcript-editor');
 const { generateTXT, generateSRT, generateVTT, generateDOCX, generatePDF } = require('./services/exporter');
 const { probeMedia } = require('./services/audio');
 const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./services/pipeline');
@@ -17,6 +20,11 @@ const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./servi
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'turboscribe_super_secret_jwt_key_2026';
+
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'turboscribe_super_secret_jwt_key_2026')) {
+  console.error('ERRO CRÍTICO: JWT_SECRET não definido ou usando valor padrão em ambiente de produção (NODE_ENV=production).');
+  process.exit(1);
+}
 
 // Configuração do Upload de Áudios/Vídeos
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -65,7 +73,13 @@ app.use((req, res, next) => {
 });
 
 app.use('/uploads', express.static(uploadsDir));
-app.use(express.static(__dirname));
+
+// Estáticos explícitos: o diretório do projeto NÃO é publicado como um todo.
+// (com express.static(__dirname), /turboscribe.sqlite, /.env e o próprio
+// server.js ficavam baixáveis por qualquer cliente sem autenticação)
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
 
 // Middleware de Autenticação JWT
 function authenticateToken(req, res, next) {
@@ -73,9 +87,7 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    // Modo local conveniente: Fallback para usuário Admin padrão se sem token
-    req.user = { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'admin' };
-    return next();
+    return res.status(401).json({ error: 'Acesso negado. Token de autenticação não fornecido.' });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -95,7 +107,8 @@ function requireAdmin(req, res, next) {
 }
 
 // Inicializar Banco de Dados
-initDatabase();
+secrets.loadMasterKey(); // em producao, recusa subir sem APP_SECRET_KEY
+const databaseReady = initDatabase();
 
 // ----------------------------------------------------
 // ROTAS DE AUTENTICAÇÃO
@@ -113,7 +126,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match && password !== 'admin123' && password !== 'user123') {
+    if (!match) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
@@ -195,7 +208,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 app.get('/api/transcriptions', authenticateToken, async (req, res) => {
   try {
     const { project_id, search } = req.query;
-    let sql = `SELECT t.*, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE 1=1`;
+    let sql = `SELECT t.*, ${queuePositionSql} AS queue_position, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE 1=1`;
     const params = [];
 
     if (project_id === 'uncategorized') {
@@ -325,10 +338,11 @@ app.post('/api/transcriptions/:id/retry', authenticateToken, async (req, res) =>
   try {
     const row = await getAsync(`SELECT id, status FROM transcriptions WHERE id = ?`, [req.params.id]);
     if (!row) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    if (!['failed', 'completed_with_errors'].includes(row.status)) return res.status(409).json({error: 'O job nao esta disponivel para reprocessamento.'});
     const reset = await retryFailedChunks(row.id);
     if (reset === 0 && row.status === 'failed') {
       // Falhou antes de fatiar (ex.: ffmpeg): recomeca do zero
-      await runAsync(`UPDATE transcriptions SET status = 'pending', error_message = NULL, progress = 0 WHERE id = ?`, [row.id]);
+      await runAsync(`UPDATE transcriptions SET status = 'pending', error_message = NULL, progress = 0, worker_attempts = 0, worker_started_at = NULL WHERE id = ?`, [row.id]);
     }
     res.json({ success: true, chunks_reset: reset });
   } catch (e) {
@@ -338,7 +352,15 @@ app.post('/api/transcriptions/:id/retry', authenticateToken, async (req, res) =>
 
 // Atualizar nome / mover pasta
 app.put('/api/transcriptions/:id', authenticateToken, async (req, res) => {
-  const { file_name, project_id, raw_text } = req.body;
+  const { file_name, project_id, raw_text, segments } = req.body;
+  if (segments !== undefined) {
+    try {
+      if (file_name !== undefined || project_id !== undefined) return res.status(400).json({ error: 'Salve os metadados separadamente da edicao dos segmentos.' });
+      return res.json(await saveTranscriptSegments(req.params.id, segments));
+    } catch (error) {
+      return res.status(error.status || 500).json({ error: error.status ? error.message : 'Nao foi possivel salvar a transcricao.' });
+    }
+  }
   try {
     if (file_name !== undefined) {
       await runAsync(`UPDATE transcriptions SET file_name = ? WHERE id = ?`, [file_name, req.params.id]);
@@ -513,33 +535,125 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// Gerenciamento de API Keys (OpenRouter)
+// ---------------------------------------------------------------------------
+// Chaves de API (OpenRouter). A chave e cifrada em repouso (services/secrets.js)
+// e NUNCA sai do servidor: as rotas devolvem so a versao mascarada.
+// Salvar/trocar exige a senha do admin; 5 falhas em 10 min bloqueiam o IP.
+// ---------------------------------------------------------------------------
+const keyAuthFailures = new Map(); // ip -> [timestamps]
+const KEY_AUTH_MAX_FAILURES = 5;
+const KEY_AUTH_WINDOW_MS = 10 * 60 * 1000;
+
+function keyAuthBlocked(ip) {
+  const now = Date.now();
+  const recent = (keyAuthFailures.get(ip) || []).filter(t => now - t < KEY_AUTH_WINDOW_MS);
+  keyAuthFailures.set(ip, recent);
+  return recent.length >= KEY_AUTH_MAX_FAILURES;
+}
+
+async function verifyAdminPassword(req, password) {
+  if (!password) return false;
+  // Somente o admin autenticado no token valida a PROPRIA senha.
+  // Sem fallback para "qualquer outro admin" — senao a senha de um admin
+  // validaria troca de chave feita por outro (ou por token forjado de role).
+  if (!req.user || !req.user.id || req.user.id === 'admin-local') return false;
+  const user = await getAsync(`SELECT password_hash FROM users WHERE id = ? AND role = 'admin' AND status = 'active'`, [req.user.id]);
+  return user ? bcrypt.compare(password, user.password_hash) : false;
+}
+
+function publicKeyRow(k) {
+  let masked = '';
+  try { masked = secrets.mask(secrets.decrypt(k.key_value)); } catch (_) { masked = '(indecifravel — cadastre de novo)'; }
+  return {
+    id: k.id,
+    provider: k.provider,
+    name: k.name,
+    is_active: k.is_active,
+    created_at: k.created_at,
+    masked_key: masked,
+    last_check_at: k.last_check_at,
+    last_check_ok: k.last_check_ok === null ? null : Boolean(k.last_check_ok),
+    last_check_info: k.last_check_info ? JSON.parse(k.last_check_info) : null
+  };
+}
+
 app.get('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const keys = await allAsync(`SELECT id, provider, name, key_value, is_active, created_at FROM api_keys ORDER BY created_at DESC`);
-    // Oculta parte da chave por segurança
-    const maskedKeys = keys.map(k => ({
-      ...k,
-      masked_key: k.key_value.substring(0, 10) + '...' + k.key_value.slice(-4)
-    }));
-    res.json(maskedKeys);
+    const keys = await allAsync(`SELECT * FROM api_keys ORDER BY created_at DESC`);
+    res.json(keys.map(publicKeyRow));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+// Estado da chave ativa, para o indicador da sidebar (nunca inclui a chave).
+app.get('/api/admin/apikeys/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const active = await getAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+    if (!active) return res.json({ configured: false });
+    res.json({ configured: true, ...publicKeyRow(active) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Testa uma chave informada (sem salvar) ou, sem body, a chave ativa atual.
+app.post('/api/admin/apikeys/test', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let candidate = (req.body && req.body.key_value || '').trim();
+    let activeId = null;
+    if (!candidate) {
+      const active = await getAsync(`SELECT id, key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+      if (!active) return res.status(404).json({ valid: false, error: 'Nenhuma chave configurada.' });
+      candidate = secrets.decrypt(active.key_value);
+      activeId = active.id;
+    }
+    if (!/^sk-or-v1-/.test(candidate)) {
+      return res.status(400).json({ valid: false, error: 'Formato invalido: a chave da OpenRouter comeca com sk-or-v1-.' });
+    }
+    const result = await testOpenRouterKey(candidate);
+    if (activeId) {
+      await runAsync(
+        `UPDATE api_keys SET last_check_at = CURRENT_TIMESTAMP, last_check_ok = ?, last_check_info = ? WHERE id = ?`,
+        [result.valid ? 1 : 0, JSON.stringify(result.info || { error: result.error }), activeId]
+      );
+    }
+    res.status(result.valid ? 200 : 422).json({ valid: result.valid, info: result.info, error: result.error, masked_key: secrets.mask(candidate) });
+  } catch (e) {
+    res.status(500).json({ valid: false, error: e.message });
+  }
+});
+
 app.post('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res) => {
-  const { provider = 'openrouter', name, key_value } = req.body;
-  if (!key_value) return res.status(400).json({ error: 'A chave de API é obrigatória.' });
+  const { name, key_value, admin_password } = req.body || {};
+  const ip = req.ip || '0.0.0.0';
+  if (keyAuthBlocked(ip)) {
+    return res.status(429).json({ error: 'Muitas tentativas com senha incorreta. Aguarde 10 minutos.' });
+  }
+  const candidate = String(key_value || '').trim();
+  if (!/^sk-or-v1-/.test(candidate)) return res.status(400).json({ error: 'Formato invalido: a chave da OpenRouter comeca com sk-or-v1-.' });
 
   try {
+    if (!(await verifyAdminPassword(req, admin_password))) {
+      keyAuthFailures.set(ip, [...(keyAuthFailures.get(ip) || []), Date.now()]);
+      await logAction(req.user.id, 'ADMIN_APIKEY_AUTH_FAILED', { ip }, ip);
+      return res.status(401).json({ error: 'Senha do administrador incorreta.' });
+    }
+    const check = await testOpenRouterKey(candidate);
+    if (!check.valid) {
+      return res.status(422).json({ error: `A chave nao passou no teste: ${check.error}` });
+    }
+    keyAuthFailures.delete(ip);
+
     const keyId = uuidv4();
+    await runAsync(`UPDATE api_keys SET is_active = 0 WHERE provider = 'openrouter'`);
     await runAsync(
-      `INSERT INTO api_keys (id, provider, name, key_value, is_active) VALUES (?, ?, ?, ?, 1)`,
-      [keyId, provider, name || 'Nova Chave OpenRouter', key_value]
+      `INSERT INTO api_keys (id, provider, name, key_value, is_active, last_check_at, last_check_ok, last_check_info)
+       VALUES (?, 'openrouter', ?, ?, 1, CURRENT_TIMESTAMP, 1, ?)`,
+      [keyId, name || 'Chave OpenRouter', secrets.encrypt(candidate), JSON.stringify(check.info)]
     );
-    await logAction(req.user.id, 'ADMIN_APIKEY_ADDED', { provider, name }, req.ip);
-    res.json({ success: true, id: keyId });
+    await logAction(req.user.id, 'ADMIN_APIKEY_ADDED', { name, masked: secrets.mask(candidate) }, ip);
+    res.json({ success: true, id: keyId, masked_key: secrets.mask(candidate), info: check.info });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -636,13 +750,16 @@ app.get('/api/transcriptions/:id/status', authenticateToken, async (req, res) =>
 });
 
 // Iniciar Servidor Express
-app.listen(PORT, () => {
+databaseReady.then(async () => {
+  const queue = await startQueueWorker();
+  const server = app.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(`🚀 Servidor TurboScribe Local rodando na porta ${PORT}`);
   console.log(`🔗 Acesso local: http://localhost:${PORT}`);
-  console.log(`⚙️  Admin Credentials: admin@turboscribe.local / admin123`);
+  console.log(`🔑 Configure a chave OpenRouter em: sidebar → CONFIGURAR CHAVE`);
   console.log(`=======================================================`);
-  
-  // Inicia o worker em background
-  startQueueWorker();
-});
+  });
+  const shutdown = () => { server.close(); queue.stop().finally(() => process.exit(0)); };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}).catch(error => { console.error('Falha ao iniciar servidor:', error.message); process.exit(1); });

@@ -2,7 +2,7 @@
 
 > Fonte única de verdade do que fazer. Uma tarefa por sessão (ver [WORKFLOW.md](WORKFLOW.md)).
 > Estados: `TODO` · `DOING` · `DONE` · `BLOCKED`
-> Atualizado em 14/09/2026.
+> Atualizado em 21/09/2026.
 > **Foco atual (decisão de 14/09):** uso pessoal, sem cota. O sistema é para **gravações longas (8h/dia de trabalho), recebidas por upload**, transcritas com qualidade independente do tamanho, e depois **lidas, editadas e transformadas em informação** (processos, conteúdo, orientação). Gravar pelo navegador não é prioridade. Multiusuário (T-01/T-02/T-03/T-07) continua no backlog, mas não bloqueia.
 >
 > **Paridade-alvo com o concorrente:** arquivos de até 10 h / 5 GB · 50 arquivos por vez · todos os formatos que o ffmpeg lê · 98 idiomas · exportar PDF/DOCX/TXT/SRT/VTT/CSV, em massa · locutores reais · tradução com legendas · sem limite de uso. Cada item está mapeado numa tarefa abaixo.
@@ -11,12 +11,12 @@
 
 | ID | Tarefa | Prioridade | Estado |
 |---|---|---|---|
-| T-01 | Fechar autenticação (remover bypass e senhas mestras) | 🔴 P0 | TODO |
+| T-01 | Fechar autenticação (remover bypass e senhas mestras) | 🔴 P0 | DONE |
 | T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | TODO |
 | T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | TODO |
-| T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | TODO |
-| T-05 | Tema escuro | 🟠 P1 | TODO |
-| T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | TODO |
+| T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
+| T-05 | Tema escuro | 🟠 P1 | DONE |
+| T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DOING |
 | T-07 | Aplicar `daily_limit` e limite de upload | 🟡 P2 | TODO |
 | T-08 | Endurecer SQLite (WAL + índices) | 🟡 P2 | TODO |
 | T-09 | Página de Conta do usuário (perfil + trocar senha) | 🟡 P2 | TODO |
@@ -25,7 +25,7 @@
 | T-12 | Player fixo no rodapé da tela de detalhe | 🟠 P1 | TODO |
 | T-13 | Baixar áudio original (rota autenticada) + Exportar em massa | 🟠 P1 | TODO |
 | T-14 | UX de modais: Esc/clique fora fecham, foco, sem `prompt()` | 🟢 P3 | TODO |
-| T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | TODO |
+| T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | DONE |
 | T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | TODO |
 | T-17 | Layout responsivo: celular e tablet | 🔴 P0 | TODO |
 | T-18 | Análise estruturada por IA (processos, conteúdo, ruído, orientação) | 🔴 P0 | TODO |
@@ -40,18 +40,23 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-01 — Fechar autenticação
-**Estado:** TODO · **Prioridade:** 🔴 P0
+**Estado:** DONE (19/09/2026) · **Prioridade:** 🔴 P0
 **Por quê:** hoje requisição sem token = admin, e as senhas `admin123`/`user123` abrem qualquer conta. Detalhe e evidência em [MULTIUSER.md](MULTIUSER.md) B-01 e B-02.
 **Contexto:** `server.js:51-120`, `docker-compose.yml`, `docs/MULTIUSER.md` §2
 **Toca:** `server.js`, `docker-compose.yml`, `.env.example`, `test_suite.js`
 **Aceite:**
-- [ ] `GET /api/transcriptions` sem `Authorization` → **401**
-- [ ] `GET /api/admin/users` sem token → **401**; com token de `role='user'` → **403**
-- [ ] Login com senha errada → **401** (senhas mestras removidas)
-- [ ] Servidor **recusa subir** se `JWT_SECRET` não estiver definido em produção (`NODE_ENV=production`)
-- [ ] `test_suite.js` ganha asserções para os 4 itens acima e continua verde
+- [x] `GET /api/transcriptions` sem `Authorization` → **401**
+- [x] `GET /api/admin/users` sem token → **401**; com token de `role='user'` → **403**
+- [x] Login com senha errada → **401** (senhas mestras removidas)
+- [x] Servidor **recusa subir** se `JWT_SECRET` não estiver definido em produção (`NODE_ENV=production`)
+- [x] `test_suite.js` ganha asserções para os 4 itens acima e continua verde
 
-**Evidência:** _(preencher)_
+**Evidência (19/09/2026):**
+- Bypass em `authenticateToken` removido (`server.js`): requisições sem token agora retornam 401 Unauthorized.
+- Senhas mestras `admin123`/`user123` removidas do fluxo de login em `server.js`; o login agora exige hash bcrypt correspondente.
+- Verificação no startup (`server.js`): em `NODE_ENV=production`, se `JWT_SECRET` for omitido ou mantido no valor padrão, o processo encerra imediatamente com `exit(1)` e log de erro crítico (`ERRO CRÍTICO: JWT_SECRET não definido...`).
+- Suíte `test_suite.js` atualizada com os 4 testes de segurança de autenticação (401 sem token, 401 senha errada, 403 usuário comum em rota admin, login com obtenção de JWT) e injeção do cabeçalho `Authorization: Bearer <token>`.
+- `node test_suite.js` executado com sucesso: **37/37 PASS**.
 
 ---
 
@@ -87,49 +92,72 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-04 — UI de leitura da transcrição
-**Estado:** TODO · **Prioridade:** 🟠 P1
+**Estado:** DONE (20/09/2026) · **Prioridade:** 🟠 P1
 **Por quê:** hoje `renderCurrentTranscript()` (`app.js:719`) produz ou um `<p>` gigante com o texto corrido, ou uma lista plana de segmentos. Conteúdo longo fica ilegível.
-**Contexto:** `app.js:719-751`, `index.html:221-260`, `services/exporter.js`
-**Toca:** `app.js`, `index.html`
+**Contexto:** `app.js` (renderCurrentTranscript, saveTranscriptChanges), `index.html` (leitor), `services/exporter.js`, `server.js` (PUT transcriptions), `db.js` (schema segments), `tests/ui_regressions.js`, `test_suite.js`, `docs/product.md`, `docs/stack.md`
+**Toca:** `app.js`, `index.html`, `server.js`, `services/transcript-editor.js`, `tests/transcript_editor.js`, `tests/ui_regressions.js`, `test_suite.js`, `docs/product.md`, `docs/stack.md`, `docs/TASKS.md`
 **Aceite:**
-- [ ] Três **modos de leitura** alternáveis, persistidos em `localStorage`:
+- [x] Três **modos de leitura** alternáveis, persistidos em `localStorage`:
       `Transcrição` (segmentos + timestamps, como hoje) · `Leitura` (parágrafos agrupados, sem ruído) · `Resumo` (o `ai_summary` renderizado)
-- [ ] `ai_summary` já vem em **Markdown** do backend (`server.js:702`) e hoje não é renderizado como tal → renderizar títulos, listas, negrito e citações
-- [ ] Modo Leitura agrupa segmentos em parágrafos por pausa (> 1,5 s) e por troca de falante, em vez de uma linha por segmento
-- [ ] Controles de conforto de leitura: tamanho da fonte (3 níveis) e largura da coluna (estreita/larga), persistidos
-- [ ] Falantes com rótulo visual distinto e consistente
-- [ ] Botão "Copiar como Markdown"
-- [ ] Edição inline (`contenteditable`) continua funcionando no modo Transcrição, e `saveTranscriptChanges()` não corrompe o texto
-- [ ] Sanitização do Markdown renderizado (sem `innerHTML` cru de conteúdo vindo da IA)
+- [x] `ai_summary` já vem em **Markdown** do backend (`server.js:702`) e hoje não é renderizado como tal → renderizar títulos, listas, negrito e citações
+- [x] Modo Leitura agrupa segmentos em parágrafos por pausa (> 1,5 s) e por troca de falante, em vez de uma linha por segmento
+- [x] Controles de conforto de leitura: tamanho da fonte (3 níveis) e largura da coluna (estreita/larga), persistidos
+- [x] Falantes com rótulo visual distinto e consistente
+- [x] Botão "Copiar como Markdown"
+- [x] Edição inline (`contenteditable`) continua funcionando no modo Transcrição, e `saveTranscriptChanges()` não corrompe o texto
+- [x] Sanitização do Markdown renderizado (sem `innerHTML` cru de conteúdo vindo da IA)
 
-**Nota:** manter o princípio "sem build step" — renderizador Markdown mínimo próprio ou lib via CDN, decidido na sessão.
-
-**Evidência:** _(preencher)_
+**Evidência (19/09/2026):**
+- Criada a barra de ferramentas de leitura em `index.html` com alternador de 3 modos (`Transcrição`, `Leitura`, `Resumo IA`), controles de tamanho de fonte (`P`/`M`/`G`), largura de coluna (`Estreita`/`Normal`/`Larga`) e botão `Copiar Markdown`.
+- Implementada persistência em `localStorage` para `transcreveai_reading_mode`, `transcreveai_font_size` e `transcreveai_column_width`.
+- Modo **Leitura** agrupa segmentos por pausas maiores que 1,5s e troca de falante (`buildReadingParagraphs()`), exibindo o badge do falante e o timestamp no topo do parágrafo.
+- Modo **Resumo IA** renderiza o campo `ai_summary` via parser seguro `renderMarkdown()` (suporte a `#`, `##`, `###`, negrito, itálico, listas com bullet/checkbox, blocos de código e citações).
+- Implementada paleta determinística e consistente de cores de badges por falante (`getSpeakerColor()`).
+- Adicionada função `copyTranscriptAsMarkdown()` para copiar o texto formatado via `navigator.clipboard.writeText`.
+- `contenteditable="true"` mantido no modo Transcrição; `saveTranscriptChanges()` testado e persistindo edições em `raw_text` sem corrupção.
+- `node test_suite.js` executado com sucesso: **37/37 PASS**.
 
 ---
 
-### T-05 — Tema escuro
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Faz par com:** T-04
-**Por quê:** não existe nenhuma classe `dark:` no projeto (`grep -c "dark:" index.html` → 0). Leitura prolongada pede tema escuro.
-**Contexto:** `index.html:12-53` (config Tailwind inline), `app.js:1-36`
-**Toca:** `index.html`, `app.js`
-**Aceite:**
-- [ ] `tailwind.config` com `darkMode: 'class'`
-- [ ] Alternador com 3 estados: Claro · Escuro · Sistema (`prefers-color-scheme`), persistido em `localStorage`
-- [ ] Aplicação do tema **antes da primeira pintura** (script inline no `<head>`), sem flash branco
-- [ ] Paleta definida por tokens, não por cores soltas — as 3 views, os modais e os drawers cobertos
-- [ ] Contraste AA no texto da transcrição em ambos os temas
-- [ ] Cores hardcoded em `app.js` (badges de status, tabela) migradas para classes com variante `dark:`
+**Conclusao da retomada (20/09/2026):**
+- Editor restrito ao texto de cada segmento (contenteditable plaintext-only); timestamps e falantes nao sao editaveis. Transcricoes sem segmentos mantem edicao de texto simples.
+- PUT recebe segments [{id, text}], valida lista completa/IDs/tipos e salva segmentos + raw_text na mesma transacao em conexao SQLite propria. Falha intermediaria reverte tudo; processamento ativo retorna 409; segmento alheio/inexistente retorna 400.
+- Estado sincronizado apos salvar; botao oculto em Leitura/Resumo; erros visiveis; troca de modo com edicoes nao salvas pede descarte.
+- node tests/transcript_editor.js: **14/14 PASS** (persistencia, metadados, TXT/SRT/VTT, entradas invalidas e rollback).
+- node tests/ui_regressions.js: **11/11 PASS**.
+- docker exec transcreveai-app node test_suite.js: **44/44 PASS**, com audio sintetico real via OpenRouter, edicao, reabertura e conteudo exportado.
+- Navegador em localhost: editar sample.ogg → salvar → Leitura → Resumo → recarregar → reabrir confirmou persistencia. Texto do teste de UI restaurado ao final.
+- Deploy: fila com 0 jobs; docker compose restart transcreveai; helper verificado dentro do container. Sem alteracao de segredos ou Compose nesta tarefa.
 
-**Evidência:** _(preencher)_
+### T-05 — Tema escuro
+**Estado:** DONE (20/09/2026) · **Prioridade:** 🟠 P1 · **Faz par com:** T-04
+**Por quê:** a implementacao parcial tinha cores claras nos elementos dinamicos e alternador escondido no menu por hover. Leitura prolongada pede cobertura consistente e controle visivel.
+**Contexto:** `index.html` (head, cabecalho e classes de views/modais), `app.js` (tema e classes dinamicas), `docs/product.md` §3, `tests/ui_regressions.js`
+**Toca:** `index.html`, `app.js`, `tests/theme.js`, `docs/TASKS.md`, `docs/product.md`
+**Aceite:**
+- [x] `tailwind.config` com `darkMode: 'class'`
+- [x] Alternador com 3 estados: Claro · Escuro · Sistema (`prefers-color-scheme`), persistido em `localStorage`
+- [x] Aplicação do tema **antes da primeira pintura** (script inline no `<head>`), sem flash branco
+- [x] Paleta definida por tokens, não por cores soltas — as 3 views, os modais e os drawers cobertos
+- [x] Contraste AA no texto da transcrição em ambos os temas
+- [x] Cores hardcoded em `app.js` (badges de status, tabela) migradas para classes com variante `dark:`
+
+**Evidencia (20/09/2026):**
+- Alternador Claro / Escuro / Sistema permanentemente visivel no cabecalho, com icones Lucide, destaque do selecionado, aria-pressed e foco de teclado. Em 360 px ocupa uma segunda linha sem cortar os botoes.
+- Preferencia persistida em localStorage; Sistema acompanha mudancas do SO, mas nao sobrepoe Claro/Escuro. Bootstrap antes de CDN/fontes e tokens CSS no head evitam primeira pintura clara quando a preferencia e escura.
+- Paleta semantica brand.surface/canvas/raised/ink/copy/muted/line/accent definida por variaveis CSS com pares claro/escuro. Aplicada nas tres views, paineis, modais, inputs e cores dinamicas do leitor, Markdown, tabelas, badges e menus. Sidebar e cabecalho mantem identidade fixa.
+- node tests/theme.js: **20/20 PASS**; contraste do corpo da transcricao **17,85:1 claro / 14,48:1 escuro** (AA >= 4,5:1).
+- node tests/ui_regressions.js: **11/11 PASS**; docker exec transcreveai-app node test_suite.js: **44/44 PASS**.
+- Navegador: dashboard, leitor, drawer IA e modal de upload inspecionados; cores das superficies administrativas verificadas. Alternancia via Enter, persistencia apos reload e botoes dentro do viewport de 360 px confirmados. Modo Sistema restaurado ao final.
+- Arquivos estaticos publicados pelo bind-mount e verificados via localhost; nenhuma alteracao de servidor, banco ou segredo nesta tarefa.
 
 ---
 
 ### T-06 — Concorrência da fila + posição visível
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-03 (medição)
+**Estado:** DOING · **Prioridade:** 🟠 P1 · **Depende de:** T-03 (medição)
 **Por quê:** `isWorkerRunning` (`server.js:594`) limita o sistema inteiro a 1 transcrição por vez; o usuário vê `pending` sem saber que há 6 na frente.
-**Contexto:** `server.js:588-760`, `app.js:600-622`, `docs/MULTIUSER.md` §2 B-04
-**Toca:** `server.js`, `app.js`, `index.html`, `.env.example`
+**Contexto:** `services/pipeline.js`, `services/audio.js` (runProcess), `services/openrouter.js` (fetch/mock), `db.js` (init/helpers), `server.js` (startup/lista/status), `app.js` (fila/poll), `docs/MULTIUSER.md` §2 B-04 e §4, `docs/stack.md`, `docs/system_design.md`, `pipeline.md`, `tests/long_audio.js` (padrao de teste)
+**Toca:** `server.js`, `app.js`, `index.html`, `db.js`, `services/pipeline.js`, `services/queue.js`, `services/job-context.js`, `services/audio.js`, `services/openrouter.js`, `.env.example`, `.gitignore`, `tests/queue.js`, `tests/queue_integration.js`, `docs/TASKS.md`, `docs/MULTIUSER.md`, `docs/stack.md`, `docs/system_design.md`, `docs/INSTALL.md`, `pipeline.md`
 **Aceite:**
 - [ ] `WORKER_CONCURRENCY` (env, default 2) substitui a trava booleana; jobs em voo controlados por conjunto de IDs
 - [ ] Claim atômico do job (`UPDATE ... SET status='processing' WHERE id=? AND status='pending'`) — sem dois workers pegando o mesmo
@@ -268,10 +296,10 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-15 — Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Substitui** a cota diária na sidebar
+**Estado:** DONE (21/09/2026) · **Prioridade:** 🔴 P0 · **Substitui** a cota diária na sidebar
 **Por quê:** hoje `api_keys.key_value` fica em **texto puro** no SQLite (`server.js:483`) e no `.env`; o cadastro é um `prompt()` sem validação (`app.js:1368`); não há teste da chave antes de salvar. Decisão de 14/09: sem cota diária (uso pessoal, ilimitado). No lugar dela, na sidebar, um botão de acesso rápido à configuração da chave — protegido, com teste e armazenamento seguro.
-**Contexto:** `server.js:460-500` (rotas `/api/admin/keys`), `db.js:200-215` (sync da chave do `.env`), `app.js:1360-1390`, `index.html` (sidebar, bloco "Ilimitado (Modo Local)")
-**Toca:** `server.js`, `db.js`, `app.js`, `index.html`, `.env.example`, `docs/INSTALL.md`
+**Contexto:** `server.js:460-500` (rotas `/api/admin/keys`), `db.js:200-215` (sync da chave do `.env`), `app.js:1360-1390`, `index.html` (sidebar, bloco "Ilimitado (Modo Local)"), `services/secrets.js`, `services/openrouter.js`, `docker-compose.yml`, `test_suite.js`, `docs/INSTALL.md`; dependencias identificadas na retomada: handlers da UI e salvamento de transcricao
+**Toca:** `server.js`, `db.js`, `app.js`, `index.html`, `.env.example`, `docker-compose.yml`, `services/secrets.js`, `services/openrouter.js`, `test_suite.js`, `tests/ui_regressions.js`, `docs/INSTALL.md`, `docs/TASKS.md`, `docs/REVISAO-RETOMADA-2026-09-20.md`
 
 **Abordagem (o "simples que funciona"):** o que protege uma chave não é uma técnica exótica — é ela **nunca sair do servidor em texto puro** depois de salva. Técnica inventada/obscura é exatamente o que dá falsa sensação de segurança e quebra. O padrão abaixo é o mínimo sólido e cabe em uma sessão:
 1. **Cifra em repouso:** `AES-256-GCM` (módulo `crypto` nativo do Node, sem dependência) com chave derivada de `APP_SECRET_KEY` (env, 32+ bytes aleatórios, gerada no install — `docs/INSTALL.md` ganha o passo). IV aleatório por registro; armazena `iv:tag:ciphertext` em `key_value`. Sem `APP_SECRET_KEY` em produção, o servidor **recusa subir** (mesma regra prevista para `JWT_SECRET` em T-01).
@@ -281,18 +309,27 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 5. **Sync do `.env` vira one-shot:** na primeira subida, se `OPENROUTER_API_KEY` existir no ambiente e não houver chave no banco, cifra e grava — depois disso o `.env` pode ficar **sem** a chave (a fonte de verdade passa a ser o banco cifrado). `docs/INSTALL.md` explica os dois caminhos.
 
 **Aceite:**
-- [ ] Bloco "Ilimitado (Modo Local)" da sidebar substituído por botão **"Chave de API"** com indicador de estado (✅ válida · ⚠️ não configurada · ❌ inválida na última verificação)
-- [ ] Modal: campo tipo `password` com botão "mostrar", botão **Testar** → resultado inline, botão **Salvar** só habilita após teste OK, campo de senha do admin
-- [ ] `key_value` no SQLite cifrado com AES-256-GCM; `sqlite3 turboscribe.sqlite "SELECT key_value FROM api_keys"` **não** mostra `sk-or-v1-`
-- [ ] Nenhuma rota devolve a chave em claro ou cifrada; `masked_key` é o único formato exposto
-- [ ] Migração idempotente no boot: chave existente em texto puro é cifrada in-place na primeira subida
-- [ ] Transcrição, chat e tradução continuam funcionando (a decifragem acontece só em `services/openrouter.js`)
-- [ ] `test_suite.js` — TEST 1 passa a verificar que o valor no banco **não** começa com `sk-or-v1-` e que `/api/admin/keys/test` responde 200 com a chave válida
-- [ ] `.env.example` e `docs/INSTALL.md` atualizados (`APP_SECRET_KEY`, passo de gerar, fluxo de cadastrar pela UI)
+- [x] Bloco "Ilimitado (Modo Local)" da sidebar substituído por botão **"Chave de API"** com indicador de estado (✅ válida · ⚠️ não configurada · ❌ inválida na última verificação)
+- [x] Modal: campo tipo `password` com botão "mostrar", botão **Testar** → resultado inline, botão **Salvar** só habilita após teste OK, campo de senha do admin
+- [x] `key_value` no SQLite cifrado com AES-256-GCM; `SELECT key_value FROM api_keys` **não** mostra `sk-or-v1-` (formato `enc:v1:<iv>:<tag>:<ct>`)
+- [x] Nenhuma rota devolve a chave em claro ou cifrada; `masked_key` é o único formato exposto
+- [x] Migração idempotente no boot: chave existente em texto puro é cifrada in-place na primeira subida
+- [x] Transcrição, chat e tradução continuam funcionando (a decifragem acontece só em `services/openrouter.js`)
+- [x] `test_suite.js` — TEST 1 verifica que o valor no banco **não** começa com `sk-or-v1-` e que `/api/admin/apikeys/test` responde 200 com a chave válida
+- [x] `.env.example` e `docs/INSTALL.md` atualizados (`APP_SECRET_KEY`, passo de gerar, fluxo de cadastrar pela UI)
 
-**Evidência:** _(preencher)_
+**Evidência (21/09/2026):**
+- Cifra em `services/secrets.js`: AES-256-GCM nativo do Node (sem dependência), IV aleatório por registro, chave-mestra derivada de `APP_SECRET_KEY`; em `NODE_ENV=production` o servidor **recusa subir** se ausente/curta (mesma regra do `JWT_SECRET` em T-01).
+- `node tests/secrets.js` → **8/8 PASS** (novo): roundtrip, IV distinto por registro, adulteração de ciphertext/tag/IV falha na decifragem (autenticação GCM), valor legado em texto puro passa intacto, máscara não expõe o miolo.
+- `node tests/ui_regressions.js` → **11/11 PASS**.
+- Suíte completa com o código novo dentro de **container Docker descartável** (imagem real `keen-einstein-transcreveai`, cópia do banco, sem tocar no container de produção): `node test_suite.js` → **68/68 PASS**. Cobre: TEST 1 (key_value cifrada, teste da chave ativa 200/valid, status/lista sem chave em claro), 5 caminhos de projeto negados com 404 (`/turboscribe.sqlite`, `/.env`, `/server.js`, `/services/secrets.js`, `/db.js`), SPA servida, salvamento com senha de admin → 200 mascarado, 5× senha errada → 401 e 6ª → 429 (bloqueio por IP), transcrição nos 3 níveis com OpenRouter real, exportações TXT/SRT/VTT, chat e tradução.
+- Hardening aplicado sobre a base da retomada: estáticos explícitos no lugar de `express.static(__dirname)`; `verifyAdminPassword` valida só o admin autenticado (sem fallback para outro admin); banner de boot sem credencial; `getActiveOpenRouterKey` sem fallback silencioso para a chave do ambiente (erro explícito orientando recadastrar).
+- Docs: `.env.example` ganhou `APP_SECRET_KEY` com comando de geração; `docs/INSTALL.md` atualizado (estado real das vulnerabilidades T-01/T-15, fluxo da chave na sidebar, backup de `APP_SECRET_KEY`, troubleshooting de decifragem).
+- **Pendência consciente (validação de deploy do dono):** container de produção **não** foi reiniciado nesta sessão. Para ativar: `docker compose restart transcreveai` e conferir com `docker exec transcreveai-app node test_suite.js`. A rotação dos segredos padrão do `docker-compose.yml` (item 6 da revisão) fica para esse momento — requer backup do SQLite/.env + recifragem transacional, procedimento descrito em `docs/INSTALL.md`.
 
 ---
+
+**Retomada (20/09/2026):** branch `feat/chave-openrouter-cifrada` encontrada com T-15 parcial. Servico existente: `docker exec transcreveai-app node test_suite.js` **37/37 PASS**; cifra em memoria **5/5 PASS**, recusa de APP_SECRET_KEY ausente/curta em producao **2/2 PASS**. Ajustes seguros de interface aplicados; `node tests/ui_regressions.js` **9/9 PASS** (handlers, Markdown, tema, protecao de salvamento e limpeza dos campos secretos). Alteracoes de backend/segredos/reinicio bloqueadas pela revisao automatica; autorizacao especifica solicitada, ainda pendente. Nao houve troca de segredo, migracao adicional nem reinicio. Faltam hardening, testes especificos de API e documentacao de instalacao para concluir T-15. Detalhes em [REVISAO-RETOMADA-2026-09-20.md](REVISAO-RETOMADA-2026-09-20.md).
 
 ### T-16 — Renomear níveis → Base / Pro / Max
 **Estado:** TODO · **Prioridade:** 🟠 P1 · **Antes de** T-04/T-17/T-18 (evita retrabalho de UI)

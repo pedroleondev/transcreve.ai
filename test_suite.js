@@ -3,8 +3,9 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const { getAsync, allAsync } = require('./db');
+const secrets = require('./services/secrets');
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 // Arquivo base versionado no repo (voz sintetica TTS, sem dado real de cliente) —
 // nao depende de uploads/ (gitignored) nem de audio de atendimento real.
 // Ver docs/workflow.md #Teste com arquivo base.
@@ -41,12 +42,162 @@ async function runTestSuite() {
     return 'timeout';
   }
 
-  // TEST 1: Verificação da Chave OpenRouter no Banco SQLite
+  // SECURITY TESTS (T-01 Acceptance Criteria)
+  let adminToken = '';
+  let userToken = '';
+
+  // 1. GET /api/transcriptions sem Authorization -> 401
+  try {
+    const res = await fetch(`${BASE_URL}/api/transcriptions`);
+    assert(res.status === 401, `GET /api/transcriptions sem Authorization retornou 401 (status: ${res.status})`);
+  } catch (e) {
+    assert(false, `Falha ao testar GET /api/transcriptions sem token: ${e.message}`);
+  }
+
+  // 2. GET /api/admin/users sem token -> 401
+  try {
+    const res = await fetch(`${BASE_URL}/api/admin/users`);
+    assert(res.status === 401, `GET /api/admin/users sem token retornou 401 (status: ${res.status})`);
+  } catch (e) {
+    assert(false, `Falha ao testar GET /api/admin/users sem token: ${e.message}`);
+  }
+
+  // 3. Login com senha errada -> 401 (senhas mestras removidas)
+  try {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@turboscribe.local', password: 'senha_completamente_errada_999' })
+    });
+    assert(res.status === 401, `Login com senha errada retornou 401 (status: ${res.status})`);
+  } catch (e) {
+    assert(false, `Falha ao testar login com senha errada: ${e.message}`);
+  }
+
+  // Obter tokens de autenticação válidos
+  try {
+    const adminLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@turboscribe.local', password: 'admin123' })
+    });
+    const adminLoginData = await adminLoginRes.json();
+    if (adminLoginRes.ok && adminLoginData.token) {
+      adminToken = adminLoginData.token;
+    }
+
+    const userLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'pedro.leon23@gmail.com', password: 'user123' })
+    });
+    const userLoginData = await userLoginRes.json();
+    if (userLoginRes.ok && userLoginData.token) {
+      userToken = userLoginData.token;
+    }
+    assert(adminToken && userToken, 'Tokens de login para Admin e User gerados com sucesso');
+  } catch (e) {
+    assert(false, `Falha ao autenticar usuários de teste: ${e.message}`);
+  }
+
+  // 4. GET /api/admin/users com token de role='user' -> 403
+  try {
+    const res = await fetch(`${BASE_URL}/api/admin/users`, {
+      headers: { 'Authorization': `Bearer ${userToken}` }
+    });
+    assert(res.status === 403, `GET /api/admin/users com token de usuário comum retornou 403 (status: ${res.status})`);
+  } catch (e) {
+    assert(false, `Falha ao testar GET /api/admin/users com token de usuário comum: ${e.message}`);
+  }
+
+  // TEST 1 (T-15): Chave OpenRouter CIFRADA em repouso e NUNCA exposta pela API.
+  const UNMASKED_KEY_RE = /sk-or-v1-[A-Za-z0-9_-]{15,}/;
   try {
     const keyRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1`);
-    assert(keyRow && keyRow.key_value.startsWith('sk-or-v1-'), 'Chave OpenRouter ativa e formatada no banco SQLite.');
+    assert(keyRow && keyRow.key_value.length > 0, 'Chave OpenRouter ativa presente no banco SQLite.');
+    assert(!keyRow.key_value.startsWith('sk-or-v1-'), 'Chave cifrada em repouso: key_value NAO comeca com sk-or-v1-.');
+    assert(keyRow.key_value.startsWith('enc:v1:'), 'key_value no formato enc:v1:<iv>:<tag>:<ciphertext>.');
+    const plainKey = secrets.decrypt(keyRow.key_value);
+    assert(UNMASKED_KEY_RE.test(plainKey), 'Decifragem local com APP_SECRET_KEY devolve a chave real (sk-or-v1-...).');
+
+    // Endpoint de teste responde 200 com a chave valida ativa (sem body = testa a ativa)
+    const testRes = await fetch(`${BASE_URL}/api/admin/apikeys/test`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const testData = await testRes.json();
+    assert(testRes.status === 200 && testData.valid === true, `POST /api/admin/apikeys/test com a chave ativa retornou 200/valid (status: ${testRes.status}).`);
+
+    // Status da sidebar: configured, mascarado, sem vazar a chave
+    const statusRes = await fetch(`${BASE_URL}/api/admin/apikeys/status`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
+    const statusData = await statusRes.json();
+    assert(statusRes.status === 200 && statusData.configured === true, 'GET /api/admin/apikeys/status retornou configured=true.');
+    assert(!UNMASKED_KEY_RE.test(JSON.stringify(statusData)), 'Resposta de status nao expoe a chave em claro.');
+
+    // Lista admin: so masked_key, nenhum campo key_value
+    const listRes = await fetch(`${BASE_URL}/api/admin/apikeys`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
+    const listData = await listRes.json();
+    assert(Array.isArray(listData) && listData.length > 0, 'GET /api/admin/apikeys listou as chaves.');
+    assert(listData.every(k => !('key_value' in k) && typeof k.masked_key === 'string'), 'Lista expoe apenas masked_key (nenhum campo key_value).');
+    assert(!UNMASKED_KEY_RE.test(JSON.stringify(listData)), 'Lista nao contem chave em claro.');
   } catch (e) {
-    assert(false, 'Erro ao verificar chave no banco: ' + e.message);
+    assert(false, 'Erro nos testes de cifra/vazamento da chave: ' + e.message);
+  }
+
+  // T-15 (revisao retomada): o diretorio do projeto NAO e publico
+  for (const p of ['/turboscribe.sqlite', '/.env', '/server.js', '/services/secrets.js', '/db.js']) {
+    try {
+      const res = await fetch(`${BASE_URL}${p}`);
+      assert(res.status === 404, `GET ${p} retornou 404 (status: ${res.status}).`);
+    } catch (e) {
+      assert(false, `Falha ao testar GET ${p}: ${e.message}`);
+    }
+  }
+
+  // Sanity: a SPA continua servida com as rotas estaticas explicitas
+  try {
+    const resIndex = await fetch(`${BASE_URL}/`);
+    assert(resIndex.status === 200, `GET / retornou 200 (status: ${resIndex.status}).`);
+    const resApp = await fetch(`${BASE_URL}/app.js`);
+    assert(resApp.status === 200, `GET /app.js retornou 200 (status: ${resApp.status}).`);
+  } catch (e) {
+    assert(false, 'Falha ao testar se a SPA continua servida: ' + e.message);
+  }
+
+  // T-15: salvar/trocar chave exige a senha do admin autenticado (com a propria chave ativa)
+  try {
+    const activeRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1`);
+    const saveRes = await fetch(`${BASE_URL}/api/admin/apikeys`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key_value: secrets.decrypt(activeRow.key_value), admin_password: 'admin123' })
+    });
+    const saveData = await saveRes.json();
+    assert(saveRes.status === 200 && saveData.success, `Salvar chave com senha de admin correta retornou 200 (status: ${saveRes.status}).`);
+    assert(saveData.masked_key && saveData.masked_key.includes('…') && !UNMASKED_KEY_RE.test(saveData.masked_key), 'Salvar devolveu apenas a chave mascarada.');
+  } catch (e) {
+    assert(false, 'Erro no teste de salvamento da chave: ' + e.message);
+  }
+
+  // T-15: senha errada -> 401; 5 falhas em 10 min -> bloqueio 429 (por IP)
+  try {
+    let blockedStatus = null;
+    for (let i = 1; i <= 6; i++) {
+      const res = await fetch(`${BASE_URL}/api/admin/apikeys`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key_value: 'sk-or-v1-invalida_para_teste_de_bloqueio', admin_password: 'senha_errada_de_proposito' })
+      });
+      if (i <= 5) {
+        assert(res.status === 401, `Tentativa ${i} com senha errada retornou 401 (status: ${res.status}).`);
+      } else {
+        blockedStatus = res.status;
+      }
+    }
+    assert(blockedStatus === 429, `Apos 5 falhas, a 6a tentativa foi bloqueada com 429 (status: ${blockedStatus}).`);
+  } catch (e) {
+    assert(false, 'Erro no teste de bloqueio por tentativas: ' + e.message);
   }
 
   // TEST 2, 3, 4: Transcrição nos 3 Níveis (Chita, Golfinho, Baleia)
@@ -69,6 +220,7 @@ async function runTestSuite() {
 
       const res = await fetch(`${BASE_URL}/api/transcribe`, {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${adminToken}` },
         body: formData
       });
 
@@ -109,7 +261,10 @@ async function runTestSuite() {
       const updatedText = 'Ah, tá ótimo. Eu queria saber sobre a carta de carência, porque é o seguinte. [Texto editado manualmente e persistido no SQLite]';
       const putRes = await fetch(`${BASE_URL}/api/transcriptions/${targetId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
         body: JSON.stringify({ raw_text: updatedText })
       });
       assert(putRes.ok, `Atualização da descrição via API retornou HTTP status 200`);
@@ -128,7 +283,9 @@ async function runTestSuite() {
 
     for (const fmt of formats) {
       try {
-        const expRes = await fetch(`${BASE_URL}/api/export/${targetId}/${fmt}?timestamps=true`);
+        const expRes = await fetch(`${BASE_URL}/api/export/${targetId}/${fmt}?timestamps=true`, {
+          headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
         assert(expRes.ok && expRes.headers.get('content-type'), `Exportação no formato .${fmt.toUpperCase()} gerada com sucesso (Status ${expRes.status})`);
       } catch (e) {
         assert(false, `Falha na exportação formato ${fmt}: ${e.message}`);
@@ -136,11 +293,35 @@ async function runTestSuite() {
     }
   }
 
+  // T-04: editar segmentos reais desta execucao, reabrir e exportar.
+  if (createdTranscriptionIds.length) {
+    try {
+      const id = createdTranscriptionIds[0];
+      const headers = { Authorization: 'Bearer ' + adminToken, 'Content-Type': 'application/json' };
+      const original = await (await fetch(BASE_URL + '/api/transcriptions/' + id, { headers })).json();
+      const edits = original.segments.map((segment, index) => ({ id: segment.id, text: segment.text + ' [edicao T-04 ' + index + ']' }));
+      const saved = await fetch(BASE_URL + '/api/transcriptions/' + id, { method: 'PUT', headers, body: JSON.stringify({segments: edits}) });
+      assert(saved.status === 200, 'T-04: salvar segmentos responde 200');
+      const reopened = await (await fetch(BASE_URL + '/api/transcriptions/' + id, { headers })).json();
+      assert(reopened.raw_text === edits.map(s => s.text).join('\n\n') && reopened.segments.every((s,i) => s.text === edits[i].text), 'T-04: reabrir preserva texto e segmentos');
+      assert(reopened.segments.every((s,i) => s.start_time === original.segments[i].start_time && s.end_time === original.segments[i].end_time && s.speaker === original.segments[i].speaker), 'T-04: tempos e falantes preservados');
+      for (const format of ['txt', 'srt', 'vtt']) {
+        const exported = await fetch(BASE_URL + '/api/export/' + id + '/' + format + '?timestamps=true', {headers});
+        assert(exported.ok && (await exported.text()).includes('[edicao T-04 0]'), 'T-04: ' + format + ' exporta edicoes');
+      }
+      const rejected = await fetch(BASE_URL + '/api/transcriptions/' + id, {method:'PUT', headers, body:JSON.stringify({segments:[{id:'inexistente',text:'invalid'}]})});
+      assert(rejected.status === 400, 'T-04: segmento estrangeiro/inexistente rejeitado');
+    } catch(error) { assert(false, 'T-04: ' + error.message); }
+  }
+
   // TEST 7: Testar Chat IA via OpenRouter API (POST /api/chat)
   try {
     const chatRes = await fetch(`${BASE_URL}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
       body: JSON.stringify({
         transcript_text: 'O cliente perguntou sobre a carta de carência do plano de saúde para o exame de ultrassom.',
         prompt: 'Resuma a dúvida do cliente em 1 frase.'
@@ -157,7 +338,10 @@ async function runTestSuite() {
   try {
     const transRes = await fetch(`${BASE_URL}/api/translate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
       body: JSON.stringify({
         transcript_text: 'Eu queria saber sobre a carta de carência.',
         target_language: 'English'
@@ -172,7 +356,9 @@ async function runTestSuite() {
 
   // TEST 9: Testar Métricas do Painel Admin (GET /api/admin/metrics)
   try {
-    const adminRes = await fetch(`${BASE_URL}/api/admin/metrics`);
+    const adminRes = await fetch(`${BASE_URL}/api/admin/metrics`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
     assert(adminRes.ok, 'Endpoint de métricas do Painel Admin respondeu com sucesso');
     const metrics = await adminRes.json();
     assert(metrics.users_total > 0 && metrics.transcriptions_count > 0, `Métricas calculadas: ${metrics.users_total} usuários, ${metrics.transcriptions_count} transcrições.`);

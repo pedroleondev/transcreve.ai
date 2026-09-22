@@ -15,7 +15,7 @@ SaaS local de **transcrição de áudio e vídeo com IA**, self-hosted em Docker
 |---|---|---|
 | Admin SaaS | Cria usuários, gerencia chaves de API, modelos, limites, vê logs | ✅ Implementado (`view-admin`) |
 | Usuário operacional | Sobe áudio, acompanha fila, lê/edita transcrição, exporta, usa IA | ✅ Implementado (`view-dashboard`, `view-details`) |
-| Leitor / consumidor do conteúdo | Só quer ler bem o resultado (resumo, tópicos, falantes) | ⚠️ Parcial — UI de leitura ainda crua |
+| Leitor / consumidor do conteúdo | Só quer ler bem o resultado (resumo, tópicos, falantes) | ✅ Modos de leitura, resumo Markdown e edicao persistente (T-04) |
 
 ## Telas existentes
 
@@ -41,9 +41,17 @@ Planos, FAQ, blog e login são **modais** em `app.js`, não páginas. Não exist
 ### Processamento (assíncrono)
 Detalhado em [../pipeline.md](../pipeline.md). Resumo: `pending` → pré-processamento ffmpeg (16kHz mono FLAC + loudnorm) → split nos silêncios se > 600s → Whisper via OpenRouter por bloco → filtro de alucinações → resumo IA opcional → `completed`.
 
+### Aparencia
+- Alternador Claro / Escuro / Sistema sempre visivel no cabecalho, acessivel por teclado. A escolha fica salva neste navegador.
+- Sistema acompanha a preferencia do dispositivo; Claro/Escuro sao escolhas fixas. Paleta aplicada a dashboard, detalhe, admin, modais e paineis de IA.
+- Tokens de texto/superficie mantem contraste AA na transcricao (17,85:1 claro / 14,48:1 escuro).
+
 ### Consumo do resultado
 - Timestamps clicáveis com seek no player
-- Edição inline do texto e do nome do arquivo
+- Modos Transcrição, Leitura (parágrafos por pausa/falante) e Resumo IA com Markdown escapado; preferências de modo, fonte e coluna persistidas
+- Copiar como Markdown e rótulos de falantes com cores consistentes
+- Edição inline do texto por segmento e do nome do arquivo; salvar sincroniza texto e segmentos usados nas exportações, preservando timestamps/falantes
+- Leitura/Resumo não permitem salvar sobre a transcrição; troca de modo avisa sobre edições não salvas
 - Exportação: PDF, DOCX, TXT, SRT, VTT (com/sem timestamps)
 - Chat com IA sobre a transcrição (`/api/chat`) e tradução (`/api/translate`)
 
@@ -65,8 +73,8 @@ Detalhado em [../pipeline.md](../pipeline.md). Resumo: `pending` → pré-proces
 | P-01 | Sem isolamento entre usuários — todo mundo vê tudo | Bloqueia uso multiusuário real |
 | P-02 | `daily_limit` existe no banco mas não é aplicado | Sem controle de consumo/custo |
 | P-03 | Sem tela de conta/perfil nem troca de senha pelo usuário | Admin precisa mexer no banco |
-| P-04 | UI de leitura da transcrição é crua | Conteúdo longo é difícil de consumir |
-| P-05 | Sem tema escuro | Uso prolongado cansa |
+| P-04 | Resolvido por T-04 em 20/09/2026 | Modos de leitura e edição por segmento com persistência validada |
+| P-05 | Resolvido por T-05 em 20/09/2026 | Claro / Escuro / Sistema no cabecalho; preferencia persistida e contraste AA no leitor |
 | P-06 | Fila com concorrência 1 | 10 usuários = fila serial |
 | P-07 | "Reconhecimento de locutores" é só um flag — todo segmento sai `Locutor 1` | Sem "quem falou" em reuniões/vendas (T-22) |
 | P-08 | Blocos de áudio longo transcritos em série, sem retry nem resultado parcial salvo | 8 h de áudio = 45 min de espera e qualquer falha perde tudo (T-19) |

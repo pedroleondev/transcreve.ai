@@ -9,7 +9,8 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - JWT_SECRET=${JWT_SECRET:-turboscribe_super_secret_jwt_key_2026}
+      - JWT_SECRET=${JWT_SECRET:-transcreveai_docker_jwt_secret_secure_key_2026}
+      - APP_SECRET_KEY=${APP_SECRET_KEY:-transcreveai_dev_app_secret_key_32chars_minimum_length!}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - .:/app
