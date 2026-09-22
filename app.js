@@ -1,6 +1,6 @@
 // Estado Global da Aplicação Frontend
 const state = {
-  currentUser: { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'admin' },
+  currentUser: { id: 'admin-local', name: 'Pedro León', email: 'pedro.leon23@gmail.com', role: 'user' },
   token: localStorage.getItem('turboscribe_token') || '',
   currentView: 'dashboard',
   projects: [],
@@ -21,18 +21,46 @@ const state = {
   recordedBlob: null,
   // Polling de progresso
   pollingInterval: null,
-  activeJobIds: [] // IDs de transcrições em pending/processing para polling
+  activeJobIds: [], // IDs de transcrições em pending/processing para polling
+  // Preferências de Leitura (T-04)
+  readingMode: localStorage.getItem('transcreveai_reading_mode') || 'transcript', // 'transcript' | 'reading' | 'summary'
+  fontSize: localStorage.getItem('transcreveai_font_size') || 'md', // 'sm' | 'md' | 'lg'
+  columnWidth: localStorage.getItem('transcreveai_column_width') || 'normal' // 'narrow' | 'normal' | 'wide'
 };
 
+// Garantir token válido de autenticação (auto-login fallback se necessário)
+async function ensureAuthToken() {
+  if (state.token) return true;
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'pedro.leon23@gmail.com', password: 'user123' })
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+      state.token = data.token;
+      state.currentUser = data.user;
+      localStorage.setItem('turboscribe_token', data.token);
+      return true;
+    }
+  } catch (e) {
+    console.warn('Auto-login fallback falhou:', e);
+  }
+  return false;
+}
+
 // Inicialização
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
+  await ensureAuthToken();
   fetchSystemSettings();
   fetchOpenRouterModels();
   fetchProjects();
   fetchTranscriptions();
-  checkAuthUser();
   setupDragAndDrop();
+  await checkAuthUser(); // papel real ANTES de consultar o estado da chave
+  loadApiKeyStatus();
 });
 
 // Buscar catálogo de modelos OpenRouter com precificação e acurácia
@@ -275,9 +303,19 @@ function handleSearch() {
 
 async function fetchProjects() {
   try {
-    const res = await fetch('/api/projects', {
+    let res = await fetch('/api/projects', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
+    if (res.status === 401 || res.status === 403) {
+      state.token = '';
+      localStorage.removeItem('turboscribe_token');
+      const relogged = await ensureAuthToken();
+      if (relogged) {
+        res = await fetch('/api/projects', {
+          headers: { 'Authorization': `Bearer ${state.token}` }
+        });
+      }
+    }
     const projects = await res.json();
     state.projects = Array.isArray(projects) ? projects : [];
     renderProjectsSidebar();
@@ -298,9 +336,11 @@ function renderProjectsSidebar() {
         <span class="truncate">${escapeHtml(p.name)}</span>
       </button>
       <div class="flex items-center space-x-1">
-        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold">${p.file_count || 0}</span>
-        <button onclick="deleteProject('${p.id}', '${escapeHtml(p.name)}')" class="hidden group-hover/project:block text-slate-500 hover:text-red-400 p-0.5" title="Excluir Projeto">
-          <i data-lucide="trash-2" class="w-3 h-3"></i>
+        <button onclick="openEditProjectModal('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-slate-400 hover:text-blue-400 p-1 transition" title="Editar Projeto">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="deleteProject('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-slate-400 hover:text-red-400 p-1 transition" title="Excluir Projeto">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
         </button>
       </div>
     </div>
@@ -311,7 +351,7 @@ function renderProjectsSidebar() {
 
 async function openNewProjectModal() {
   const name = prompt('Nome do novo projeto:');
-  if (!name) return;
+  if (!name || !name.trim()) return;
 
   try {
     const res = await fetch('/api/projects', {
@@ -320,18 +360,45 @@ async function openNewProjectModal() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name: name.trim() })
     });
     if (res.ok) {
       fetchProjects();
+    } else {
+      const err = await res.json();
+      alert('Erro ao criar projeto: ' + (err.error || 'Erro desconhecido'));
     }
   } catch (e) {
     alert('Erro ao criar projeto: ' + e.message);
   }
 }
 
+async function openEditProjectModal(id, currentName) {
+  const newName = prompt('Editar nome do projeto:', currentName);
+  if (!newName || !newName.trim() || newName.trim() === currentName) return;
+
+  try {
+    const res = await fetch(`/api/projects/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ name: newName.trim() })
+    });
+    if (res.ok) {
+      fetchProjects();
+    } else {
+      const err = await res.json();
+      alert('Erro ao atualizar projeto: ' + (err.error || 'Erro desconhecido'));
+    }
+  } catch (e) {
+    alert('Erro ao atualizar projeto: ' + e.message);
+  }
+}
+
 async function deleteProject(id, name) {
-  if (!confirm(`Tem certeza que deseja excluir o projeto "${name}"? Os arquivos associados não serão excluídos.`)) return;
+  if (!confirm(`Tem certeza que deseja excluir o projeto "${name}"?\nAs transcrições associadas NÃO serão apagadas (ficarão sem projeto).`)) return;
 
   try {
     const res = await fetch(`/api/projects/${id}`, {
@@ -342,6 +409,9 @@ async function deleteProject(id, name) {
       if (state.currentProjectId === id) state.currentProjectId = null;
       fetchProjects();
       fetchTranscriptions();
+    } else {
+      const err = await res.json();
+      alert('Erro ao excluir projeto: ' + (err.error || 'Erro desconhecido'));
     }
   } catch (e) {
     alert('Erro ao excluir projeto: ' + e.message);
@@ -464,10 +534,10 @@ function renderTranscriptionsTable() {
   if (state.transcriptions.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="text-center p-12 text-slate-400">
+        <td colspan="7" class="text-center p-12 text-brand-muted dark:text-brand-muted">
           <i data-lucide="file-audio" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
-          <p class="font-bold text-sm text-slate-600">Nenhum arquivo transcrito ainda</p>
-          <p class="text-xs text-slate-400 mt-1">Clique em "+ TRANSCREVER ARQUIVOS" no topo para enviar o seu primeiro áudio.</p>
+          <p class="font-bold text-sm text-brand-copy dark:text-brand-copy">Nenhum arquivo transcrito ainda</p>
+          <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Clique em "+ TRANSCREVER ARQUIVOS" no topo para enviar o seu primeiro áudio.</p>
         </td>
       </tr>
     `;
@@ -500,18 +570,18 @@ function renderTranscriptionsTable() {
     const progress = item.progress || 0;
     if (item.status === 'completed') {
       statusBadge = `
-        <span class="inline-flex items-center space-x-1 text-emerald-600 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+        <span class="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-300 font-bold text-xs bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
           <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
           <span>Concluído</span>
         </span>`;
     } else if (item.status === 'completed_with_errors') {
       statusBadge = `
         <div class="flex flex-col items-start space-y-1">
-          <span title="${escapeHtml(item.error_message || '')}" class="inline-flex items-center space-x-1 text-amber-700 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 cursor-help">
+          <span title="${escapeHtml(item.error_message || '')}" class="inline-flex items-center space-x-1 text-amber-700 dark:text-amber-300 font-bold text-xs bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 cursor-help">
             <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
             <span>Com falhas</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 hover:underline font-bold">Reprocessar blocos</button>
+          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 dark:text-blue-300 hover:underline font-bold">Reprocessar blocos</button>
         </div>`;
     } else if (item.status === 'processing') {
       const stageLabel = {
@@ -522,69 +592,69 @@ function renderTranscriptionsTable() {
         <div class="flex flex-col items-start space-y-1 min-w-[80px]">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span class="text-blue-700 font-bold text-xs">${stageLabel}</span>
+            <span class="text-blue-700 dark:text-blue-300 font-bold text-xs">${stageLabel}</span>
           </div>
-          <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+          <div class="w-full bg-brand-line dark:bg-brand-line rounded-full h-1.5 overflow-hidden">
             <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full transition-all duration-700" style="width: ${progress}%"></div>
           </div>
-          <span class="text-[10px] text-slate-500 font-mono font-bold">${progress}%</span>
+          <span class="text-[10px] text-brand-muted dark:text-brand-muted font-mono font-bold">${progress}%</span>
         </div>`;
     } else if (item.status === 'pending') {
       statusBadge = `
         <div class="flex flex-col items-start space-y-1">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
-            <span class="text-amber-700 font-bold text-xs">Na Fila</span>
+            <span class="text-amber-700 dark:text-amber-300 font-bold text-xs">Na Fila</span>
           </div>
-          <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+          <div class="w-full bg-brand-line dark:bg-brand-line rounded-full h-1.5 overflow-hidden">
             <div class="bg-amber-400 h-1.5 rounded-full animate-pulse" style="width: 8%"></div>
           </div>
         </div>`;
     } else if (item.status === 'failed') {
       statusBadge = `
         <div class="flex flex-col items-start space-y-1">
-          <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="inline-flex items-center space-x-1 text-red-600 font-bold text-xs bg-red-50 px-2 py-0.5 rounded-full border border-red-200 cursor-help">
+          <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="inline-flex items-center space-x-1 text-red-600 dark:text-red-300 font-bold text-xs bg-red-50 dark:bg-red-950 px-2 py-0.5 rounded-full border border-red-200 dark:border-red-800 cursor-help">
             <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
             <span>Falhou</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 hover:underline font-bold">Tentar de novo</button>
+          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 dark:text-blue-300 hover:underline font-bold">Tentar de novo</button>
         </div>`;
     }
 
     return `
-      <tr class="hover:bg-slate-50 transition border-b border-slate-100 group">
-        <td class="p-4"><input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 focus:ring-blue-500"></td>
-        <td class="p-4 font-bold text-slate-800">
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas transition border-b border-brand-line dark:border-brand-line group">
+        <td class="p-4"><input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 dark:text-blue-300 focus:ring-blue-500"></td>
+        <td class="p-4 font-bold text-brand-ink dark:text-brand-ink">
           <div class="flex items-center space-x-2">
-            <button onclick="openTranscriptionDetail('${item.id}')" class="hover:text-blue-600 text-left truncate max-w-xs">
-              ${item.project_name ? `<span class="text-[10px] text-slate-400 block font-normal">📁 ${escapeHtml(item.project_name)}</span>` : ''}
+            <button onclick="openTranscriptionDetail('${item.id}')" class="hover:text-blue-600 dark:hover:text-blue-300 text-left truncate max-w-xs">
+              ${item.project_name ? `<span class="text-[10px] text-brand-muted dark:text-brand-muted block font-normal">📁 ${escapeHtml(item.project_name)}</span>` : ''}
               <span class="font-bold">${escapeHtml(item.file_name)}</span>
             </button>
           </div>
         </td>
-        <td class="p-4 text-slate-500 text-xs">${dateFormatted}</td>
-        <td class="p-4 text-slate-700 font-medium text-xs">${durationFormatted}</td>
+        <td class="p-4 text-brand-muted dark:text-brand-muted text-xs">${dateFormatted}</td>
+        <td class="p-4 text-brand-copy dark:text-brand-copy font-medium text-xs">${durationFormatted}</td>
         <td class="p-4 text-xs font-semibold">${modeBadge}</td>
         <td class="p-4">
           ${statusBadge}
         </td>
         <td class="p-4 text-right relative">
           <div class="inline-block text-left group/menu">
-            <button class="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500">
+            <button class="p-1.5 hover:bg-brand-line dark:hover:bg-brand-line rounded-lg text-brand-muted dark:text-brand-muted">
               <i data-lucide="more-horizontal" class="w-4 h-4"></i>
             </button>
 
             <!-- Dropdown Context Menu -->
-            <div class="hidden group-hover/menu:block absolute right-0 mt-1 w-48 bg-white text-slate-800 text-xs font-semibold rounded-xl shadow-xl border border-slate-200 py-1.5 z-30">
-              <button onclick="openTranscriptionDetail('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center space-x-2">
-                <i data-lucide="external-link" class="w-3.5 h-3.5 text-blue-600"></i>
+            <div class="hidden group-hover/menu:block absolute right-0 mt-1 w-48 bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink text-xs font-semibold rounded-xl shadow-xl border border-brand-line dark:border-brand-line py-1.5 z-30">
+              <button onclick="openTranscriptionDetail('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-brand-canvas dark:hover:bg-brand-canvas flex items-center space-x-2">
+                <i data-lucide="external-link" class="w-3.5 h-3.5 text-blue-600 dark:text-blue-300"></i>
                 <span>Abrir transcrição</span>
               </button>
-              <button onclick="openTranscriptionDetail('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center space-x-2">
-                <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600"></i>
+              <button onclick="openTranscriptionDetail('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-brand-canvas dark:hover:bg-brand-canvas flex items-center space-x-2">
+                <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-300"></i>
                 <span>Exportar transcrição</span>
               </button>
-              <button onclick="deleteTranscription('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-slate-50 text-red-600 flex items-center space-x-2 border-t border-slate-100">
+              <button onclick="deleteTranscription('${item.id}')" class="w-full text-left px-3.5 py-2 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-red-600 dark:text-red-300 flex items-center space-x-2 border-t border-brand-line dark:border-brand-line">
                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                 <span>Excluir arquivo</span>
               </button>
@@ -745,29 +815,293 @@ async function saveInlineTitleEdit() {
   }
 }
 
+const SPEAKER_PALETTES = [
+  { bg: 'bg-blue-100 dark:bg-blue-950', text: 'text-blue-800 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800' },
+  { bg: 'bg-purple-100 dark:bg-purple-950', text: 'text-purple-800 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800' },
+  { bg: 'bg-emerald-100 dark:bg-emerald-950', text: 'text-emerald-800 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800' },
+  { bg: 'bg-amber-100 dark:bg-amber-950', text: 'text-amber-800 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800' },
+  { bg: 'bg-rose-100 dark:bg-rose-950', text: 'text-rose-800 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800' },
+  { bg: 'bg-cyan-100 dark:bg-cyan-950', text: 'text-cyan-800 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800' },
+  { bg: 'bg-indigo-100 dark:bg-indigo-950', text: 'text-indigo-800 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800' }
+];
+
+function getSpeakerColor(speaker) {
+  if (!speaker) return SPEAKER_PALETTES[0];
+  let hash = 0;
+  for (let i = 0; i < speaker.length; i++) {
+    hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % SPEAKER_PALETTES.length;
+  return SPEAKER_PALETTES[index];
+}
+
+function renderMarkdown(md) {
+  if (!md) {
+    return `
+      <div class="text-center py-10 text-brand-muted dark:text-brand-muted">
+        <i data-lucide="sparkles" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        <p class="font-medium text-sm">Nenhum resumo por IA foi gerado para esta transcrição ainda.</p>
+        <p class="text-xs mt-1">Use o painel lateral de IA para gerar um resumo executivo.</p>
+      </div>
+    `;
+  }
+
+  let html = escapeHtml(md);
+
+  // Headers
+  html = html.replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-brand-ink dark:text-brand-ink mt-4 mb-2">$1</h3>');
+  html = html.replace(/^## (.*$)/gim, '<h2 class="text-lg font-extrabold text-brand-ink dark:text-brand-ink mt-5 mb-2 border-b pb-1">$1</h2>');
+  html = html.replace(/^# (.*$)/gim, '<h1 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink mt-6 mb-3 border-b pb-1">$1</h1>');
+
+  // Blockquotes
+  html = html.replace(/^&gt; (.*$)/gim, '<blockquote class="border-l-4 border-blue-500 pl-4 py-1.5 my-3 bg-blue-50/50 dark:bg-blue-950/50 text-brand-copy dark:text-brand-copy italic rounded-r-lg">$1</blockquote>');
+
+  // Bold & Italic
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-brand-ink dark:text-brand-ink">$1</strong>');
+  html = html.replace(/\*(.*?)\*/g, '<em class="italic text-brand-ink dark:text-brand-ink">$1</em>');
+
+  // Bullet Lists
+  html = html.replace(/^\s*[\-\*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-brand-ink dark:text-brand-ink my-0.5">$1</li>');
+
+  // Checkbox lists
+  html = html.replace(/<li class="ml-4 list-disc text-brand-ink dark:text-brand-ink my-0.5">\[ \] (.*?)<\/li>/g, '<li class="ml-4 list-none text-brand-ink dark:text-brand-ink my-1 flex items-center space-x-2"><input type="checkbox" disabled class="rounded border-brand-line dark:border-brand-line"> <span>$1</span></li>');
+  html = html.replace(/<li class="ml-4 list-disc text-brand-ink dark:text-brand-ink my-0.5">\[x\] (.*?)<\/li>/g, '<li class="ml-4 list-none text-brand-ink dark:text-brand-ink my-1 flex items-center space-x-2"><input type="checkbox" checked disabled class="rounded border-brand-line dark:border-brand-line text-blue-600 dark:text-blue-300"> <span>$1</span></li>');
+
+  // Wrap contiguous <li> in <ul>
+  html = html.replace(/(<li.*?>.*?<\/li>\n?)+/g, '<ul class="my-3 space-y-1">$&</ul>');
+
+  // Code blocks
+  html = html.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs overflow-x-auto my-3 font-mono"><code>$1</code></pre>');
+
+  // Paragraphs
+  const paragraphs = html.split(/\n{2,}/);
+  html = paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<blockquote') || trimmed.startsWith('<pre') || trimmed.startsWith('<div')) {
+      return trimmed;
+    }
+    return `<p class="mb-3 leading-relaxed text-brand-ink dark:text-brand-ink">${trimmed.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
+
+  return html;
+}
+
+function buildReadingParagraphs(segments) {
+  if (!segments || segments.length === 0) return [];
+  const paragraphs = [];
+  let currentGroup = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (currentGroup.length === 0) {
+      currentGroup.push(seg);
+      continue;
+    }
+
+    const prevSeg = currentGroup[currentGroup.length - 1];
+    const speakerChanged = seg.speaker !== prevSeg.speaker;
+    const pauseExceeded = (seg.start_time - prevSeg.end_time) > 1.5;
+
+    if (speakerChanged || pauseExceeded) {
+      paragraphs.push(currentGroup);
+      currentGroup = [seg];
+    } else {
+      currentGroup.push(seg);
+    }
+  }
+
+  if (currentGroup.length > 0) {
+    paragraphs.push(currentGroup);
+  }
+
+  return paragraphs;
+}
+
+function setReadingMode(mode) {
+  if (!['transcript', 'reading', 'summary'].includes(mode)) return;
+  if (state.readingMode === 'transcript' && state.activeTranscription) {
+    const payload = collectTranscriptEdits();
+    const current = state.activeTranscription;
+    const changed = payload.segments ? payload.segments.some((s, i) => s.text !== current.segments[i].text) : payload.raw_text !== (current.raw_text || '');
+    if (changed && !confirm('Ha edicoes nao salvas. Descartar e trocar o modo de leitura?')) return;
+  }
+  state.readingMode = mode;
+  localStorage.setItem('transcreveai_reading_mode', mode);
+  renderCurrentTranscript();
+}
+
+function setFontSize(size) {
+  state.fontSize = size;
+  localStorage.setItem('transcreveai_font_size', size);
+  applyReadingPreferences();
+}
+
+function setColumnWidth(width) {
+  state.columnWidth = width;
+  localStorage.setItem('transcreveai_column_width', width);
+  applyReadingPreferences();
+}
+
+function applyReadingPreferences() {
+  const container = document.getElementById('transcript-content');
+  if (!container) return;
+
+  // Tamanho da Fonte
+  container.classList.remove('text-xs', 'text-sm', 'text-base');
+  if (state.fontSize === 'sm') container.classList.add('text-xs');
+  else if (state.fontSize === 'lg') container.classList.add('text-base');
+  else container.classList.add('text-sm');
+
+  // Largura da Coluna
+  container.classList.remove('max-w-xl', 'max-w-3xl', 'max-w-5xl');
+  if (state.columnWidth === 'narrow') container.classList.add('max-w-xl');
+  else if (state.columnWidth === 'wide') container.classList.add('max-w-5xl');
+  else container.classList.add('max-w-3xl');
+
+  // Destaque nos Botões do Modo de Leitura
+  ['transcript', 'reading', 'summary'].forEach(m => {
+    const btn = document.getElementById(`btn-mode-${m}`);
+    if (btn) {
+      if (state.readingMode === m) {
+        btn.className = 'px-3 py-1.5 font-bold rounded-lg transition bg-brand-surface dark:bg-brand-surface text-blue-600 dark:text-blue-300 shadow-sm';
+      } else {
+        btn.className = 'px-3 py-1.5 font-bold rounded-lg transition text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink';
+      }
+    }
+  });
+
+  // Destaque nos Botões de Fonte
+  ['sm', 'md', 'lg'].forEach(s => {
+    const btn = document.getElementById(`btn-font-${s}`);
+    if (btn) {
+      if (state.fontSize === s) {
+        btn.className = 'px-2 py-0.5 font-bold rounded bg-brand-surface dark:bg-brand-surface text-blue-600 dark:text-blue-300 shadow-sm';
+      } else {
+        btn.className = 'px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm';
+      }
+    }
+  });
+
+  // Destaque nos Botões de Coluna
+  ['narrow', 'normal', 'wide'].forEach(w => {
+    const btn = document.getElementById(`btn-col-${w}`);
+    if (btn) {
+      if (state.columnWidth === w) {
+        btn.className = 'px-2 py-0.5 font-bold rounded bg-brand-surface dark:bg-brand-surface text-blue-600 dark:text-blue-300 shadow-sm';
+      } else {
+        btn.className = 'px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm';
+      }
+    }
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
 function renderCurrentTranscript() {
   const container = document.getElementById('transcript-content');
   if (!container || !state.activeTranscription) return;
 
-  const showTimestamps = document.getElementById('toggle-timestamps')?.checked ?? true;
+  applyReadingPreferences();
+  const saveButton = document.getElementById('save-transcript-button');
+  if (saveButton) {
+    saveButton.disabled = state.readingMode !== 'transcript';
+    saveButton.classList.toggle('hidden', state.readingMode !== 'transcript');
+  }
+
   const segments = state.activeTranscription.segments || [];
 
-  if (segments.length === 0 || !showTimestamps) {
-    container.innerHTML = `<p class="leading-relaxed text-slate-800">${escapeHtml(state.activeTranscription.raw_text || '')}</p>`;
+  // MODO RESUMO IA
+  if (state.readingMode === 'summary') {
+    container.contentEditable = "false";
+    container.innerHTML = renderMarkdown(state.activeTranscription.ai_summary);
+    if (window.lucide) lucide.createIcons();
     return;
   }
 
-  container.innerHTML = segments.map(seg => `
-    <div class="mb-4 flex items-start space-x-3 group hover:bg-blue-50/50 p-2 rounded-xl transition">
-      <button onclick="seekAudio(${seg.start_time})" class="text-xs font-bold text-blue-600 hover:underline bg-blue-100 px-2 py-0.5 rounded shrink-0">
-        [${formatSRTTimeShort(seg.start_time)}]
-      </button>
-      <div class="flex-1">
-        ${seg.speaker ? `<span class="text-xs font-bold text-slate-500 block mb-0.5">${escapeHtml(seg.speaker)}</span>` : ''}
-        <p class="text-slate-800 text-sm leading-relaxed">${escapeHtml(seg.text)}</p>
+  // MODO LEITURA (Parágrafos Agrupados por Pausa/Falante)
+  if (state.readingMode === 'reading') {
+    container.contentEditable = "false";
+    if (segments.length === 0) {
+      container.innerHTML = `<p class="leading-relaxed text-brand-ink dark:text-brand-ink">${escapeHtml(state.activeTranscription.raw_text || '')}</p>`;
+      return;
+    }
+
+    const paragraphs = buildReadingParagraphs(segments);
+    container.innerHTML = paragraphs.map(group => {
+      const firstSeg = group[0];
+      const combinedText = group.map(s => s.text.trim()).join(' ');
+      const color = getSpeakerColor(firstSeg.speaker);
+
+      return `
+        <div class="mb-6 p-4 rounded-xl bg-brand-canvas/80 dark:bg-brand-canvas/80 border border-brand-line/60 dark:border-brand-line/60 hover:border-brand-line dark:hover:border-brand-line transition">
+          <div class="flex items-center space-x-2 mb-2">
+            <button onclick="seekAudio(${firstSeg.start_time})" class="text-xs font-bold text-blue-600 dark:text-blue-300 hover:underline bg-blue-100/80 dark:bg-blue-950/80 hover:bg-blue-200 px-2 py-0.5 rounded-md transition shrink-0">
+              [${formatSRTTimeShort(firstSeg.start_time)}]
+            </button>
+            ${firstSeg.speaker ? `
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${color.bg} ${color.text} ${color.border} border">
+                ${escapeHtml(firstSeg.speaker)}
+              </span>
+            ` : ''}
+          </div>
+          <p class="leading-relaxed text-brand-ink dark:text-brand-ink">${escapeHtml(combinedText)}</p>
+        </div>
+      `;
+    }).join('');
+    return;
+  }
+
+  // MODO TRANSCRIÇÃO (Padrão: Segmento por Segmento com edições habilitadas)
+  container.contentEditable = "false";
+
+  if (segments.length === 0) {
+    container.innerHTML = `<p data-transcript-text contenteditable="plaintext-only" class="leading-relaxed text-brand-ink dark:text-brand-ink whitespace-pre-wrap">${escapeHtml(state.activeTranscription.raw_text || '')}</p>`;
+    return;
+  }
+
+  container.innerHTML = segments.map(seg => {
+    const color = getSpeakerColor(seg.speaker);
+    return `
+      <div class="mb-4 flex items-start space-x-3 group hover:bg-blue-50/50 dark:hover:bg-blue-950/50 p-2 rounded-xl transition">
+        <button onclick="seekAudio(${seg.start_time})" class="text-xs font-bold text-blue-600 dark:text-blue-300 hover:underline bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded shrink-0">
+          [${formatSRTTimeShort(seg.start_time)}]
+        </button>
+        <div class="flex-1">
+          ${seg.speaker ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${color.bg} ${color.text} ${color.border} border mb-1 block w-fit">${escapeHtml(seg.speaker)}</span>` : ''}
+          <p data-segment-id="${escapeHtml(seg.id)}" contenteditable="plaintext-only" role="textbox" aria-label="Texto do segmento" class="text-brand-ink dark:text-brand-ink leading-relaxed whitespace-pre-wrap">${escapeHtml(seg.text)}</p>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+}
+
+function copyTranscriptAsMarkdown() {
+  if (!state.activeTranscription) return;
+  const t = state.activeTranscription;
+  const segments = t.segments || [];
+
+  let md = `# ${t.file_name || 'Transcrição'}\n`;
+  md += `**Data:** ${new Date(t.created_at).toLocaleString('pt-BR')} | **Duração:** ${Math.round(t.duration_seconds || 0)}s\n\n`;
+
+  if (state.readingMode === 'summary' && t.ai_summary) {
+    md += `## Resumo IA\n\n${t.ai_summary}\n`;
+  } else if (segments.length > 0) {
+    md += `## Transcrição\n\n`;
+    md += segments.map(seg => {
+      const timeTag = `[${formatSRTTimeShort(seg.start_time)}]`;
+      const speakerTag = seg.speaker ? `**${seg.speaker}:** ` : '';
+      return `${timeTag} ${speakerTag}${seg.text}`;
+    }).join('\n\n');
+  } else {
+    md += `## Transcrição\n\n${t.raw_text || ''}\n`;
+  }
+
+  navigator.clipboard.writeText(md).then(() => {
+    alert('Conteúdo copiado em formato Markdown com sucesso!');
+  }).catch(err => {
+    console.error('Erro ao copiar Markdown:', err);
+  });
 }
 
 function seekAudio(seconds) {
@@ -778,26 +1112,36 @@ function seekAudio(seconds) {
   }
 }
 
-async function saveTranscriptChanges() {
-  if (!state.activeTranscription) return;
+function collectTranscriptEdits() {
   const container = document.getElementById('transcript-content');
-  const newText = container.innerText;
+  if (state.activeTranscription?.segments?.length) {
+    return { segments: Array.from(container.querySelectorAll('[data-segment-id]')).map(el => ({ id: el.dataset.segmentId, text: el.innerText })) };
+  }
+  return { raw_text: container.querySelector('[data-transcript-text]')?.innerText || '' };
+}
 
+async function saveTranscriptChanges() {
+  const current = state.activeTranscription;
+  if (!current || state.readingMode !== 'transcript') return;
+  const button = document.getElementById('save-transcript-button');
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  const payload = collectTranscriptEdits();
   try {
-    const res = await fetch(`/api/transcriptions/${state.activeTranscription.id}`, {
+    const res = await fetch('/api/transcriptions/' + current.id, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ raw_text: newText })
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+      body: JSON.stringify(payload)
     });
-    if (res.ok) {
-      state.activeTranscription.raw_text = newText;
-      alert('Descrição e transcrição atualizadas com sucesso no Banco de Dados!');
-    }
-  } catch (e) {
-    alert('Erro ao salvar edições no banco de dados: ' + e.message);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao salvar (HTTP ' + res.status + ').');
+    current.raw_text = data.raw_text ?? payload.raw_text;
+    if (data.segments) current.segments = data.segments;
+    alert('Transcricao salva com sucesso.');
+  } catch (error) {
+    alert('Erro ao salvar edicoes: ' + error.message);
+  } finally {
+    if (button) button.disabled = state.readingMode !== 'transcript';
   }
 }
 
@@ -875,9 +1219,9 @@ function selectMode(mode) {
     const el = document.getElementById(`mode-${m}`);
     if (el) {
       if (m === mode) {
-        el.className = 'border-2 border-indigo-600 bg-indigo-50/95 p-3.5 rounded-2xl text-center cursor-pointer shadow-lg transform scale-[1.03] transition duration-200';
+        el.className = 'border-2 border-indigo-600 bg-indigo-50/95 dark:bg-indigo-950/95 p-3.5 rounded-2xl text-center cursor-pointer shadow-lg transform scale-[1.03] transition duration-200';
       } else {
-        el.className = 'border-2 border-slate-200 bg-slate-50 p-3.5 rounded-2xl text-center cursor-pointer hover:border-slate-300 transition duration-200';
+        el.className = 'border-2 border-brand-line dark:border-brand-line bg-brand-canvas dark:bg-brand-canvas p-3.5 rounded-2xl text-center cursor-pointer hover:border-brand-line dark:hover:border-brand-line transition duration-200';
       }
     }
   });
@@ -1250,9 +1594,9 @@ async function sendAIChatPrompt(e) {
     const data = await res.json();
 
     messagesDiv.innerHTML += `
-      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm mr-6">
-        <p class="font-bold text-emerald-700">ChatGPT:</p>
-        <div class="text-slate-800 mt-1 leading-relaxed">${escapeHtml(data.answer)}</div>
+      <div class="bg-brand-surface dark:bg-brand-surface p-3 rounded-xl border border-brand-line dark:border-brand-line shadow-sm mr-6">
+        <p class="font-bold text-emerald-700 dark:text-emerald-300">ChatGPT:</p>
+        <div class="text-brand-ink dark:text-brand-ink mt-1 leading-relaxed">${escapeHtml(data.answer)}</div>
       </div>
     `;
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -1295,10 +1639,10 @@ function switchAdminTab(tabName) {
     if (tabContent && tabBtn) {
       if (t === tabName) {
         tabContent.classList.remove('hidden');
-        tabBtn.className = 'px-4 py-2.5 text-xs font-bold text-blue-600 border-b-2 border-blue-600 transition';
+        tabBtn.className = 'px-4 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-300 border-b-2 border-blue-600 transition';
       } else {
         tabContent.classList.add('hidden');
-        tabBtn.className = 'px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition';
+        tabBtn.className = 'px-4 py-2.5 text-xs font-bold text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink transition';
       }
     }
   });
@@ -1333,14 +1677,14 @@ async function loadAdminUsers() {
     const users = await res.json();
     const tbody = document.getElementById('admin-users-tbody');
     tbody.innerHTML = users.map(u => `
-      <tr class="hover:bg-slate-50">
-        <td class="p-4 font-bold text-slate-800">${escapeHtml(u.name)}</td>
-        <td class="p-4 text-slate-600">${escapeHtml(u.email)}</td>
-        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'}">${u.role}</span></td>
-        <td class="p-4 text-slate-700 font-semibold">${u.daily_limit} transcrições</td>
-        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}">${u.status}</span></td>
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
+        <td class="p-4 font-bold text-brand-ink dark:text-brand-ink">${escapeHtml(u.name)}</td>
+        <td class="p-4 text-brand-copy dark:text-brand-copy">${escapeHtml(u.email)}</td>
+        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.role === 'admin' ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${u.role}</span></td>
+        <td class="p-4 text-brand-copy dark:text-brand-copy font-semibold">${u.daily_limit} transcrições</td>
+        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'}">${u.status}</span></td>
         <td class="p-4 text-right">
-          <button onclick="toggleUserStatus('${u.id}', '${u.status === 'active' ? 'suspended' : 'active'}')" class="text-blue-600 hover:underline font-semibold text-xs">
+          <button onclick="toggleUserStatus('${u.id}', '${u.status === 'active' ? 'suspended' : 'active'}')" class="text-blue-600 dark:text-blue-300 hover:underline font-semibold text-xs">
             ${u.status === 'active' ? 'Suspender' : 'Ativar'}
           </button>
         </td>
@@ -1399,14 +1743,14 @@ async function loadAdminApiKeys() {
     const keys = await res.json();
     const tbody = document.getElementById('admin-keys-tbody');
     tbody.innerHTML = keys.map(k => `
-      <tr class="hover:bg-slate-50">
-        <td class="p-4 font-bold text-purple-700 uppercase text-[11px]">${k.provider}</td>
-        <td class="p-4 text-slate-800 font-semibold">${escapeHtml(k.name || 'Sem nome')}</td>
-        <td class="p-4 font-mono text-slate-600">${k.masked_key}</td>
-        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${k.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}">${k.is_active ? 'Ativa' : 'Inativa'}</span></td>
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
+        <td class="p-4 font-bold text-purple-700 dark:text-purple-300 uppercase text-[11px]">${k.provider}</td>
+        <td class="p-4 text-brand-ink dark:text-brand-ink font-semibold">${escapeHtml(k.name || 'Sem nome')}</td>
+        <td class="p-4 font-mono text-brand-copy dark:text-brand-copy">${k.masked_key}</td>
+        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${k.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${k.is_active ? 'Ativa' : 'Inativa'}</span></td>
         <td class="p-4 text-right">
-          ${!k.is_active ? `<button onclick="activateApiKey('${k.id}')" class="text-blue-600 hover:underline font-semibold text-xs mr-3">Tornar Ativa</button>` : ''}
-          <button onclick="deleteApiKey('${k.id}')" class="text-red-600 hover:underline font-semibold text-xs">Excluir</button>
+          ${!k.is_active ? `<button onclick="activateApiKey('${k.id}')" class="text-blue-600 dark:text-blue-300 hover:underline font-semibold text-xs mr-3">Tornar Ativa</button>` : ''}
+          <button onclick="deleteApiKey('${k.id}')" class="text-red-600 dark:text-red-300 hover:underline font-semibold text-xs">Excluir</button>
         </td>
       </tr>
     `).join('');
@@ -1415,23 +1759,197 @@ async function loadAdminApiKeys() {
   }
 }
 
-async function openAddKeyModal() {
-  const key_value = prompt('Cole a nova chave OpenRouter (sk-or-v1-...):');
-  if (!key_value) return;
-  const name = prompt('Nome de identificação da chave:', 'Chave Backup OpenRouter');
+function openAddKeyModal() {
+  openApiKeyModal();
+}
 
+// ---------------------------------------------------
+// CHAVE OPENROUTER — indicador na sidebar + modal
+// ---------------------------------------------------
+const apiKeyUi = { testedValue: null, testedOk: false };
+
+function describeKeyInfo(info) {
+  if (!info) return '';
+  if (info.error) return info.error;
+  const parts = [];
+  if (info.label) parts.push(info.label);
+  if (info.limit_remaining !== null && info.limit_remaining !== undefined) parts.push(`restante US$ ${Number(info.limit_remaining).toFixed(2)}`);
+  else if (info.limit === null) parts.push('sem limite de crédito');
+  if (info.usage !== null && info.usage !== undefined) parts.push(`usado US$ ${Number(info.usage).toFixed(2)}`);
+  return parts.join(' · ');
+}
+
+function renderApiKeyManagedByAdmin() {
+  const dot = document.getElementById('apikey-dot');
+  const text = document.getElementById('apikey-state-text');
+  const masked = document.getElementById('apikey-masked');
+  if (!dot || !text || !masked) return;
+  dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+  text.textContent = 'gerenciada pelo admin';
+  masked.textContent = 'Chave do sistema em uso — fale com o administrador para trocar';
+  const btn = document.getElementById('apikey-config-btn');
+  if (btn) btn.classList.add('hidden');
+}
+
+function renderApiKeyState(status) {
+  const dot = document.getElementById('apikey-dot');
+  const text = document.getElementById('apikey-state-text');
+  const masked = document.getElementById('apikey-masked');
+  if (!dot || !text || !masked) return;
+  if (!status || !status.configured) {
+    dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+    text.textContent = 'não configurada';
+    masked.textContent = 'Cadastre sua chave para transcrever';
+    return;
+  }
+  masked.textContent = status.masked_key || '—';
+  if (status.last_check_ok === true) {
+    dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+    text.textContent = 'válida';
+  } else if (status.last_check_ok === false) {
+    dot.className = 'w-2 h-2 rounded-full bg-red-500';
+    text.textContent = 'inválida';
+  } else {
+    dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+    text.textContent = 'não testada';
+  }
+}
+
+async function loadApiKeyStatus() {
+  // Endpoint admin-only: usuario comum ve estado neutro, sem chamada de API
+  // (evita o 403 vazar como "não configurada" e o botão de config fica oculto).
+  if (!state.currentUser || state.currentUser.role !== 'admin') {
+    renderApiKeyManagedByAdmin();
+    return null;
+  }
+  const btn = document.getElementById('apikey-config-btn');
+  if (btn) btn.classList.remove('hidden');
   try {
-    await fetch('/api/admin/apikeys', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ provider: 'openrouter', name, key_value })
-    });
-    loadAdminApiKeys();
+    const res = await fetch('/api/admin/apikeys/status', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    const status = await res.json();
+    renderApiKeyState(status);
+    const cur = document.getElementById('apikey-current-masked');
+    const info = document.getElementById('apikey-current-info');
+    if (cur) cur.textContent = status.configured ? status.masked_key : 'nenhuma';
+    if (info) info.textContent = status.configured ? describeKeyInfo(status.last_check_info) : 'Nenhuma chave cadastrada ainda.';
+    return status;
   } catch (e) {
-    alert('Erro ao salvar chave: ' + e.message);
+    renderApiKeyState(null);
+    return null;
+  }
+}
+
+function openApiKeyModal() {
+  if (!state.currentUser || state.currentUser.role !== 'admin') return; // trava defensiva: rota e acao sao admin-only
+  const modal = document.getElementById('apikey-modal');
+  if (!modal) return;
+  ['apikey-input', 'apikey-name', 'apikey-admin-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('apikey-test-result').textContent = '';
+  document.getElementById('apikey-save-error').classList.add('hidden');
+  apiKeyUi.testedValue = null;
+  apiKeyUi.testedOk = false;
+  onApiKeyInput();
+  modal.classList.remove('hidden');
+  loadApiKeyStatus();
+  if (window.lucide) lucide.createIcons();
+  setTimeout(() => document.getElementById('apikey-input').focus(), 50);
+}
+
+function closeApiKeyModal() {
+  document.getElementById('apikey-modal').classList.add('hidden');
+  document.getElementById('apikey-input').value = '';
+  document.getElementById('apikey-input').type = 'password';
+  document.getElementById('apikey-admin-password').value = '';
+  apiKeyUi.testedValue = null;
+  apiKeyUi.testedOk = false;
+}
+
+function toggleApiKeyVisibility() {
+  const input = document.getElementById('apikey-input');
+  const eye = document.getElementById('apikey-eye');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  if (eye) { eye.setAttribute('data-lucide', show ? 'eye-off' : 'eye'); if (window.lucide) lucide.createIcons(); }
+}
+
+function onApiKeyInput() {
+  const value = document.getElementById('apikey-input').value.trim();
+  const password = document.getElementById('apikey-admin-password').value;
+  const looksValid = /^sk-or-v1-/.test(value);
+  document.getElementById('apikey-test-btn').disabled = !looksValid;
+  if (value !== apiKeyUi.testedValue) {
+    apiKeyUi.testedOk = false;
+    if (apiKeyUi.testedValue !== null) document.getElementById('apikey-test-result').textContent = 'Chave alterada — teste de novo.';
+  }
+  document.getElementById('apikey-save-btn').disabled = !(apiKeyUi.testedOk && password.length > 0);
+}
+
+async function testNewApiKey() {
+  const value = document.getElementById('apikey-input').value.trim();
+  const out = document.getElementById('apikey-test-result');
+  out.className = 'text-xs text-brand-muted dark:text-brand-muted';
+  out.textContent = 'Testando…';
+  try {
+    const res = await fetch('/api/admin/apikeys/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({ key_value: value })
+    });
+    const data = await res.json();
+    apiKeyUi.testedValue = value;
+    apiKeyUi.testedOk = Boolean(data.valid);
+    out.className = `text-xs font-semibold ${data.valid ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}`;
+    out.textContent = data.valid ? `✓ Válida · ${describeKeyInfo(data.info) || 'ok'}` : `✗ ${data.error || 'inválida'}`;
+  } catch (e) {
+    apiKeyUi.testedOk = false;
+    out.className = 'text-xs font-semibold text-red-600 dark:text-red-300';
+    out.textContent = '✗ Falha ao testar: ' + e.message;
+  }
+  onApiKeyInput();
+}
+
+async function testCurrentApiKey() {
+  const info = document.getElementById('apikey-current-info');
+  info.textContent = 'Testando…';
+  try {
+    const res = await fetch('/api/admin/apikeys/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    info.textContent = data.valid ? `✓ Válida · ${describeKeyInfo(data.info) || 'ok'}` : `✗ ${data.error || 'inválida'}`;
+  } catch (e) {
+    info.textContent = '✗ Falha ao testar: ' + e.message;
+  }
+  loadApiKeyStatus();
+}
+
+async function saveApiKey() {
+  const err = document.getElementById('apikey-save-error');
+  err.classList.add('hidden');
+  const btn = document.getElementById('apikey-save-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/apikeys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({
+        name: document.getElementById('apikey-name').value.trim() || undefined,
+        key_value: document.getElementById('apikey-input').value.trim(),
+        admin_password: document.getElementById('apikey-admin-password').value
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    closeApiKeyModal();
+    loadApiKeyStatus();
+    if (document.getElementById('admin-keys-tbody')) loadAdminApiKeys();
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+    document.getElementById('apikey-admin-password').value = '';
+    onApiKeyInput();
   }
 }
 
@@ -1516,12 +2034,12 @@ async function loadAdminLogs() {
     const logs = await res.json();
     const tbody = document.getElementById('admin-logs-tbody');
     tbody.innerHTML = logs.map(l => `
-      <tr class="hover:bg-slate-50">
-        <td class="p-4 text-slate-500 font-mono text-[11px]">${new Date(l.timestamp).toLocaleString('pt-BR')}</td>
-        <td class="p-4 font-semibold text-slate-700">${escapeHtml(l.user_email || 'Sistema')}</td>
-        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-50 text-blue-700 border border-blue-200">${l.action}</span></td>
-        <td class="p-4 text-slate-600 font-mono text-[11px] truncate max-w-xs">${escapeHtml(l.details || '')}</td>
-        <td class="p-4 text-slate-500 font-mono text-[11px]">${l.ip_address}</td>
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
+        <td class="p-4 text-brand-muted dark:text-brand-muted font-mono text-[11px]">${new Date(l.timestamp).toLocaleString('pt-BR')}</td>
+        <td class="p-4 font-semibold text-brand-copy dark:text-brand-copy">${escapeHtml(l.user_email || 'Sistema')}</td>
+        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">${l.action}</span></td>
+        <td class="p-4 text-brand-copy dark:text-brand-copy font-mono text-[11px] truncate max-w-xs">${escapeHtml(l.details || '')}</td>
+        <td class="p-4 text-brand-muted dark:text-brand-muted font-mono text-[11px]">${l.ip_address}</td>
       </tr>
     `).join('');
   } catch (e) {
@@ -1666,3 +2184,21 @@ function formatSRTTimeShort(sec) {
 function escapeHtml(str) {
   return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// T-05: preferencia explicita ou acompanhamento do sistema.
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+let currentTheme = 'system';
+try { currentTheme = localStorage.getItem('transcreveai_theme') || 'system'; } catch (_) {}
+if (!['light', 'dark', 'system'].includes(currentTheme)) currentTheme = 'system';
+function applyTheme() {
+  document.documentElement.classList.toggle('dark', currentTheme === 'dark' || (currentTheme === 'system' && systemTheme.matches));
+  ['light', 'dark', 'system'].forEach(theme => document.getElementById('theme-btn-' + theme)?.setAttribute('aria-pressed', String(currentTheme === theme)));
+}
+function setTheme(theme) {
+  if (!['light', 'dark', 'system'].includes(theme)) return;
+  currentTheme = theme;
+  try { localStorage.setItem('transcreveai_theme', theme); } catch (_) {}
+  applyTheme();
+}
+systemTheme.addEventListener('change', () => { if (currentTheme === 'system') applyTheme(); });
+document.addEventListener('DOMContentLoaded', applyTheme);

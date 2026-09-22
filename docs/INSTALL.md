@@ -4,18 +4,16 @@
 
 ## ⚠️ Antes de instalar — leia isto
 
-Este sistema **não está pronto para ser exposto publicamente na internet com múltiplos usuários** hoje. Uma auditoria de código (ver [MULTIUSER.md](MULTIUSER.md)) encontrou:
+O isolamento multiusuário ainda não está completo. Estado atual das três vulnerabilidades encontradas na auditoria ([MULTIUSER.md](MULTIUSER.md)):
 
-- Requisição sem token de autenticação é tratada como **administrador**
-- Senhas mestras (`admin123` / `user123`) autenticam **qualquer** e-mail cadastrado
-- Nenhuma rota filtra dados por usuário — todo mundo vê e pode apagar o conteúdo de todo mundo
+- ✅ **Resolvido (T-01):** requisição sem token agora retorna **401** — não existe mais bypass de autenticação nem senhas mestras.
+- ✅ **Resolvido (T-15):** a chave da OpenRouter fica **cifrada em repouso** (AES-256-GCM) no SQLite e só sai do servidor mascarada (`sk-or-v1-…abcd`); o diretório do projeto não é mais publicado como estático.
+- ⏳ **Em aberto (T-02):** as queries ainda não filtram por dono — todo usuário autenticado enxerga o conteúdo dos outros.
 
 **Use com segurança assim:**
 - ✅ Uso pessoal/único, na sua própria máquina ou numa rede privada (VPN/LAN)
-- ✅ Atrás de um proxy com autenticação própria (Traefik + Basic Auth, Cloudflare Access, Tailscale) enquanto T-01/T-02 não são resolvidas
-- ❌ **Não** exponha a porta pública sem proxy de autenticação para mais de uma pessoa confiável usar
-
-Ver [TASKS.md](TASKS.md) T-01 e T-02 para o estado da correção.
+- ✅ Atrás de um proxy com autenticação própria (Traefik + Basic Auth, Cloudflare Access, Tailscale) enquanto T-02 não é resolvida
+- ❌ **Não** exponha a porta pública para mais de uma pessoa confiável usar até T-02/T-03 fecharem
 
 ## Requisitos
 
@@ -52,16 +50,19 @@ Edite `.env`:
 ```dotenv
 PORT=3000
 JWT_SECRET=gere_um_valor_aleatorio_longo_aqui
+APP_SECRET_KEY=gere_outro_valor_aleatorio_longo_aqui
 OPENROUTER_API_KEY=sk-or-v1-sua-chave-aqui
 ```
 
-Gere um `JWT_SECRET` forte em vez de deixar o default (o default é público, está no código-fonte):
+Gere `JWT_SECRET` e `APP_SECRET_KEY` fortes em vez de deixar o default (o default é público, está no código-fonte):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-Cole o resultado em `JWT_SECRET`. **Nunca** reutilize o valor de exemplo do `docker-compose.yml`.
+Rode o comando **duas vezes** — um valor para cada variável. **Nunca** reutilize o valor de exemplo do `docker-compose.yml`.
+
+> **Por que `APP_SECRET_KEY` importa tanto:** ela é a chave-mestra que cifra (AES-256-GCM) os segredos guardados no banco — hoje, a chave da OpenRouter. Sem essa variável, ou com o valor trocado, o sistema **não consegue ler a chave cifrada** (em `NODE_ENV=production` o servidor nem sobe). Guarde-a no mesmo cofre do backup do `.env`. Rotação segura em [MULTIUSER.md](MULTIUSER.md) e no checklist de deploy.
 
 ## 4A. Subir com Docker Compose — sem domínio (uso local)
 
@@ -163,7 +164,15 @@ Senha:  admin123
 
 **Troque essa senha imediatamente** — hoje isso é feito direto no SQLite ou recriando o usuário pelo painel admin, já que a UI de troca de senha própria ainda não existe (ver [TASKS.md](TASKS.md) T-09). Até lá, trate esse admin default como uma credencial temporária de instalação, não como a conta real de uso.
 
-A chave da OpenRouter que você colocou no `.env` já é sincronizada automaticamente para o banco no boot — não precisa recadastrá-la no painel, mas pode trocar por outra ali (**Admin → Chaves de API**) se quiser usar uma chave diferente sem reiniciar o container.
+A chave da OpenRouter que você colocou no `.env` é importada **uma única vez** no primeiro boot: o sistema cifra (AES-256-GCM, com `APP_SECRET_KEY`) e grava no SQLite. A partir daí o banco é a fonte de verdade e o `.env` pode ficar sem `OPENROUTER_API_KEY`.
+
+Para conferir, trocar ou cadastrar uma chave, use a **sidebar → CONFIGURAR CHAVE** (ou **Admin → Chaves de API**):
+
+1. Cole a chave (campo protegido, com botão de mostrar/ocultar)
+2. Clique em **Testar chave** — o sistema valida contra a OpenRouter (`GET /api/v1/auth/key`, sem gastar crédito) e mostra limite/disponível
+3. Digite a **senha do administrador** e salve — só é possível salvar após um teste OK
+
+A chave nunca é devolvida pela API: a interface mostra apenas a versão mascarada (`sk-or-v1-…abcd`). Troca exige a senha do admin autenticado; 5 senhas erradas em 10 minutos bloqueiam o IP temporariamente.
 
 ## 6. Testar a instalação
 
@@ -183,7 +192,7 @@ Três coisas guardam todo o estado do sistema, e nenhuma delas é o código-font
 |---|---|---|
 | Banco de dados (usuários, transcrições, textos, configurações) | `turboscribe.sqlite` | Copiar o arquivo (com o serviço parado, ou aceitar pequena janela de inconsistência com ele rodando) |
 | Áudios originais enviados | `uploads/` | Copiar a pasta |
-| Segredos (JWT, chave OpenRouter) | `.env` | Guardar em um cofre de senhas — **nunca** commitar |
+| Segredos (JWT, OpenRouter) + chave-mestra de cifra | `.env` (`JWT_SECRET`, `OPENROUTER_API_KEY`, `APP_SECRET_KEY`) | Guardar em um cofre de senhas — **nunca** commitar. Sem `APP_SECRET_KEY`, a chave OpenRouter cifrada no banco é **irrecuperável** |
 
 ```bash
 # Exemplo simples de backup
@@ -220,6 +229,8 @@ Regra prática: mudou só `.js`/`.html` → `docker compose restart transcreveai
 | Porta 3000 já em uso | Outro serviço na mesma porta | Mude `PORT` no `.env` e o mapeamento `ports:` no `docker-compose.yml` |
 | Login com `admin123` não funciona mais | Você já trocou a senha (correto!) | Use a nova senha, ou restaure o backup do `turboscribe.sqlite` se perdeu a credencial |
 | `SQLITE_BUSY` sob uso simultâneo | Banco sem WAL, limitação conhecida | Ver [MULTIUSER.md](MULTIUSER.md) R-02 e [TASKS.md](TASKS.md) T-08 |
+| Servidor recusa subir com `APP_SECRET_KEY` (produção) | Variável ausente ou com < 32 chars | Gere um valor aleatório (seção 3). **Atenção:** se o banco já tem chave cifrada com outro segredo, recadastre a chave OpenRouter pela sidebar após subir |
+| Transcrições falham com "Nao foi possivel decifrar o segredo" | `APP_SECRET_KEY` do `.env` foi trocada sem recifrar o banco | Restaure o valor anterior (backup) ou recadastre a chave OpenRouter em **sidebar → CONFIGURAR CHAVE** |
 | Traefik não roteia para o serviço | Rede diferente entre Traefik e o container | Confirme que ambos estão na mesma rede Docker (`docker network inspect`) |
 
 ## Ver também

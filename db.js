@@ -2,6 +2,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const secrets = require('./services/secrets');
+const { getJobSignal } = require('./services/job-context');
 
 const dbPath = path.join(__dirname, 'turboscribe.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -12,9 +14,13 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
+db.configure('busyTimeout', 5000);
+
 // Helper de exec em Promise
 function runAsync(sql, params = []) {
   return new Promise((resolve, reject) => {
+    const signal = getJobSignal();
+    if (signal?.aborted) return reject(signal.reason);
     db.run(sql, params, function (err) {
       if (err) reject(err);
       else resolve(this);
@@ -24,6 +30,8 @@ function runAsync(sql, params = []) {
 
 function getAsync(sql, params = []) {
   return new Promise((resolve, reject) => {
+    const signal = getJobSignal();
+    if (signal?.aborted) return reject(signal.reason);
     db.get(sql, params, (err, row) => {
       if (err) reject(err);
       else resolve(row);
@@ -33,6 +41,8 @@ function getAsync(sql, params = []) {
 
 function allAsync(sql, params = []) {
   return new Promise((resolve, reject) => {
+    const signal = getJobSignal();
+    if (signal?.aborted) return reject(signal.reason);
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
@@ -42,6 +52,7 @@ function allAsync(sql, params = []) {
 
 // Inicializar Esquema de Tabelas
 async function initDatabase() {
+  await runAsync('PRAGMA journal_mode=WAL');
   try {
     // 0. Migração de Folders para Projects se necessário
     const foldersTableExists = await getAsync(`SELECT name FROM sqlite_master WHERE type='table' AND name='folders'`);
@@ -85,9 +96,10 @@ async function initDatabase() {
     }
   } catch (err) {
     console.error('Erro durante a migração do banco de dados:', err.message);
+    throw err;
   }
 
-  db.serialize(async () => {
+  {
     // 1. Tabela de Usuários
     await runAsync(`
       CREATE TABLE IF NOT EXISTS users (
@@ -205,6 +217,11 @@ async function initDatabase() {
     `);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_chunks_transcription ON transcription_chunks(transcription_id, idx)`);
 
+    const workerColumns = await allAsync('PRAGMA table_info(transcriptions)');
+    for (const [name, type] of [['worker_attempts', 'INTEGER NOT NULL DEFAULT 0'], ['worker_started_at', 'DATETIME']]) {
+      if (!workerColumns.some(column => column.name === name)) await runAsync('ALTER TABLE transcriptions ADD COLUMN ' + name + ' ' + type);
+    }
+    await runAsync('CREATE INDEX IF NOT EXISTS idx_transcriptions_queue ON transcriptions(status, created_at)');
     console.log('Tabelas SQLite verificadas/criadas com sucesso.');
 
     // Seed Admin Padrão
@@ -228,18 +245,39 @@ async function initDatabase() {
       console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
     }
 
-    // Seed / Sync Chave OpenRouter
-    const openrouterKey = await getAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter'`);
-    const defaultKey = process.env.OPENROUTER_API_KEY || '';
-    if (!openrouterKey) {
+    // Garantir que transcrições legado (admin-local) pertençam ao usuário principal (Pedro León)
+    const defaultUser = await getAsync(`SELECT id FROM users WHERE email = ?`, ['pedro.leon23@gmail.com']);
+    if (defaultUser) {
+      await runAsync(`UPDATE transcriptions SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
+      await runAsync(`UPDATE projects SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
+    }
+
+    // Colunas de verificacao da chave (resultado do ultimo teste contra a OpenRouter)
+    const keyCols = await allAsync(`PRAGMA table_info(api_keys)`);
+    for (const [col, type] of [['last_check_at', 'DATETIME'], ['last_check_ok', 'INTEGER'], ['last_check_info', 'TEXT']]) {
+      if (!keyCols.some(c => c.name === col)) {
+        await runAsync(`ALTER TABLE api_keys ADD COLUMN ${col} ${type}`);
+      }
+    }
+
+    // Migracao: chaves gravadas em texto puro passam a ser cifradas in-place.
+    const plainKeys = await allAsync(`SELECT id, key_value FROM api_keys WHERE key_value != '' AND key_value NOT LIKE 'enc:v1:%'`);
+    for (const k of plainKeys) {
+      await runAsync(`UPDATE api_keys SET key_value = ? WHERE id = ?`, [secrets.encrypt(k.key_value), k.id]);
+    }
+    if (plainKeys.length) console.log(`[secrets] ${plainKeys.length} chave(s) de API cifrada(s) em repouso.`);
+    await runAsync(`DELETE FROM api_keys WHERE key_value = ''`);
+
+    // Seed unico a partir do .env: so quando ainda nao ha chave no banco.
+    // Depois disso o banco (cifrado) e a fonte de verdade; o .env pode ficar sem a chave.
+    const openrouterKey = await getAsync(`SELECT id FROM api_keys WHERE provider = 'openrouter'`);
+    const envKey = (process.env.OPENROUTER_API_KEY || '').trim();
+    if (!openrouterKey && envKey) {
       await runAsync(
-        `INSERT INTO api_keys (id, provider, name, key_value, is_active) VALUES (?, ?, ?, ?, ?)`,
-        [uuidv4(), 'openrouter', 'Chave Principal OpenRouter', defaultKey, 1]
+        `INSERT INTO api_keys (id, provider, name, key_value, is_active) VALUES (?, ?, ?, ?, 1)`,
+        [uuidv4(), 'openrouter', 'Chave Principal OpenRouter', secrets.encrypt(envKey)]
       );
-      console.log('Chave de API OpenRouter registrada com sucesso.');
-    } else if (defaultKey && openrouterKey.key_value !== defaultKey) {
-      await runAsync(`UPDATE api_keys SET key_value = ? WHERE provider = 'openrouter'`, [defaultKey]);
-      console.log('Chave de API OpenRouter sincronizada com sucesso.');
+      console.log('Chave de API OpenRouter importada do .env e cifrada. O .env pode ficar sem OPENROUTER_API_KEY a partir de agora.');
     }
 
     // Seed Configurações Globais
@@ -263,7 +301,7 @@ async function initDatabase() {
         await runAsync(`UPDATE system_settings SET value = ? WHERE key = ?`, [setting.value, setting.key]);
       }
     }
-  });
+  }
 }
 
 // Log Auditoria Helper

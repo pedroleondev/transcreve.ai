@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { runAsync, getAsync, allAsync, logAction } = require('../db');
+const { createQueueWorker, positiveNumber, queuePositionSql } = require('./queue');
+const { jobSleep } = require('./job-context');
 const { transcribeAudioFile, generateChatCompletion } = require('./openrouter');
 const { preprocessAudio, splitAudioSmart, filterHallucinations, measureMeanVolume, splitFixed } = require('./audio');
 
@@ -227,7 +229,7 @@ async function transcribeChunks(task) {
     if (round > 0) {
       const wait = RETRY_BACKOFF_MS[Math.min(round - 1, RETRY_BACKOFF_MS.length - 1)];
       console.log(`[Pipeline] ${task.id}: ${pending.length} bloco(s) para nova tentativa em ${wait / 1000}s...`);
-      await new Promise(r => setTimeout(r, wait));
+      await jobSleep(wait);
     }
     console.log(`[Pipeline] ${task.id}: transcrevendo ${pending.length} bloco(s), ${CHUNK_CONCURRENCY} por vez.`);
 
@@ -239,7 +241,9 @@ async function transcribeChunks(task) {
         await updateProgress(task);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, pending.length) }, worker));
+    const results = await Promise.allSettled(Array.from({ length: Math.min(CHUNK_CONCURRENCY, pending.length) }, worker));
+    const rejected = results.find(result => result.status === 'rejected');
+    if (rejected) throw rejected.reason;
   }
 }
 
@@ -349,64 +353,36 @@ async function retryFailedChunks(transcriptionId) {
     [transcriptionId]
   );
   if (res.changes > 0) {
-    await runAsync(`UPDATE transcriptions SET status = 'pending', error_message = NULL WHERE id = ?`, [transcriptionId]);
+    await runAsync(`UPDATE transcriptions SET status = 'pending', error_message = NULL, worker_attempts = 0, worker_started_at = NULL WHERE id = ?`, [transcriptionId]);
   }
   return res.changes;
 }
 
 // ---------------------------------------------------------------------------
-// Worker: um job por vez (a concorrencia e por bloco). Jobs em 'processing'
-// quando o worker esta livre sao restos de uma execucao interrompida: retoma.
-// ---------------------------------------------------------------------------
-let isWorkerRunning = false;
-
-async function pickNextTask() {
-  return getAsync(
-    `SELECT * FROM transcriptions WHERE status IN ('processing', 'pending')
-     ORDER BY CASE status WHEN 'processing' THEN 0 ELSE 1 END, created_at ASC LIMIT 1`
-  );
-}
-
-async function tick() {
-  if (isWorkerRunning) return;
-  let task = null;
-  try {
-    task = await pickNextTask();
-    if (!task) return;
-    isWorkerRunning = true;
-    if (task.status === 'processing') console.log(`[Pipeline] Retomando ${task.id} apos interrupcao.`);
-    await processJob(task);
-  } catch (err) {
-    console.error(`[Pipeline] Erro no job ${task ? task.id : '?'}:`, err);
-    if (task) {
-      await runAsync(
-        `UPDATE transcriptions SET status = 'failed', stage = NULL, progress = 0, error_message = ? WHERE id = ?`,
-        [String(err.message || 'Erro inesperado').slice(0, 500), task.id]
-      ).catch(() => {});
-    }
-  } finally {
-    isWorkerRunning = false;
-  }
-}
-
-function startQueueWorker() {
-  console.log(`[Pipeline] Worker ativo: blocos de ${CHUNK_TARGET_SEC}s, ${CHUNK_CONCURRENCY} em paralelo, ${CHUNK_MAX_ATTEMPTS} tentativas.`);
-  setInterval(tick, POLL_INTERVAL_MS);
-  setTimeout(tick, 1000);
+// Slots de arquivos independentes; cada um preserva o pool de blocos de T-19.
+async function startQueueWorker() {
+  const concurrency = positiveNumber('WORKER_CONCURRENCY', 2, true, 32);
+  const timeoutMs = positiveNumber('WORKER_TIMEOUT_MINUTES', 30, false) * 60000;
+  const maxAttempts = positiveNumber('WORKER_MAX_ATTEMPTS', 3, true, 10);
+  const queue = createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency, timeoutMs, maxAttempts, pollMs: POLL_INTERVAL_MS});
+  console.log('[Pipeline] Worker ativo: ' + concurrency + ' jobs, ' + CHUNK_CONCURRENCY + ' blocos/job, timeout ' + timeoutMs / 60000 + ' min, ate ' + maxAttempts + ' tentativas/job.');
+  await queue.start();
+  return queue;
 }
 
 // Estado detalhado para GET /api/transcriptions/:id/status
 async function getJobProgress(transcriptionId) {
+  const queue = await getAsync('SELECT ' + queuePositionSql + ' AS queue_position, worker_attempts FROM transcriptions t WHERE t.id = ?', [transcriptionId]);
   const stats = await getAsync(
     `SELECT COUNT(*) AS total, SUM(status = 'done') AS done, SUM(status = 'failed') AS failed,
             AVG(CASE WHEN status = 'done' AND started_at IS NOT NULL
                      THEN (julianday(finished_at) - julianday(started_at)) * 86400 END) AS avg_sec
      FROM transcription_chunks WHERE transcription_id = ?`, [transcriptionId]
   );
-  if (!stats || !stats.total) return { chunks_total: 0, chunks_done: 0, chunks_failed: 0, eta_seconds: null };
+  if (!stats || !stats.total) return { ...queue, chunks_total: 0, chunks_done: 0, chunks_failed: 0, eta_seconds: null };
   const remaining = stats.total - stats.done - (stats.failed || 0);
   const eta = stats.avg_sec !== null && remaining > 0 ? Math.round((stats.avg_sec * remaining) / CHUNK_CONCURRENCY) : null;
-  return { chunks_total: stats.total, chunks_done: stats.done || 0, chunks_failed: stats.failed || 0, eta_seconds: eta };
+  return { ...queue, chunks_total: stats.total, chunks_done: stats.done || 0, chunks_failed: stats.failed || 0, eta_seconds: eta };
 }
 
 module.exports = { startQueueWorker, getJobProgress, retryFailedChunks, isTransientError };

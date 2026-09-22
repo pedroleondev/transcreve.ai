@@ -17,3 +17,7 @@ __pycache__/
 
 # Fixtures longos gerados localmente (ver docs/TASKS.md T-19) - nao versionar
 tests/fixtures/long/
+
+# Arquivos auxiliares do SQLite em WAL
+turboscribe.sqlite-wal
+turboscribe.sqlite-shm

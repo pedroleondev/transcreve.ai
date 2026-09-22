@@ -1,6 +1,7 @@
 const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { getJobSignal } = require('./job-context');
 
 function execPromise(command, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -18,7 +19,11 @@ function execPromise(command, opts = {}) {
 // para diagnostico — 10h de audio geram MB de log de progresso que nao interessam.
 function runProcess(bin, args, { keepStderr = false } = {}) {
   return new Promise((resolve, reject) => {
+    const signal = getJobSignal();
+    if (signal?.aborted) return reject(signal.reason);
     const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const abort = () => child.kill('SIGKILL');
+    signal?.addEventListener('abort', abort, { once: true });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', d => { stdout += d; });
@@ -28,6 +33,8 @@ function runProcess(bin, args, { keepStderr = false } = {}) {
     });
     child.on('error', err => reject(new Error(`${bin} nao encontrado ou falhou ao iniciar: ${err.message}`)));
     child.on('close', code => {
+      signal?.removeEventListener('abort', abort);
+      if (signal?.aborted) return reject(signal.reason);
       if (code === 0) resolve({ stdout, stderr });
       else reject(new Error(`${bin} ${args[0] || ''}... saiu com codigo ${code}\n${stderr.trim().split('\n').slice(-5).join('\n')}`));
     });
