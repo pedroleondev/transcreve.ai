@@ -48,6 +48,17 @@
       .touch-target { min-height: 44px; min-width: 44px; }
       .transcript-timestamp { min-height: 44px; display: inline-flex; align-items: center; }
     }
+
+    /* --- Fix mobile: 100vh cria zona morta sob a barra de URL do Chrome Android ---
+       Com h-screen puro, o shell mede a "large viewport" (~780px no S24) enquanto a
+       área visível com a barra de URL é ~695px. O body tem overflow-hidden, então os
+       últimos ~85px do app ficam permanentemente fora da tela e o scroll interno
+       chega ao fim sem revelá-los ("texto cortado, não consigo arrastar"). 100dvh
+       acompanha a viewport visível. Fallback: navegadores sem suporte mantêm 100vh. */
+    @supports (height: 100dvh) {
+      body.h-screen { height: 100dvh; }
+      #app-sidebar { max-height: 100dvh; }
+    }
   </style>
   <script id="theme-bootstrap">
     (function() {
