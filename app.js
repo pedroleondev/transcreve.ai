@@ -8,7 +8,7 @@ const state = {
   currentProjectId: null,
   activeTranscription: null,
   selectedFiles: [],
-  selectedMode: 'baleia', // SELEÇÃO PADRÃO SISTEMA = BALEIA (SOLICITAÇÃO CEO)
+  selectedMode: 'max', // SELEÇÃO PADRÃO SISTEMA = MAX (SOLICITAÇÃO CEO)
   selectedModelId: 'openai/whisper-large-v3',
   openRouterModels: [],
   totalAudioSeconds: 0,
@@ -103,22 +103,22 @@ async function fetchSystemSettings() {
 }
 
 function applySystemSettingsUI() {
-  const chitaModelEl = document.getElementById('chita-model-name');
-  const golfinhoModelEl = document.getElementById('golfinho-model-name');
-  const baleiaModelEl = document.getElementById('baleia-model-name');
+  const baseModelEl = document.getElementById('base-model-name');
+  const proModelEl = document.getElementById('pro-model-name');
+  const maxModelEl = document.getElementById('max-model-name');
 
-  if (chitaModelEl) chitaModelEl.innerText = state.systemSettings.chita_model || 'openai/whisper-1';
-  if (golfinhoModelEl) golfinhoModelEl.innerText = state.systemSettings.golfinho_model || 'openai/whisper-large-v3-turbo';
-  if (baleiaModelEl) baleiaModelEl.innerText = state.systemSettings.baleia_model || 'openai/whisper-large-v3';
+  if (baseModelEl) baseModelEl.innerText = state.systemSettings.base_model || 'openai/whisper-1';
+  if (proModelEl) proModelEl.innerText = state.systemSettings.pro_model || 'openai/whisper-large-v3-turbo';
+  if (maxModelEl) maxModelEl.innerText = state.systemSettings.max_model || 'openai/whisper-large-v3';
 
   // Ocultar modos se desabilitados pelo Admin
-  const modeChitaCard = document.getElementById('mode-chita');
-  const modeGolfinhoCard = document.getElementById('mode-golfinho');
-  const modeBaleiaCard = document.getElementById('mode-baleia');
+  const modeBaseCard = document.getElementById('mode-base');
+  const modeProCard = document.getElementById('mode-pro');
+  const modeMaxCard = document.getElementById('mode-max');
 
-  if (modeChitaCard && state.systemSettings.chita_enabled === 'false') modeChitaCard.style.display = 'none';
-  if (modeGolfinhoCard && state.systemSettings.golfinho_enabled === 'false') modeGolfinhoCard.style.display = 'none';
-  if (modeBaleiaCard && state.systemSettings.baleia_enabled === 'false') modeBaleiaCard.style.display = 'none';
+  if (modeBaseCard && state.systemSettings.base_enabled === 'false') modeBaseCard.style.display = 'none';
+  if (modeProCard && state.systemSettings.pro_enabled === 'false') modeProCard.style.display = 'none';
+  if (modeMaxCard && state.systemSettings.max_enabled === 'false') modeMaxCard.style.display = 'none';
 
   selectMode(state.selectedMode);
 }
@@ -510,8 +510,10 @@ async function updateTranscriptionProject() {
       const projectObj = state.projects.find(p => p.id === projectId);
       state.activeTranscription.project_name = projectObj ? projectObj.name : null;
       
-      const modeName = state.activeTranscription.mode === 'chita' ? 'Chita' : state.activeTranscription.mode === 'golfinho' ? 'Golfinho' : 'Baleia';
-      const modelUsed = state.systemSettings[`${state.activeTranscription.mode}_model`] || (state.activeTranscription.mode === 'chita' ? 'openai/whisper-1' : state.activeTranscription.mode === 'golfinho' ? 'openai/whisper-large-v3-turbo' : 'openai/whisper-large-v3');
+      const MODE_NAMES = { base: 'Base', pro: 'Pro', max: 'Max' };
+      const MODE_DEFAULT_MODELS = { base: 'openai/whisper-1', pro: 'openai/whisper-large-v3-turbo', max: 'openai/whisper-large-v3' };
+      const modeName = MODE_NAMES[state.activeTranscription.mode] || 'Max';
+      const modelUsed = state.systemSettings[`${state.activeTranscription.mode}_model`] || MODE_DEFAULT_MODELS[state.activeTranscription.mode] || 'openai/whisper-large-v3';
       const projectDisplay = projectObj ? ` • Projeto: ${projectObj.name}` : '';
       document.getElementById('detail-meta').innerText = `${new Date(state.activeTranscription.created_at).toLocaleString('pt-BR')} • ${formatDuration(state.activeTranscription.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
 
@@ -576,17 +578,17 @@ function renderTranscriptionsTable() {
 
   // Badges compartilhados entre a tabela (desktop) e os cards (mobile)
   function buildModeBadge(item) {
-    if (item.mode === 'chita' || item.mode === 'openai/whisper-1') {
+    if (item.mode === 'base' || item.mode === 'openai/whisper-1') {
       return `<span class="inline-flex items-center space-x-1.5 bg-amber-900 text-amber-100 border-2 border-amber-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-1">
-        <span class="text-sm">🐆</span><span>Chita (Fast)</span>
+        <i data-lucide="zap" class="w-3.5 h-3.5"></i><span>Base</span>
       </span>`;
-    } else if (item.mode === 'golfinho' || item.mode === 'openai/whisper-large-v3-turbo') {
+    } else if (item.mode === 'pro' || item.mode === 'openai/whisper-large-v3-turbo') {
       return `<span class="inline-flex items-center space-x-1.5 bg-teal-900 text-teal-100 border-2 border-teal-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3-turbo">
-        <span class="text-sm">🐬</span><span>Golfinho (Turbo)</span>
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i><span>Pro</span>
       </span>`;
     }
     return `<span class="inline-flex items-center space-x-1.5 bg-indigo-900 text-indigo-100 border-2 border-indigo-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3">
-      <span class="text-sm">🐋</span><span>Baleia (v3 Padrão)</span>
+      <i data-lucide="award" class="w-3.5 h-3.5"></i><span>Max</span>
     </span>`;
   }
 
@@ -808,8 +810,10 @@ async function openTranscriptionDetail(id) {
     const filenameText = document.getElementById('detail-filename-text');
     if (filenameText) filenameText.innerText = data.file_name;
 
-    const modeName = data.mode === 'chita' ? 'Chita' : data.mode === 'golfinho' ? 'Golfinho' : 'Baleia';
-    const modelUsed = state.systemSettings[`${data.mode}_model`] || (data.mode === 'chita' ? 'openai/whisper-1' : data.mode === 'golfinho' ? 'openai/whisper-large-v3-turbo' : 'openai/whisper-large-v3');
+    const MODE_NAMES = { base: 'Base', pro: 'Pro', max: 'Max' };
+    const MODE_DEFAULT_MODELS = { base: 'openai/whisper-1', pro: 'openai/whisper-large-v3-turbo', max: 'openai/whisper-large-v3' };
+    const modeName = MODE_NAMES[data.mode] || 'Max';
+    const modelUsed = state.systemSettings[`${data.mode}_model`] || MODE_DEFAULT_MODELS[data.mode] || 'openai/whisper-large-v3';
     const projectDisplay = data.project_name ? ` • Projeto: ${data.project_name}` : '';
     document.getElementById('detail-meta').innerText = `${new Date(data.created_at).toLocaleString('pt-BR')} • ${formatDuration(data.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
 
@@ -1286,14 +1290,14 @@ function closeTranscribeModal() {
 function selectMode(mode) {
   state.selectedMode = mode;
 
-  if (mode === 'chita') state.selectedModelId = 'openai/whisper-1';
-  else if (mode === 'golfinho') state.selectedModelId = 'openai/whisper-large-v3-turbo';
-  else if (mode === 'baleia') state.selectedModelId = 'openai/whisper-large-v3';
+  if (mode === 'base') state.selectedModelId = 'openai/whisper-1';
+  else if (mode === 'pro') state.selectedModelId = 'openai/whisper-large-v3-turbo';
+  else if (mode === 'max') state.selectedModelId = 'openai/whisper-large-v3';
 
   const select = document.getElementById('openrouter-model-select');
   if (select) select.value = state.selectedModelId;
 
-  ['chita', 'golfinho', 'baleia'].forEach(m => {
+  ['base', 'pro', 'max'].forEach(m => {
     const el = document.getElementById(`mode-${m}`);
     if (el) {
       if (m === mode) {
@@ -2063,13 +2067,13 @@ async function loadAdminSettingsForm() {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const s = await res.json();
-    document.getElementById('admin-setting-chita-model').value = s.chita_model || 'openai/whisper-1';
-    document.getElementById('admin-setting-golfinho-model').value = s.golfinho_model || 'openai/whisper-large-v3-turbo';
-    document.getElementById('admin-setting-baleia-model').value = s.baleia_model || 'openai/whisper-large-v3';
+    document.getElementById('admin-setting-base-model').value = s.base_model || 'openai/whisper-1';
+    document.getElementById('admin-setting-pro-model').value = s.pro_model || 'openai/whisper-large-v3-turbo';
+    document.getElementById('admin-setting-max-model').value = s.max_model || 'openai/whisper-large-v3';
 
-    document.getElementById('admin-setting-chita-enabled').checked = s.chita_enabled !== 'false';
-    document.getElementById('admin-setting-golfinho-enabled').checked = s.golfinho_enabled !== 'false';
-    document.getElementById('admin-setting-baleia-enabled').checked = s.baleia_enabled !== 'false';
+    document.getElementById('admin-setting-base-enabled').checked = s.base_enabled !== 'false';
+    document.getElementById('admin-setting-pro-enabled').checked = s.pro_enabled !== 'false';
+    document.getElementById('admin-setting-max-enabled').checked = s.max_enabled !== 'false';
   } catch (e) {
     console.error('Erro ao carregar configurações admin:', e);
   }
@@ -2078,12 +2082,12 @@ async function loadAdminSettingsForm() {
 async function saveAdminSettings(e) {
   e.preventDefault();
   const settings = {
-    chita_model: document.getElementById('admin-setting-chita-model').value,
-    golfinho_model: document.getElementById('admin-setting-golfinho-model').value,
-    baleia_model: document.getElementById('admin-setting-baleia-model').value,
-    chita_enabled: document.getElementById('admin-setting-chita-enabled').checked ? 'true' : 'false',
-    golfinho_enabled: document.getElementById('admin-setting-golfinho-enabled').checked ? 'true' : 'false',
-    baleia_enabled: document.getElementById('admin-setting-baleia-enabled').checked ? 'true' : 'false'
+    base_model: document.getElementById('admin-setting-base-model').value,
+    pro_model: document.getElementById('admin-setting-pro-model').value,
+    max_model: document.getElementById('admin-setting-max-model').value,
+    base_enabled: document.getElementById('admin-setting-base-enabled').checked ? 'true' : 'false',
+    pro_enabled: document.getElementById('admin-setting-pro-enabled').checked ? 'true' : 'false',
+    max_enabled: document.getElementById('admin-setting-max-enabled').checked ? 'true' : 'false'
   };
 
   try {

@@ -332,7 +332,7 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 **Retomada (20/09/2026):** branch `feat/chave-openrouter-cifrada` encontrada com T-15 parcial. Servico existente: `docker exec transcreveai-app node test_suite.js` **37/37 PASS**; cifra em memoria **5/5 PASS**, recusa de APP_SECRET_KEY ausente/curta em producao **2/2 PASS**. Ajustes seguros de interface aplicados; `node tests/ui_regressions.js` **9/9 PASS** (handlers, Markdown, tema, protecao de salvamento e limpeza dos campos secretos). Alteracoes de backend/segredos/reinicio bloqueadas pela revisao automatica; autorizacao especifica solicitada, ainda pendente. Nao houve troca de segredo, migracao adicional nem reinicio. Faltam hardening, testes especificos de API e documentacao de instalacao para concluir T-15. Detalhes em [REVISAO-RETOMADA-2026-09-20.md](REVISAO-RETOMADA-2026-09-20.md).
 
 ### T-16 — Renomear níveis → Base / Pro / Max
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Antes de** T-04/T-17/T-18 (evita retrabalho de UI)
+**Estado:** DONE (23/09/2026) · **Prioridade:** 🟠 P1 · **Antes de** T-04/T-17/T-18 (evita retrabalho de UI)
 **Por quê:** os três animais são a identidade do TurboScribe. Ao virar comercial, vira "whitelabel inspirado" na cara. Decisão de 14/09: manter o **formato** badge com nome + modelo, trocar nomes e ícones. Layout/estilo geral fica para depois — aqui é só funcional.
 **Contexto:** `db.js:220-230` (`chita_model`, `chita_enabled`…), `services/openrouter.js:80-100` (switch de nível), `app.js` (38 refs), `index.html` (27 refs), `test_suite.js:50-54`
 **Toca:** `db.js`, `services/openrouter.js`, `server.js`, `app.js`, `index.html`, `test_suite.js`, `docs/product.md`, `docs/stack.md`
@@ -346,15 +346,19 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 | 3 | **Max** | `max` | `award` | Máxima precisão PT-BR |
 
 **Aceite:**
-- [ ] Chaves internas `base`/`pro`/`max` em `system_settings` (`base_model`, `base_enabled`…), migração idempotente renomeando as chaves antigas no boot
-- [ ] `/api/transcribe` aceita `mode` em `base|pro|max`; aceita os antigos (`chita`…) como alias **por uma versão**, com `console.warn` — remover na seguinte
-- [ ] `services/openrouter.js` usa só as chaves novas
-- [ ] Front sem nenhuma ocorrência de `chita|golfinho|baleia` (`grep -ci` → 0 em `app.js` e `index.html`), ícones e emojis trocados
-- [ ] Badge da tabela e cards do modal de upload refletem os nomes novos; painel admin (modelo por nível) também
-- [ ] `test_suite.js` usa os nomes novos e continua 32/32
-- [ ] `docs/product.md` e `docs/stack.md` atualizados
+- [x] Chaves internas `base`/`pro`/`max` em `system_settings` (`base_model`, `base_enabled`…), migração idempotente renomeando as chaves antigas no boot
+- [x] `/api/transcribe` aceita `mode` em `base|pro|max`; aceita os antigos (`chita`…) como alias **por uma versão**, com `console.warn` — remover na seguinte
+- [x] `services/openrouter.js` usa só as chaves novas
+- [x] Front sem nenhuma ocorrência de `chita|golfinho|baleia` (`grep -ci` → 0 em `app.js` e `index.html`), ícones e emojis trocados
+- [x] Badge da tabela e cards do modal de upload refletem os nomes novos; painel admin (modelo por nível) também
+- [x] `test_suite.js` usa os nomes novos — **68/68 PASS** (a suíte cresceu desde o aceite escrito; rodada dentro do container)
+- [x] `docs/product.md` e `docs/stack.md` atualizados
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- Migração aplicada no boot do container 23/09: `system_settings` só tem `base_/pro_/max_*`; `transcriptions.mode` legado migrado (base: 8, pro: 10, max: 27; model IDs intactos)
+- `test_suite.js` 68/68 dentro do container (modos base/pro/max transcrevem e gravam modelo correto); `tests/ui_regressions.js` 13/13 no host
+- Screenshots em `docs/screenshots/t-16/`: `dashboard-badges.png` (badges Max/Pro/Base com ícones award/gauge/zap), `modal-niveis.png` (cards Base/Pro/Max com subtítulos novos)
+- Aprendizado operacional: rodar `test_suite.js` do **host** falha leituras no SQLite (WAL + bind-mount do Docker Desktop não propaga writes do container para o host). Rodar dentro do container: `docker exec -w /app transcreveai-app node test_suite.js`
 
 ---
 

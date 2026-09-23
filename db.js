@@ -168,7 +168,7 @@ async function initDatabase() {
         file_size INTEGER DEFAULT 0,
         duration_seconds REAL DEFAULT 0,
         language TEXT DEFAULT 'pt',
-        mode TEXT DEFAULT 'golfinho',
+        mode TEXT DEFAULT 'max',
         status TEXT DEFAULT 'completed',
         raw_text TEXT,
         speaker_diarization INTEGER DEFAULT 0,
@@ -285,13 +285,42 @@ async function initDatabase() {
       { key: 'max_file_size_mb', value: '5120' },
       { key: 'max_duration_hours', value: '10' },
       { key: 'default_language', value: 'pt' },
-      { key: 'chita_model', value: 'openai/whisper-1' },
-      { key: 'golfinho_model', value: 'openai/whisper-large-v3-turbo' },
-      { key: 'baleia_model', value: 'openai/whisper-large-v3' },
-      { key: 'chita_enabled', value: 'true' },
-      { key: 'golfinho_enabled', value: 'true' },
-      { key: 'baleia_enabled', value: 'true' }
+      { key: 'base_model', value: 'openai/whisper-1' },
+      { key: 'pro_model', value: 'openai/whisper-large-v3-turbo' },
+      { key: 'max_model', value: 'openai/whisper-large-v3' },
+      { key: 'base_enabled', value: 'true' },
+      { key: 'pro_enabled', value: 'true' },
+      { key: 'max_enabled', value: 'true' }
     ];
+
+    // T-16: migração idempotente — renomeia chaves antigas (chita/golfinho/baleia)
+    // preservando valores customizados pelo admin, e migra o modo das transcrições legadas.
+    const keyRenames = [
+      { old: 'chita_model', next: 'base_model' },
+      { old: 'golfinho_model', next: 'pro_model' },
+      { old: 'baleia_model', next: 'max_model' },
+      { old: 'chita_enabled', next: 'base_enabled' },
+      { old: 'golfinho_enabled', next: 'pro_enabled' },
+      { old: 'baleia_enabled', next: 'max_enabled' }
+    ];
+    for (const { old, next } of keyRenames) {
+      const legacy = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [old]);
+      const current = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [next]);
+      if (legacy && !current) {
+        await runAsync(`INSERT INTO system_settings (key, value) VALUES (?, ?)`, [next, legacy.value]);
+      }
+      if (legacy) {
+        await runAsync(`DELETE FROM system_settings WHERE key = ?`, [old]);
+      }
+    }
+    const modeRenames = [
+      { old: 'chita', next: 'base' },
+      { old: 'golfinho', next: 'pro' },
+      { old: 'baleia', next: 'max' }
+    ];
+    for (const { old, next } of modeRenames) {
+      await runAsync(`UPDATE transcriptions SET mode = ? WHERE mode = ?`, [next, old]);
+    }
 
     for (const setting of defaultSettings) {
       const existing = await getAsync(`SELECT * FROM system_settings WHERE key = ?`, [setting.key]);

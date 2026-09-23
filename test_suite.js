@@ -200,11 +200,11 @@ async function runTestSuite() {
     assert(false, 'Erro no teste de bloqueio por tentativas: ' + e.message);
   }
 
-  // TEST 2, 3, 4: Transcrição nos 3 Níveis (Chita, Golfinho, Baleia)
+  // TEST 2, 3, 4: Transcrição nos 3 Níveis (Base, Pro, Max)
   const modes = [
-    { mode: 'chita', label: 'Nível 1 - Chita (Fast)' },
-    { mode: 'golfinho', label: 'Nível 2 - Golfinho (Balanced)' },
-    { mode: 'baleia', label: 'Nível 3 - Baleia (High Precision)' }
+    { mode: 'base', label: 'Nível 1 - Base' },
+    { mode: 'pro', label: 'Nível 2 - Pro' },
+    { mode: 'max', label: 'Nível 3 - Max' }
   ];
 
   const createdTranscriptionIds = [];

@@ -269,7 +269,7 @@ async function phaseCapacity(users) {
     const form = new FormData();
     form.append('files', fs.createReadStream(SAMPLE_AUDIO), `carga-${u.idx}.ogg`);
     form.append('language', 'pt');
-    form.append('mode', 'golfinho');
+    form.append('mode', 'pro');
     const r = await api('POST', '/api/transcribe', { token: u.token, raw: form });
     return { user: u, status: r.status, ms: r.ms, id: r.data && r.data.data && r.data.data[0] && r.data.data[0].id };
   }));

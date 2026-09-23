@@ -82,7 +82,7 @@ async function upload(files, fields = {}) {
   const fd = new FormData();
   for (const f of [].concat(files)) fd.append('files', fs.createReadStream(f.path || f), f.name ? { filename: f.name } : undefined);
   fd.append('language', 'pt');
-  fd.append('mode', 'golfinho');
+  fd.append('mode', 'pro');
   for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   const res = await fetch(`${BASE_URL}/api/transcribe`, { method: 'POST', body: fd });
   return { status: res.status, body: await res.json().catch(() => ({})) };
