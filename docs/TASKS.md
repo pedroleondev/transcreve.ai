@@ -480,18 +480,29 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-20 — Formatos e idiomas
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-19 (validação por `ffprobe`)
+**Estado:** DONE (23/09/2026) · **Prioridade:** 🟠 P1 · **Dependia de:** T-19 (validação por `ffprobe`) ✅
 **Por quê:** paridade: o concorrente lista 24 formatos e 98 idiomas. Nós já aceitamos "o que o ffmpeg lê" — mas sem lista visível, sem `accept` no input, sem extração explícita de trilha de vídeo e com idioma hardcoded em `pt`.
 **Contexto:** `index.html` (input de arquivo do modal de upload, select de idioma), `services/audio.js` (`preprocessAudio`), `services/openrouter.js` (parâmetro `language`), `docs/product.md` §4.1
-**Toca:** `index.html`, `app.js`, `services/audio.js`, `docs/product.md`
+**Toca:** `index.html`, `app.js`, `services/audio.js` (sem mudança — `-vn` já existia), `services/languages.js` (novo), `services/openrouter.js`, `services/pipeline.js`, `server.js`, `db.js`, `docs/product.md`, `docs/stack.md`
+**Decisões na implementação:**
+- **Lista canônica única** em `services/languages.js` (UMD): o backend valida o parâmetro e o frontend monta o select do mesmo arquivo, servido em `GET /languages.js` — zero duplicação, zero fetch extra.
+- **100 idiomas** (lista do `whisper-large-v3`, incl. `yue`/cantonês) com nome nativo + inglês; busca filtra pelos dois e pelo código ISO.
+- **"Detectar automaticamente" é o padrão**: omite o campo `language` da chamada à API; o idioma vem no `verbose_json` (`data.language`), é persistido por bloco em `transcription_chunks.detected_language` e a maioria vira o `language` da transcrição (só quando o pedido era `auto`).
+- **Prompt de domínio PT-BR** (`DEFAULT_PROMPT_PTBR`) agora só é enviado quando `language=pt`: em outros idiomas ele induz vocabulário errado; em `auto` ele viés a detecção para português.
+- **`DB_PATH` (env) adicionado ao `db.js`**: testes que sobem um segundo servidor isolam o SQLite (lição do incidente T-19).
+- **Bug latente encontrado e corrigido**: banco **novo** (fresh install) quebrava no boot (`no such column: stage`) — o `CREATE TABLE transcriptions` não tinha `stage`, que só era adicionada pelo ALTER para bancos existentes. Nunca apareceu porque todos os ambientes usam banco migrado; o teste com `DB_PATH` limpo expôs.
 **Aceite:**
-- [ ] Input com `accept` cobrindo: MP3, M4A, MP4, MOV, AAC, WAV, OGG, OPUS, MPEG, WMA, WMV, AVI, FLAC, AIFF, ALAC, 3GP, MKV, WEBM, VOB, RMVB, MTS, TS — e o modal lista os formatos
-- [ ] Vídeo: `ffmpeg -vn` extrai só a trilha de áudio (primeira trilha, ou a de idioma padrão se houver várias) no pré-processamento
-- [ ] Select de idioma com os **98 idiomas do Whisper** (lista em `services/languages.js`, código ISO-639-1 + nome nativo), com busca, `pt` no topo e os 4 mais usados (pt, en, es, ja) fixados acima da lista
-- [ ] Opção **"Detectar automaticamente"** (omite `language` na chamada); o idioma detectado é gravado em `transcriptions.language`
-- [ ] Arquivo com formato fora do `accept` mas legível pelo ffmpeg ainda passa (o `accept` é conveniência, o `ffprobe` de T-19 é a validação real)
+- [x] Input com `accept` cobrindo os 22 formatos (MP3, M4A, MP4, MOV, AAC, WAV, OGG, OPUS, MPEG, WMA, WMV, AVI, FLAC, AIFF, ALAC, 3GP, MKV, WEBM, VOB, RMVB, MTS, TS) e o modal lista os formatos
+- [x] Vídeo: `ffmpeg -vn` extrai só a trilha de áudio no pré-processamento (já existia em `services/audio.js`; validado com MP4 gerado por lavfi)
+- [x] Select de idioma com os **100 idiomas do Whisper** (`services/languages.js`, código ISO-639-1 + nome nativo), com busca, `pt` no topo e os 4 mais usados (pt, en, es, ja) fixados acima da lista
+- [x] Opção **"Detectar automaticamente"** (omite `language` na chamada); o idioma detectado é gravado em `transcriptions.language`
+- [x] Arquivo com formato fora do `accept` mas legível pelo ffmpeg ainda passa (o `accept` é conveniência, o `ffprobe` de T-19 é a validação real)
+- [x] Idioma inválido na API → **400 antes de tocar em arquivo**, com mensagem clara
 
-**Evidência:** _(preencher)_
+**Evidência (23/09/2026):**
+- `node tests/t20_formats_languages.js` (provedor **mock**, banco isolado via `DB_PATH`, container efêmero com a imagem real): **18/18 PASS** — validação 400, `auto` → `language='pt'` gravado (detectado), `ja` preservado, vídeo MP4 transcrito (duração 6,01 s detectada), lista servida, 100 idiomas, fixados no topo, busca por nome inglês e nativo (日本).
+- Verificação de UI (Edge headless contra o container na 3000): select com 101 opções (`auto` + 100), "Detectar automaticamente" primeiro, pt/en/es/ja fixados, busca "jap" acha `ja`, `accept` presente, nenhum erro JS.
+- Custo de API no desenvolvimento: **US$ 0** (todo o e2e em mock; a suíte real `test_suite.js` não foi rodada para respeitar o teto de recurso — mudança no caminho real é mínima: um campo omitido/um campo capturado).
 
 ---
 

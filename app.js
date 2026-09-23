@@ -59,9 +59,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   fetchProjects();
   fetchTranscriptions();
   setupDragAndDrop();
+  populateLanguageSelect(); // T-20: select de idiomas do modal de upload
   await checkAuthUser(); // papel real ANTES de consultar o estado da chave
   loadApiKeyStatus();
 });
+
+// T-20: select de idioma com busca. A lista vem de WHISPER_LANGUAGES
+// (/languages.js = services/languages.js, a mesma que o backend valida).
+function populateLanguageSelect(filter) {
+  const select = document.getElementById('transcribe-language');
+  if (!select || typeof WHISPER_LANGUAGES === 'undefined') return;
+  const current = select.value || 'auto';
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = '🌍 Detectar automaticamente (recomendado)';
+  select.innerHTML = '';
+  select.appendChild(auto);
+  for (const l of WHISPER_LANGUAGES.listForSelect(filter)) {
+    const opt = document.createElement('option');
+    opt.value = l.code;
+    opt.textContent = `${l.native} — ${l.name} (${l.code})`;
+    select.appendChild(opt);
+  }
+  select.value = [...select.options].some(o => o.value === current) ? current : 'auto';
+}
+
+function filterLanguageOptions() {
+  const filter = document.getElementById('language-filter');
+  populateLanguageSelect(filter ? filter.value : '');
+}
 
 // Buscar catálogo de modelos OpenRouter com precificação e acurácia
 async function fetchOpenRouterModels() {

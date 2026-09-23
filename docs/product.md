@@ -33,7 +33,9 @@ Planos, FAQ, blog e login são **modais** em `app.js`, não páginas. Não exist
 
 ### Ingestão
 - Upload múltiplo (botão + drag & drop global) e gravação direta pelo navegador (MediaRecorder)
-- Formatos: qualquer coisa que `ffmpeg` leia (`.ogg`, `.m4a`, `.mp3`, vídeo com trilha de áudio)
+- Formatos (T-20): os 22 listados no modal (MP3, M4A, MP4, MOV, AAC, WAV, OGG, OPUS, MPEG, WMA, WMV, AVI, FLAC, AIFF, ALAC, 3GP, MKV, WEBM, VOB, RMVB, MTS, TS) — e qualquer outro formato legível pelo `ffmpeg` também passa; o `accept` do input é conveniência, a validação real é o `ffprobe` de T-19
+- Vídeos (MP4, MOV, MKV, AVI etc.): só a trilha de áudio é extraída (`ffmpeg -vn`) no pré-processamento
+- Idioma (T-20): **Detectar automaticamente** (padrão — o Whisper identifica e o idioma detectado fica gravado na transcrição) ou escolha entre os 100 idiomas do `whisper-large-v3`, com busca e pt/en/es/ja fixados no topo
 - Nível de transcrição: **Base** (rápido, `whisper-1`), **Pro** (equilibrado, `whisper-large-v3-turbo`), **Max** (precisão PT-BR, `whisper-large-v3`, padrão)
 - Estimativa de preço e precisão antes do envio
 - Campo "assunto a focar" (`ai_focus`) que vira prompt do resumo pós-transcrição

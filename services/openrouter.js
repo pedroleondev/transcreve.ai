@@ -57,7 +57,8 @@ async function mockTranscribe(filePath, opts = {}) {
     model_used: 'mock/transcriber',
     text: segments.map(s => s.text).join(' '),
     segments,
-    duration
+    duration,
+    detected_language: process.env.MOCK_DETECTED_LANGUAGE || opts.languageHint || 'pt'
   };
 }
 
@@ -194,11 +195,18 @@ const DEFAULT_PROMPT_PTBR =
 const TRANSCRIBE_TIMEOUT_MS = Number(process.env.TRANSCRIBE_TIMEOUT_MS || 10 * 60 * 1000);
 
 async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'openai/whisper-large-v3', opts = {}) {
-  if (MOCK_ENABLED) return mockTranscribe(filePath, opts);
+  // T-20: 'auto' (ou vazio) = detecção automática — o campo `language` é
+  // OMITIDO da chamada e o Whisper detecta. O prompt de domínio PT-BR só é
+  // aplicado quando o idioma é pt: em outros idiomas ele induz vocabulário
+  // errado, e em 'auto' viés de detecção para português.
+  const lang = String(language || '').toLowerCase();
+  const autoDetect = !lang || lang === 'auto';
+
+  if (MOCK_ENABLED) return mockTranscribe(filePath, { ...opts, languageHint: autoDetect ? null : lang });
 
   const apiKey = await getActiveOpenRouterKey();
   const primaryModel = await resolveWhisperModel(modeOrModelId);
-  const promptText = opts.prompt || DEFAULT_PROMPT_PTBR;
+  const promptText = opts.prompt || (autoDetect || lang === 'pt' ? DEFAULT_PROMPT_PTBR : '');
 
   // Fila de modelos para tentar em ordem de prioridade
   const modelsToTry = [
@@ -217,11 +225,11 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
       const formData = new FormData();
       formData.append('file', fs.createReadStream(filePath));
       formData.append('model', model);
-      formData.append('language', language || 'pt');
+      if (!autoDetect) formData.append('language', lang);
       formData.append('response_format', 'verbose_json');
       // temperature 0 + prompt reduzem drasticamente alucinações do Whisper em silêncio/ruído
       formData.append('temperature', '0');
-      formData.append('prompt', promptText);
+      if (promptText) formData.append('prompt', promptText);
 
       const response = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
         method: 'POST',
@@ -260,7 +268,8 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
           model_used: model,
           text: data.text ? data.text.trim() : '',
           segments: segments,
-          duration: data.duration || (segments.length ? segments[segments.length - 1].end : 0)
+          duration: data.duration || (segments.length ? segments[segments.length - 1].end : 0),
+          detected_language: data.language || null
         };
       } else {
         const errText = await response.text();

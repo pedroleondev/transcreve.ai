@@ -5,7 +5,10 @@ const { v4: uuidv4 } = require('uuid');
 const secrets = require('./services/secrets');
 const { getJobSignal } = require('./services/job-context');
 
-const dbPath = path.join(__dirname, 'turboscribe.sqlite');
+// DB_PATH (env) permite isolar o banco em testes que sobem um segundo servidor
+// (incidente T-19: duas instâncias disputando o mesmo SQLite). Fora de testes,
+// nao definir — usa o turboscribe.sqlite padrao do diretorio do projeto.
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'turboscribe.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Erro ao conectar ao banco de dados SQLite:', err.message);
@@ -175,6 +178,7 @@ async function initDatabase() {
         progress INTEGER DEFAULT 0,
         error_message TEXT,
         ai_summary TEXT,
+        stage TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -216,6 +220,13 @@ async function initDatabase() {
       )
     `);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_chunks_transcription ON transcription_chunks(transcription_id, idx)`);
+
+    // 7b. T-20: idioma detectado pelo Whisper em cada bloco (language='auto').
+    const chunkColumns = await allAsync('PRAGMA table_info(transcription_chunks)');
+    if (!chunkColumns.some(col => col.name === 'detected_language')) {
+      console.log('Adicionando coluna "detected_language" na tabela "transcription_chunks"...');
+      await runAsync(`ALTER TABLE transcription_chunks ADD COLUMN detected_language TEXT`);
+    }
 
     // 8. T-18: Análises/aprimoramentos de IA por transcrição (histórico: N por transcrição)
     await runAsync(`

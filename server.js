@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db');
 const { transcribeAudioFile, generateChatCompletion, runAnalysisChat, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
+const { isValidLanguage } = require('./services/languages');
 const { DEFAULT_ENHANCE_SYSTEM_PROMPT, buildEnhanceUserContent, splitTextIntoChunks, PROMPT_VERSION } = require('./services/prompts');
 const secrets = require('./services/secrets');
 const { queuePositionSql } = require('./services/queue');
@@ -81,6 +82,9 @@ app.use('/uploads', express.static(uploadsDir));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
+// T-20: lista canônica de idiomas do Whisper — usada pelo backend (validação)
+// e pelo frontend (select do modal de upload). UMD, mesmo arquivo.
+app.get('/languages.js', (req, res) => res.sendFile(path.join(__dirname, 'services', 'languages.js')));
 
 // Middleware de Autenticação JWT
 function authenticateToken(req, res, next) {
@@ -259,7 +263,16 @@ app.get('/api/openrouter/models', (req, res) => {
 
 // Upload & Processamento de Transcrição (Assíncrono)
 app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErrorHandler, async (req, res) => {
-  const { language = 'pt', mode: rawMode = 'max', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
+  const { mode: rawMode = 'max', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
+
+  // T-20: idioma padrão é 'auto' (detecção automática pelo Whisper). Códigos
+  // válidos vêm da lista canônica em services/languages.js; qualquer outro
+  // valor é rejeitado com 400 antes de tocar em arquivo.
+  const rawLanguage = String(req.body.language || 'auto').toLowerCase();
+  const language = rawLanguage === 'auto' ? 'auto' : rawLanguage;
+  if (language !== 'auto' && !isValidLanguage(language)) {
+    return res.status(400).json({ error: `Idioma inválido: '${req.body.language}'. Use 'auto' ou um código ISO-639-1 da lista (ex.: pt, en, es, ja).` });
+  }
 
   // T-16: aliases legados (chita/golfinho/baleia) aceitos por uma versão, com aviso de deprecação
   const LEGACY_MODE_ALIASES = { chita: 'base', golfinho: 'pro', baleia: 'max' };

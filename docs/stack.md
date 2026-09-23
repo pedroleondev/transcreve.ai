@@ -53,10 +53,13 @@ transcriptions(id, user_id → users, project_id → projects, file_name, file_p
 segments(id, transcription_id → transcriptions, speaker, start_time, end_time, text)
 transcription_chunks(id, transcription_id → transcriptions, idx, offset_sec, duration_sec,
                path, status, attempts, model_used, segments_json, error,
+               detected_language,   -- T-20: idioma que o Whisper detectou no bloco (language='auto')
                started_at, finished_at)   -- índice (transcription_id, idx)
 ```
 
 - Migrações imperativas e idempotentes em `initDatabase()` (`db.js:44`): renomeia `folders`→`projects`, `folder_id`→`project_id`, adiciona colunas via `PRAGMA table_info`.
+- `DB_PATH` (env) troca o caminho do SQLite — usado pelos testes para isolar o banco (`tests/t20_formats_languages.js`); sem ele, usa `turboscribe.sqlite` no diretório do projeto.
+- `transcriptions.language`: `auto` (padrão, T-20) vira o idioma detectado pelo Whisper ao concluir; código ISO-639-1 quando o usuário escolhe. Lista canônica em `services/languages.js` (100 idiomas), servida também ao frontend em `GET /languages.js`.
 - `status` da transcrição: `pending` → `processing` → `completed` | `completed_with_errors` | `failed`. `stage` (só durante `processing`): `preprocessing` → `splitting` → `transcribing` → `assembling` → `analyzing`.
 - `transcription_chunks.status`: `pending` → `processing` → `done` | `failed`. Bloco `done` guarda `segments_json` (timestamps relativos ao bloco; `offset_sec` é somado na montagem). Blocos são apagados do disco ao concluir o job, mas as linhas ficam (permitem `/retry` e auditoria).
 - Sem índice em `transcriptions.user_id`, `transcriptions.status`, `segments.transcription_id`. O worker faz `SELECT ... WHERE status IN ('processing','pending')` a cada 5s — full scan (T-08).

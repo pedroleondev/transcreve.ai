@@ -188,8 +188,8 @@ async function transcribeOneChunk(task, chunk) {
     }
 
     await runAsync(
-      `UPDATE transcription_chunks SET status = 'done', model_used = ?, segments_json = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [result.model_used, JSON.stringify(segments), chunk.id]
+      `UPDATE transcription_chunks SET status = 'done', model_used = ?, segments_json = ?, detected_language = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [result.model_used, JSON.stringify(segments), result.detected_language || null, chunk.id]
     );
     return { ok: true };
   } catch (err) {
@@ -335,9 +335,22 @@ async function processJob(task) {
     ? `${failed.length} de ${chunks.length} bloco(s) falharam: ${failed.map(c => c.idx + 1).join(', ')}`
     : null;
 
+  // T-20: com language='auto', grava o idioma que o Whisper detectou
+  // (maioria entre os blocos concluídos) no lugar do placeholder 'auto'.
+  let detectedLanguage = null;
+  const taskLang = String(task.language || '').toLowerCase();
+  if (!taskLang || taskLang === 'auto') {
+    const langs = await allAsync(
+      `SELECT detected_language, COUNT(*) AS n FROM transcription_chunks
+       WHERE transcription_id = ? AND status = 'done' AND detected_language IS NOT NULL
+       GROUP BY detected_language ORDER BY n DESC LIMIT 1`, [task.id]
+    );
+    detectedLanguage = langs.length ? langs[0].detected_language : null;
+  }
+
   await runAsync(
-    `UPDATE transcriptions SET status = ?, stage = NULL, progress = 100, raw_text = ?, ai_summary = ?, mode = ?, error_message = ? WHERE id = ?`,
-    [status, rawText, summary, modelUsed, errorMessage, task.id]
+    `UPDATE transcriptions SET status = ?, stage = NULL, progress = 100, raw_text = ?, ai_summary = ?, mode = ?, error_message = ?, language = COALESCE(?, language) WHERE id = ?`,
+    [status, rawText, summary, modelUsed, errorMessage, detectedLanguage, task.id]
   );
   await cleanup(task, chunks);
   await logAction(task.user_id, 'TRANSCRIPTION_CREATED_ASYNC', {

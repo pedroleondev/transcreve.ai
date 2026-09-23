@@ -751,12 +751,14 @@
         <div id="drop-zone" class="border-2 border-dashed border-blue-400 bg-blue-50/50 dark:bg-blue-950/50 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-2xl p-6 text-center transition-all duration-300 cursor-pointer">
           <i data-lucide="file-audio" class="w-10 h-10 text-blue-500 dark:text-blue-300 mx-auto mb-2"></i>
           <p class="font-bold text-brand-ink dark:text-brand-ink text-sm">Arrastar e Soltar</p>
-          <p class="text-brand-muted dark:text-brand-muted text-xs mt-1">MP3, MP4, M4A, MOV, AAC, WAV, OGG, OPUS, MPEG, WMA, WMV</p>
+          <p class="text-brand-muted dark:text-brand-muted text-xs mt-1">MP3 · M4A · MP4 · MOV · AAC · WAV · OGG · OPUS · MPEG · WMA · WMV · AVI · FLAC · AIFF · ALAC · 3GP · MKV · WEBM · VOB · RMVB · MTS · TS</p>
+          <p class="text-brand-muted dark:text-brand-muted text-[10px] mt-1">Vídeos têm só a trilha de áudio extraída automaticamente · outros formatos legíveis pelo ffmpeg também passam</p>
           <p class="text-brand-muted dark:text-brand-muted text-xs my-2">— OU —</p>
           <button type="button" onclick="document.getElementById('file-input').click()" class="bg-brand-line dark:bg-brand-line hover:bg-slate-300 dark:hover:bg-slate-600 text-brand-ink dark:text-brand-ink font-bold text-xs px-4 py-2 rounded-xl transition">
             PROCURAR ARQUIVOS
           </button>
-          <input type="file" id="file-input" multiple class="hidden" onchange="handleFileSelect(event)">
+          <input type="file" id="file-input" multiple class="hidden" onchange="handleFileSelect(event)"
+            accept=".mp3,.m4a,.mp4,.mov,.aac,.wav,.ogg,.opus,.mpeg,.mpg,.wma,.wmv,.avi,.flac,.aiff,.aif,.alac,.3gp,.mkv,.webm,.vob,.rmvb,.mts,.ts,audio/*,video/*">
           <div id="selected-files-preview" class="mt-3 text-xs text-blue-600 dark:text-blue-300 font-semibold"></div>
         </div>
 
@@ -809,15 +811,15 @@
           </select>
         </div>
 
-        <!-- Idioma do áudio -->
+        <!-- Idioma do áudio (T-20: 99 idiomas do Whisper + detecção automática) -->
         <div>
           <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1.5">Idioma do áudio</label>
           <select id="transcribe-language" class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-xl px-3 py-2 text-xs font-medium text-brand-ink dark:text-brand-ink focus:ring-2 focus:ring-blue-500">
-            <option value="pt">Português 🇧🇷</option>
-            <option value="en">English 🇺🇸</option>
-            <option value="es">Español 🇪🇸</option>
-            <option value="fr">Français 🇫🇷</option>
+            <option value="auto" selected>🌍 Detectar automaticamente (recomendado)</option>
           </select>
+          <input type="text" id="language-filter" oninput="filterLanguageOptions()" placeholder="Buscar idioma... (ex.: japonês, ja, 日本語)"
+            class="mt-1.5 w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-xl px-3 py-2 text-xs text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted focus:ring-2 focus:ring-blue-500">
+          <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Português, English, Español e 日本語 fixados no topo. Deixe em "Detectar" para o Whisper identificar o idioma sozinho.</p>
         </div>
 
         <!-- Modos de Transcrição Rápidos -->
@@ -1157,6 +1159,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=3.6.1"></script>
+  <script src="/languages.js"></script>
+  <script src="app.js?v=3.7.0"></script>
 </body>
 </html>
