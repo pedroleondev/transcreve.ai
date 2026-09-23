@@ -40,7 +40,7 @@ Sem framework de front, sem bundler, sem TypeScript, sem ORM, sem Redis, sem fil
 ```
 users(id, name, email UNIQUE, password_hash, role, daily_limit, status, created_at)
 api_keys(id, provider, name, key_value, is_active, created_at)
-system_settings(key PK, value)
+system_settings(key PK, value)  -- níveis: base_model/enabled, pro_model/enabled, max_model/enabled
 system_logs(id, user_id, action, details, ip_address, timestamp)
 projects(id, user_id → users, name, created_at)
 transcriptions(id, user_id → users, project_id → projects, file_name, file_path,

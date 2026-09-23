@@ -174,11 +174,11 @@ async function resolveWhisperModel(modeOrModelId) {
   }
 
   switch (modeOrModelId) {
-    case 'chita':
+    case 'base':
       return 'openai/whisper-1';
-    case 'golfinho':
+    case 'pro':
       return 'openai/whisper-large-v3-turbo';
-    case 'baleia':
+    case 'max':
     default:
       return 'openai/whisper-large-v3';
   }

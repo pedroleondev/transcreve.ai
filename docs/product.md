@@ -34,7 +34,7 @@ Planos, FAQ, blog e login são **modais** em `app.js`, não páginas. Não exist
 ### Ingestão
 - Upload múltiplo (botão + drag & drop global) e gravação direta pelo navegador (MediaRecorder)
 - Formatos: qualquer coisa que `ffmpeg` leia (`.ogg`, `.m4a`, `.mp3`, vídeo com trilha de áudio)
-- Nível de transcrição: **Chita** (rápido), **Golfinho** (equilibrado), **Baleia** (precisão, padrão)
+- Nível de transcrição: **Base** (rápido, `whisper-1`), **Pro** (equilibrado, `whisper-large-v3-turbo`), **Max** (precisão PT-BR, `whisper-large-v3`, padrão)
 - Estimativa de preço e precisão antes do envio
 - Campo "assunto a focar" (`ai_focus`) que vira prompt do resumo pós-transcrição
 

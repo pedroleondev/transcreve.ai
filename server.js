@@ -258,7 +258,15 @@ app.get('/api/openrouter/models', (req, res) => {
 
 // Upload & Processamento de Transcrição (Assíncrono)
 app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErrorHandler, async (req, res) => {
-  const { language = 'pt', mode = 'baleia', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
+  const { language = 'pt', mode: rawMode = 'max', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
+
+  // T-16: aliases legados (chita/golfinho/baleia) aceitos por uma versão, com aviso de deprecação
+  const LEGACY_MODE_ALIASES = { chita: 'base', golfinho: 'pro', baleia: 'max' };
+  let mode = rawMode;
+  if (LEGACY_MODE_ALIASES[rawMode]) {
+    console.warn(`[T-16] Modo legado '${rawMode}' recebido em /api/transcribe; use '${LEGACY_MODE_ALIASES[rawMode]}'. Alias será removido na próxima versão.`);
+    mode = LEGACY_MODE_ALIASES[rawMode];
+  }
 
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
