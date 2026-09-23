@@ -1,0 +1,26 @@
+# Configuração dinâmica do Traefik (reaquece sem restart: file provider).
+
+# Roteamento estático da app — o backend é o container na mesma rede do compose
+# (nome resolvido pelo DNS interno do Docker). Trocar de porta/nome de serviço
+# exige ajustar aqui.
+http:
+  routers:
+    transcreveai:
+      rule: "Host(`transcreveai.local`) || Host(`transcreveai.localhost`) || Host(`192.168.1.3`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: transcreveai
+  services:
+    transcreveai:
+      loadBalancer:
+        servers:
+          - url: "http://transcreveai-app:3000"
+
+# Certificado TLS local: cobre transcreveai.local · transcreveai.localhost ·
+# localhost · 192.168.1.3 · 127.0.0.1; assinado pela CA em certs/rootCA.pem
+# (cada dispositivo confia nela uma vez — ver docs/INSTALL.md).
+tls:
+  certificates:
+    - certFile: /certs/transcreveai-cert.pem
+      keyFile: /certs/transcreveai-key.pem

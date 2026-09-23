@@ -6,7 +6,7 @@ services:
     container_name: transcreveai-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:3000"   # acesso direto (dev); o caminho "oficial" é via Traefik :443
     environment:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-transcreveai_docker_jwt_secret_secure_key_2026}
@@ -17,14 +17,48 @@ services:
       - /app/node_modules
       - ./turboscribe.sqlite:/app/turboscribe.sqlite
       - ./uploads:/app/uploads
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.localhost`) || Host(`transcreveai.local`)"
-      - "traefik.http.routers.transcreveai.entrypoints=web"
-      - "traefik.http.services.transcreveai.loadbalancer.server.port=3000"
+    # Roteamento fica no Traefik via arquivo (traefik/dynamic.yml) — ver
+    # comentário no serviço traefik abaixo.
     networks:
       - default
+
+  traefik:
+    image: traefik:v3.2
+    container_name: transcreveai-traefik
+    restart: unless-stopped
+    # Reverse proxy local com HTTPS. O roteamento é ESTÁTICO (arquivo), não
+    # provider docker: sem docker.sock exposto e sem depender do proxy de
+    # socket do Docker Desktop. O dashboard (:8080) não tem auth — LAN de dev.
+    ports:
+      - "80:80"      # HTTP -> redirect 308 para HTTPS
+      - "443:443"    # HTTPS (certificado local em certs/)
+      - "8080:8080"  # dashboard do Traefik
+    volumes:
+      - ./traefik:/etc/traefik:ro
+      - ./certs:/certs:ro
+    depends_on:
+      - transcreveai
+    networks:
+      - default
+
+  # Portainer — deixado desligado até a migração de gestão de containers.
+  # Para ativar: descomente, rode `docker compose up -d portainer` e acesse
+  # https://192.168.1.3:9443 (é o único serviço que precisa do docker.sock).
+  # portainer:
+  #   image: portainer/portainer-ce:latest
+  #   container_name: transcreveai-portainer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9443:9443"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - portainer_data:/data
+  #   networks:
+  #     - default
 
 networks:
   default:
     driver: bridge
+
+# volumes:
+#   portainer_data:

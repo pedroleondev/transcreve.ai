@@ -21,3 +21,6 @@ tests/fixtures/long/
 # Arquivos auxiliares do SQLite em WAL
 turboscribe.sqlite-wal
 turboscribe.sqlite-shm
+
+# CA e certificados locais (contem chave privada da CA - NUNCA versionar)
+certs/

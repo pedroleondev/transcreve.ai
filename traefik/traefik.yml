@@ -1,0 +1,23 @@
+# Traefik — configuração estática (local, rede privada).
+# Roteamento é definido em dynamic.yml (provider de arquivo) de propósito:
+# não depende do docker.sock — mais simples e sem socket exposto. Quando o
+# Portainer entrar, ele sobe com o próprio sock (serviço comentado no compose).
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+
+api:
+  dashboard: true
+  insecure: true   # dashboard em :8080 SEM auth — aceitável só em LAN de dev

@@ -80,51 +80,65 @@ docker compose logs -f transcreveai
 
 Acesse `http://localhost:3000`.
 
-## 4B. Subir com Docker Compose + Traefik (domínio próprio)
+## 4B. Subir com Docker Compose + Traefik (HTTPS local)
 
-O `docker-compose.yml` já vem com labels do Traefik prontos:
+O `docker-compose.yml` já inclui um **Traefik embutido** na mesma rede do app, com HTTPS de verdade via uma **CA local própria** (`certs/`). Serve para desenvolvimento e uso na LAN sem o aviso de "conexão não segura" no celular/navegador.
+
+Como funciona:
+- Traefik escuta em `:80` (redireciona tudo para HTTPS), `:443` (HTTPS com certificado local) e `:8080` (dashboard, sem auth — LAN de dev apenas)
+- O roteamento é **estático, por arquivo** (`traefik/dynamic.yml`) — nenhum `docker.sock` exposto
+- O certificado cobre `transcreveai.local`, `transcreveai.localhost`, `localhost`, `192.168.1.3` e `127.0.0.1` e é assinado pela CA em `certs/rootCA.pem`
+
+Passos:
+
+1. **Confie na CA local em cada dispositivo que for acessar** (senão o navegador avisa):
+   - **Windows (Chrome/Edge):** dê duplo clique em `certs/rootCA.pem` → *Instalar Certificado* → **Máquina Local** → colocar em *Autoridades de Certificação Raiz Confiáveis* → concluir (aceite o prompt de admin). Pelo store só do usuário o Chromium **não** confia.
+   - **Android (ex. acessar do celular na mesma Wi-Fi):** envie `certs/rootCA.pem` para o aparelho → *Configurações → Segurança → Mais configurações de segurança → Instalar certificado → Certificado da CA* → selecione o arquivo.
+2. Suba os dois serviços:
+   ```bash
+   docker compose up -d
+   ```
+3. Acesse `https://192.168.1.3` (ou `https://transcreveai.local` se apontar esse nome no `hosts` da máquina cliente para o IP do servidor). O acesso direto em `http://192.168.1.3:3000` continua existindo para depuração.
+
+Renovando os certificados (a CA dura 10 anos, o leaf 5):
+
+```bash
+openssl req -x509 -new -nodes -key certs/rootCA-key.pem -sha256 -days 3650 \
+  -out certs/rootCA.pem -subj "/CN=TurboScribe Local CA" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+openssl req -new -key certs/transcreveai-key.pem -out /tmp/leaf.csr -subj "/CN=transcreveai.local"
+openssl x509 -req -in /tmp/leaf.csr -CA certs/rootCA.pem -CAkey certs/rootCA-key.pem \
+  -CAcreateserial -out certs/transcreveai-cert.pem -days 1825 -sha256 \
+  -extfile <(echo "subjectAltName=DNS:transcreveai.local,DNS:transcreveai.localhost,DNS:localhost,IP:192.168.1.3,IP:127.0.0.1
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth")
+docker compose restart traefik
+```
+
+> **Atenção:** `certs/rootCA-key.pem` é a chave privada da sua CA — quem a tiver pode assinar certificados que o seu navegador confia. Está no `.gitignore` de propósito; nunca committe a pasta `certs/`.
+
+### Traefik próprio (domínio público)
+
+Se preferir usar **o seu** Traefik (ex. com Let's Encrypt em domínio real) em vez do embutido: remova o serviço `traefik:` do compose e adicione labels no serviço `transcreveai` apontando para a sua rede/entrypoints:
 
 ```yaml
 labels:
   - "traefik.enable=true"
-  - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.localhost`) || Host(`transcreveai.local`)"
-  - "traefik.http.routers.transcreveai.entrypoints=web"
+  - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.seudominio.com`)"
+  - "traefik.http.routers.transcreveai.entrypoints=websecure"
+  - "traefik.http.routers.transcreveai.tls.certresolver=SEU_RESOLVER"
   - "traefik.http.services.transcreveai.loadbalancer.server.port=3000"
 ```
 
-Pré-requisito: um Traefik já rodando na mesma rede Docker (`default` ou a rede que o seu Traefik usa — ajuste `networks:` se o seu Traefik estiver em uma rede externa nomeada, ex. `traefik-public`).
+E conecte o serviço à rede do seu Traefik (`external: true`).
 
-Passos:
+**Recomendado enquanto T-02 não fechou:** adicione autenticação no próprio Traefik (middleware `basicauth` ou `forwardauth`), já que o sistema não tem isolamento multiusuário nativo ainda:
 
-1. Troque o `Host(...)` do label pelo seu domínio real, por exemplo:
-   ```yaml
-   - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.seudominio.com`)"
-   ```
-2. Se o seu Traefik expõe HTTPS via um entrypoint próprio (ex. `websecure` + resolver Let's Encrypt), adicione:
-   ```yaml
-   - "traefik.http.routers.transcreveai.entrypoints=websecure"
-   - "traefik.http.routers.transcreveai.tls.certresolver=SEU_RESOLVER"
-   ```
-3. Se o seu Traefik roda numa rede externa, aponte o serviço para ela:
-   ```yaml
-   networks:
-     - traefik-public
-
-   networks:
-     traefik-public:
-       external: true
-   ```
-4. **Recomendado enquanto T-01/T-02 não fecham:** adicione autenticação no próprio Traefik (middleware `basicauth` ou `forwardauth`), já que o sistema não tem isolamento multiusuário nativo ainda:
-   ```yaml
-   - "traefik.http.routers.transcreveai.middlewares=transcreveai-auth"
-   - "traefik.http.middlewares.transcreveai-auth.basicauth.users=usuario:$$hash_bcrypt_aqui"
-   ```
-5. Suba:
-   ```bash
-   docker compose up -d
-   ```
-
-Acesse pelo domínio configurado.
+```yaml
+- "traefik.http.routers.transcreveai.middlewares=transcreveai-auth"
+- "traefik.http.middlewares.transcreveai-auth.basicauth.users=usuario:$$hash_bcrypt_aqui"
+```
 
 ## 4C. Instalação direta com Node.js (sem Docker)
 
