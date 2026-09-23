@@ -462,6 +462,25 @@
                 </span>
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- T-18: Aprimorar com IA -->
+              <button onclick="enhanceTranscription()" id="btn-enhance" class="w-full flex items-center justify-between px-3.5 py-2.5 bg-violet-50 dark:bg-violet-950 hover:bg-violet-100 dark:hover:bg-violet-950 border border-violet-200 dark:border-violet-800 rounded-xl text-xs font-bold text-violet-800 dark:text-violet-300 transition">
+                <span class="flex items-center space-x-2">
+                  <i data-lucide="wand-2" class="w-4 h-4 text-violet-600 dark:text-violet-300"></i>
+                  <span>Aprimorar com IA (corrigir & estruturar)</span>
+                </span>
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+              </button>
+              <div id="enhance-result" class="hidden bg-brand-surface dark:bg-brand-surface border border-violet-200 dark:border-violet-800 rounded-xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Texto aprimorado</span>
+                  <div class="flex items-center gap-2">
+                    <span id="enhance-meta" class="text-[9px] text-brand-muted dark:text-brand-muted"></span>
+                    <button onclick="copyEnhancedText()" class="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline">Copiar</button>
+                  </div>
+                </div>
+                <p id="enhance-text" class="text-xs text-brand-ink dark:text-brand-ink whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar"></p>
+              </div>
             </div>
           </div>
         </div>
@@ -632,12 +651,49 @@
 
               </div>
 
+              <!-- T-18: Configurações de Análise/Aprimoramento IA -->
+              <div class="mt-8 bg-violet-50/60 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 space-y-3">
+                <span class="font-bold text-violet-900 dark:text-violet-300 text-xs flex items-center gap-1"><i data-lucide="wand-2" class="w-3.5 h-3.5"></i> Análise / Aprimoramento IA (T-18)</span>
+                <div>
+                  <label class="block text-[11px] font-bold text-brand-copy dark:text-brand-copy mb-1">Modelo OpenRouter para análise</label>
+                  <input type="text" id="admin-setting-analysis-model" value="openai/gpt-4o-mini" list="analysis-model-suggestions" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono">
+                  <datalist id="analysis-model-suggestions">
+                    <option value="openai/gpt-4o-mini"></option>
+                    <option value="openai/gpt-4o"></option>
+                    <option value="google/gemini-flash-1.5"></option>
+                    <option value="deepseek/deepseek-chat"></option>
+                    <option value="anthropic/claude-3.5-haiku"></option>
+                  </datalist>
+                  <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Modelo usado no "Aprimorar com IA". Os 5 acima são os mais baratos/eficientes para revisão de texto.</p>
+                </div>
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="text-[11px] font-bold text-brand-copy dark:text-brand-copy">System prompt do aprimoramento</label>
+                    <button type="button" onclick="resetAnalysisPrompt()" class="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline">Restaurar padrão</button>
+                  </div>
+                  <textarea id="admin-setting-analysis-prompt" rows="8" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono" placeholder="(vazio = usa o prompt padrão de fábrica)"></textarea>
+                  <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Deixe vazio para usar o prompt padrão (correção + concordância + estrutura). Edite para customizar o comportamento da IA.</p>
+                </div>
+              </div>
+
               <div class="flex justify-end">
                 <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow transition">
                   SALVAR CONFIGURAÇÕES DE MODELOS
                 </button>
               </div>
             </form>
+
+            <!-- T-18: Dicionário de correções (glossário) — CRUD próprio -->
+            <div class="mt-6 bg-amber-50/60 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 space-y-3">
+              <span class="font-bold text-amber-900 dark:text-amber-300 text-xs flex items-center gap-1"><i data-lucide="book-open" class="w-3.5 h-3.5"></i> Dicionário de correções (nomes, marcas, termos)</span>
+              <p class="text-[10px] text-brand-muted dark:text-brand-muted">Palavras que a IA deve corrigir no aprimoramento. Ex.: "amil" → "Amil", "bradesco" → "Bradesco Saúde".</p>
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" id="glossary-wrong" placeholder="forma errada (ex.: amil)" class="flex-1 bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs">
+                <input type="text" id="glossary-correct" placeholder="forma correta (ex.: Amil)" class="flex-1 bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs">
+                <button onclick="addGlossaryTerm()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-1.5 rounded-xl transition shrink-0">Adicionar</button>
+              </div>
+              <div id="glossary-list" class="space-y-1 max-h-48 overflow-y-auto custom-scrollbar"></div>
+            </div>
           </div>
         </div>
 

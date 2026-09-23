@@ -387,40 +387,38 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 
 ---
 
-### T-18 — Análise estruturada por IA
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** **T-19** (sem transcrição confiável de 8 h não há o que analisar), T-04 (renderização Markdown), idealmente T-17
-**Por quê:** é o **propósito do app** (decisão de 14/09): não é ouvir, é transformar a transcrição em dados, conteúdo, direcionamento, lista de processos, orientação de vendas. Caso de uso alvo: gravar um dia inteiro de vendas/ligações num escritório, transcrever, e extrair **processos estruturados usados**, **conteúdo principal** (rejeitando ruído e o que está fora de contexto) e **interpretação** da transcrição. Hoje existe só `ai_focus` → `ai_summary` (um resumo livre) e o chat pergunta-resposta.
-**Contexto:** `server.js:680-720` (geração de `ai_summary`), `server.js` (`/api/chat`), `services/openrouter.js` (chamada de chat/LLM), `app.js` (painel IA em `#view-details`), `db.js` (tabela `transcriptions`)
-**Toca:** `server.js`, `db.js`, `services/openrouter.js`, `app.js`, `index.html`, `docs/product.md`, `docs/stack.md`
+### T-18 — Aprimoramento de transcrição por IA (correção + estruturação)
+**Estado:** DONE (23/09/2026, escopo simplificado pelo CEO: "simples, eficaz e de fácil entendimento") · **Prioridade:** 🔴 P0 · **Depende de:** T-19 ✅, T-16 ✅
+**Por quê:** o primeiro passo da "análise estruturada" (decisão de 14/09) é tornar a transcrição bruta legível e confiável: corrigir palavras erradas (nomes, marcas, termos do negócio), ortografia, concordância e estruturar em parágrafos. O desenho original de 7 presets (resumo/processos/vendas/ações/interpretação) foi **cortado para a T-23** — aqui entrega só o aprimoramento, com modelo e system prompt sob controle do admin.
+**Contexto:** `server.js` (`/api/chat`), `services/openrouter.js`, `app.js` (painel "Recursos & IA"), `db.js`
+**Toca:** `server.js`, `db.js`, `services/openrouter.js`, `services/prompts.js` (novo), `app.js`, `index.html`, `docs/product.md`, `docs/stack.md`
 
-**Desenho:**
-- Nova tabela `ai_analyses(id, transcription_id → transcriptions, preset, prompt_used, model, result_md, tokens_in, tokens_out, cost_usd, created_at)`. Uma transcrição pode ter N análises; `ai_summary` existente vira a primeira análise migrada (`preset='resumo'`).
-- **Presets** (prompt fixo + instruções de formato Markdown), selecionáveis no painel IA:
-  1. **Resumo executivo** — 5–10 linhas
-  2. **Processos estruturados** — passos numerados que a pessoa/equipe usou, na ordem em que aparecem, com quem faz o quê
-  3. **Conteúdo principal, sem ruído** — reescreve a transcrição mantendo só o que é substantivo; remove conversa paralela, repetição, fora de contexto; marca `[trecho removido: motivo]` quando relevante
-  4. **Orientação de vendas** — objeções ouvidas, respostas que funcionaram, próximos passos, sinais de compra
-  5. **Lista de ações** — checklist `- [ ]` com responsável e prazo quando dito
-  6. **Interpretação** — o que a transcrição revela além do dito (tom, gargalos, oportunidades), com citações curtas do texto como evidência
-  7. **Personalizado** — o campo livre atual (`ai_focus`) continua existindo
-- Para transcrições longas (um dia = horas de áudio), o backend **fatia** o `raw_text` por tokens (~12k por bloco), roda o preset em cada bloco e depois uma passada de consolidação — sem isso, o prompt estoura o contexto ou o custo.
-- Cada análise mostra modelo, tokens e custo estimado; o usuário escolhe o modelo LLM (default: o mais barato que aguenta o preset; configurável no admin).
+**Desenho (entregue):**
+- Tabelas `ai_analyses` (histórico: modelo, prompt usado, dicionário usado, tokens, resultado) e `glossary` (dicionário errado→correto, CRUD admin)
+- `POST /api/transcriptions/:id/enhance`: system prompt = `analysis_prompt` do admin (vazio → padrão de fábrica versionado em `services/prompts.js`), modelo = `analysis_model` do admin; dicionário injetado no prompt; texto longo fatiado em blocos de ~12k chars (`splitTextIntoChunks`)
+- Falha de API → 502 explícito, nada persistido, nunca texto inventado
+- Painel admin: modelo (com sugestões dos mais baratos), prompt editável com "Restaurar padrão", dicionário com add/remove
+- Detalhe: botão "Aprimorar com IA" + resultado com modelo/tokens + Copiar; último resultado carrega ao abrir a transcrição
 
 **Aceite:**
-- [ ] Tabela `ai_analyses` criada em `initDatabase()` (idempotente); `ai_summary` existente migrado
-- [ ] `POST /api/transcriptions/:id/analyze` com `{preset, custom_prompt?, model?}` → **202** e processamento em background pelo mesmo worker (ou fila separada leve), status consultável; `GET /api/transcriptions/:id/analyses` lista
-- [ ] Os 6 presets + personalizado implementados com prompts versionados em um arquivo próprio (`services/prompts.js`), não inline no `server.js`
-- [ ] Fatiamento + consolidação para `raw_text` acima do limite; testado com uma transcrição ≥ 60 min (concatenar áudios de teste ou usar `AUDIO_SAMPLE`)
-- [ ] Painel IA no detalhe: escolher preset → rodar → resultado renderizado em Markdown (usa o renderizador de T-04) numa aba/seção por análise, com "Copiar Markdown", "Exportar" (PDF/DOCX/TXT via `services/exporter.js`) e "Rodar de novo"
-- [ ] Chat existente passa a receber o contexto da análise selecionada além do `raw_text` (ex.: "ajusta o passo 3 do processo")
-- [ ] Nenhum texto inventado: falha de API → erro explícito na análise, nunca conteúdo placeholder
-- [ ] Custo por análise gravado e somado nas métricas do admin
-- [ ] `test_suite.js` cobre pelo menos 2 presets contra o áudio base
-- [ ] `docs/product.md` (§ funcionalidades) e `docs/stack.md` (schema + rotas) atualizados
+- [x] Tabelas `ai_analyses` e `glossary` criadas em `initDatabase()` (idempotente)
+- [x] `POST /api/transcriptions/:id/enhance` (síncrono, blocos) + `GET .../analyses`; auth em todas
+- [x] System prompt versionado em `services/prompts.js`, sobrescrevível pelo admin (`analysis_prompt`)
+- [x] Modelo escolhível pelo admin (`analysis_model`, default `openai/gpt-4o-mini`)
+- [x] Dicionário de correções (glossary) aplicado no prompt, CRUD admin
+- [x] Fatiamento para textos > 12k chars (`tests/analysis_unit.js`: 7/7 asserções)
+- [x] Nenhum texto inventado: falha → erro explícito, nada gravado
+- [x] Tokens por análise gravados em `ai_analyses`
+- [x] `docs/product.md` e `docs/stack.md` atualizados
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- `test_suite.js` **79/79 PASS** dentro do container (11 testes T-18 novos: auth 401, CRUD glossário com 409/403, settings analysis_model/analysis_prompt) — nenhum teste dispara chamada paga
+- `tests/analysis_unit.js` 7/7 (chunker preserva conteúdo, builder injeta dicionário, prompt cobre correção/concordância/estrutura)
+- 1 chamada real de validação (gpt-4o-mini, 364 in / 29 out ≈ R$ 0,0003): corrigiu "ou la"→"Olá", "este e"→"este é", "transcrical"→"transcrição", "sistem"→"sistema"
+- Screenshots em `docs/screenshots/t-18/`: `admin-analise.png` (modelo + prompt + dicionário), `detalhe-aprimoramento.png` (botão + resultado com meta de tokens)
 
 ---
+
 
 ### T-19 — Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos)
 **Estado:** DONE (15/09/2026) · **Prioridade:** 🔴 P0 · **Fundação de** T-18
@@ -509,6 +507,19 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 - [ ] Todos os formatos de exportação aceitam `?lang=xx` e usam a tradução salva quando existir
 - [ ] Exportação em massa (T-13) inclui CSV e aceita `lang`
 - [ ] `test_suite.js` cobre CSV e uma tradução por segmento (contagem de segmentos igual antes e depois)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-23 — Presets de análise avançados (processos, vendas, ações)
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-18 ✅
+**Por quê:** o desenho original da T-18 previa 6 presets de análise (resumo executivo, processos estruturados, conteúdo sem ruído, orientação de vendas, lista de ações, interpretação). Em 23/09 o CEO pediu para começar simples: só o **aprimoramento** (correção + estruturação) entrou na T-18. Esta tarefa retoma os presets quando fizer sentido comercialmente — o caminho já está preparado: tabela `ai_analyses`, `services/prompts.js` versionado, `runAnalysisChat` com modelo configurável, fatiamento em blocos.
+**Desenho futuro:**
+- `kind` em `ai_analyses` já discrimina o tipo — basta adicionar presets em `services/prompts.js` e um seletor no painel "Recursos & IA"
+- Para transcrições longas, avaliar passada de **consolidação** após processar os blocos (somar tokens de 2 passadas no custo)
+- Chat existente pode receber o contexto da análise selecionada além do `raw_text`
+**Aceite:** _(a detalhar quando a tarefa for escolhida)_
 
 **Evidência:** _(preencher)_
 

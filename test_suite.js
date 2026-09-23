@@ -366,6 +366,96 @@ async function runTestSuite() {
     assert(false, 'Falha no teste de métricas do Admin: ' + e.message);
   }
 
+  // ------------------------------------------------------------------
+  // T-18: Aprimoramento de transcrição por IA (rotas, glossário, settings)
+  // Atenção: estes testes NÃO disparam chamada paga à OpenRouter — cobrem
+  // auth, CRUD do dicionário e persistência das configurações de análise.
+  // ------------------------------------------------------------------
+
+  // T-18a: rotas de análise exigem autenticação (401 sem token, sem custo)
+  try {
+    const noAuth1 = await fetch(`${BASE_URL}/api/glossary`);
+    assert(noAuth1.status === 401, `GET /api/glossary sem token retornou 401 (status: ${noAuth1.status})`);
+    if (createdTranscriptionIds.length > 0) {
+      const tid = createdTranscriptionIds[0];
+      const noAuth2 = await fetch(`${BASE_URL}/api/transcriptions/${tid}/analyses`);
+      assert(noAuth2.status === 401, `GET analyses sem token retornou 401 (status: ${noAuth2.status})`);
+      const noAuth3 = await fetch(`${BASE_URL}/api/transcriptions/${tid}/enhance`, { method: 'POST' });
+      assert(noAuth3.status === 401, `POST enhance sem token retornou 401 (status: ${noAuth3.status})`);
+    }
+  } catch (e) {
+    assert(false, 'Falha nos testes de auth das rotas T-18: ' + e.message);
+  }
+
+  // T-18b: CRUD do dicionário de correções (glossário)
+  let glossaryTermId = null;
+  try {
+    const addRes = await fetch(`${BASE_URL}/api/admin/glossary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ wrong: 'termoteste-t18', correct: 'Termo Teste T-18' })
+    });
+    assert(addRes.status === 200, `POST /api/admin/glossary adicionou termo (status: ${addRes.status})`);
+    const addData = await addRes.json();
+    glossaryTermId = addData.id;
+
+    const dupRes = await fetch(`${BASE_URL}/api/admin/glossary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ wrong: 'termoteste-t18', correct: 'Duplicado' })
+    });
+    assert(dupRes.status === 409, `Termo duplicado rejeitado com 409 (status: ${dupRes.status})`);
+
+    const listRes = await fetch(`${BASE_URL}/api/glossary`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
+    const listData = await listRes.json();
+    assert(Array.isArray(listData) && listData.some(g => g.wrong === 'termoteste-t18' && g.correct === 'Termo Teste T-18'), 'Termo persistido e listado no glossário');
+
+    // usuário comum não pode adicionar (403)
+    const userAddRes = await fetch(`${BASE_URL}/api/admin/glossary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ wrong: 'x', correct: 'y' })
+    });
+    assert(userAddRes.status === 403, `Usuário comum bloqueado (403) no POST do glossário (status: ${userAddRes.status})`);
+  } catch (e) {
+    assert(false, 'Falha no CRUD do glossário: ' + e.message);
+  }
+
+  // T-18c: configurações de análise (modelo + prompt) persistem via settings
+  let savedAnalysisModel = null;
+  try {
+    const beforeRes = await fetch(`${BASE_URL}/api/admin/settings`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
+    const before = await beforeRes.json();
+    savedAnalysisModel = before.analysis_model || 'openai/gpt-4o-mini';
+
+    const putRes = await fetch(`${BASE_URL}/api/admin/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ settings: { analysis_model: 'openai/gpt-4o-mini', analysis_prompt: '' } })
+    });
+    assert(putRes.ok, 'PUT settings com analysis_model/analysis_prompt retornou sucesso');
+
+    const afterRes = await fetch(`${BASE_URL}/api/admin/settings`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
+    const after = await afterRes.json();
+    assert(after.analysis_model === 'openai/gpt-4o-mini', `analysis_model persistido: ${after.analysis_model}`);
+    assert('analysis_prompt' in after, 'analysis_prompt presente nas settings');
+  } catch (e) {
+    assert(false, 'Falha nas settings de análise: ' + e.message);
+  }
+
+  // T-18d: limpeza do termo de teste do glossário
+  try {
+    if (glossaryTermId) {
+      const delRes = await fetch(`${BASE_URL}/api/admin/glossary/${glossaryTermId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert(delRes.ok, 'Termo de teste removido do glossário');
+    }
+  } catch (e) {
+    assert(false, 'Falha ao limpar glossário: ' + e.message);
+  }
+
   console.log('\n=======================================================');
   console.log(`📊 RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`);
   console.log('=======================================================\n');

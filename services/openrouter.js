@@ -324,9 +324,64 @@ async function generateChatCompletion(transcriptText, prompt) {
 }
 
 /**
- * Tradução de Transcrição via OpenRouter
+ * T-18: Análise/Aprimoramento de transcrição — chat com system prompt e modelo
+ * configuráveis pelo admin. Retorna conteúdo + uso de tokens para métricas.
+ * ANALYSIS_MOCK=1 (ou provedor mock) devolve resposta simulada sem custo — só para testes.
  */
-async function translateTranscript(transcriptText, targetLanguage = 'English') {
+const ANALYSIS_MOCK = MOCK_ENABLED || process.env.ANALYSIS_MOCK === '1';
+
+async function runAnalysisChat({ systemPrompt, userContent, model }) {
+  if (ANALYSIS_MOCK) {
+    return {
+      content: `[MOCK ANALYSIS] Texto aprimorado (simulado, sem custo de API).\n\n${String(userContent).slice(0, 200)}...`,
+      tokens_in: 0,
+      tokens_out: 0
+    };
+  }
+
+  const apiKey = await getActiveOpenRouterKey();
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'http://localhost:3000',
+        'X-Title': 'TurboScribe Local SaaS'
+      },
+      body: JSON.stringify({
+        model: model || 'openai/gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent }
+        ],
+        temperature: 0.2
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = data.choices && data.choices[0] ? data.choices[0].message.content : '';
+      if (!content) throw new Error('Modelo retornou conteúdo vazio.');
+      return {
+        content,
+        tokens_in: data.usage ? data.usage.prompt_tokens : 0,
+        tokens_out: data.usage ? data.usage.completion_tokens : 0
+      };
+    } else {
+      const errText = await response.text();
+      throw new Error(`OpenRouter Chat HTTP ${response.status}: ${errText}`);
+    }
+  } catch (error) {
+    console.error('[OpenRouter Analysis Error]', error);
+    throw error;
+  }
+}
+
+/**
+ * Tradução de Transcrição via OpenRouter
+ */async function translateTranscript(transcriptText, targetLanguage = 'English') {
   const apiKey = await getActiveOpenRouterKey();
 
   const systemMessage = {
@@ -368,5 +423,6 @@ module.exports = {
   testOpenRouterKey,
   transcribeAudioFile,
   generateChatCompletion,
+  runAnalysisChat,
   translateTranscript
 };

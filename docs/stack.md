@@ -40,7 +40,10 @@ Sem framework de front, sem bundler, sem TypeScript, sem ORM, sem Redis, sem fil
 ```
 users(id, name, email UNIQUE, password_hash, role, daily_limit, status, created_at)
 api_keys(id, provider, name, key_value, is_active, created_at)
-system_settings(key PK, value)  -- níveis: base_model/enabled, pro_model/enabled, max_model/enabled
+system_settings(key PK, value)  -- níveis: base_model/enabled, pro_model/enabled, max_model/enabled; análise: analysis_model, analysis_prompt
+glossary(id, wrong, correct, created_at)  -- T-18: dicionário de correções aplicado no aprimoramento
+ai_analyses(id, transcription_id → transcriptions, kind, model, prompt_used,
+            glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at)  -- T-18
 system_logs(id, user_id, action, details, ip_address, timestamp)
 projects(id, user_id → users, name, created_at)
 transcriptions(id, user_id → users, project_id → projects, file_name, file_path,
@@ -74,6 +77,10 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota; valida com `ffprobe` por arquivo |
 | GET | `/api/export/:id/:format` | token | ❌ não |
 | POST | `/api/chat`, `/api/translate` | token | ❌ não |
+| POST | `/api/transcriptions/:id/enhance` | token | T-18: aprimora o texto (correção/concordância/estrutura) via LLM; custo em tokens |
+| GET | `/api/transcriptions/:id/analyses` | token | T-18: histórico de aprimoramentos |
+| GET | `/api/glossary` | token | T-18: dicionário de correções |
+| POST/DELETE | `/api/admin/glossary(/:id)` | token + `requireAdmin` | T-18: CRUD do dicionário |
 | GET | `/api/openrouter/models`, `/api/settings` | pública | — |
 | GET/POST/PUT/DELETE | `/api/admin/*` | token + `requireAdmin` | — |
 

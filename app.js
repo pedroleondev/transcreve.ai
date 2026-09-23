@@ -806,6 +806,7 @@ async function openTranscriptionDetail(id) {
     });
     const data = await res.json();
     state.activeTranscription = data;
+    loadLatestEnhancement(data.id);
 
     const filenameText = document.getElementById('detail-filename-text');
     if (filenameText) filenameText.innerText = data.file_name;
@@ -2074,9 +2075,131 @@ async function loadAdminSettingsForm() {
     document.getElementById('admin-setting-base-enabled').checked = s.base_enabled !== 'false';
     document.getElementById('admin-setting-pro-enabled').checked = s.pro_enabled !== 'false';
     document.getElementById('admin-setting-max-enabled').checked = s.max_enabled !== 'false';
+
+    // T-18: análise/aprimoramento IA
+    document.getElementById('admin-setting-analysis-model').value = s.analysis_model || 'openai/gpt-4o-mini';
+    document.getElementById('admin-setting-analysis-prompt').value = s.analysis_prompt || '';
+    loadGlossary();
   } catch (e) {
     console.error('Erro ao carregar configurações admin:', e);
   }
+}
+
+// ---------------------------------------------------
+// T-18: APRIMORAMENTO DE TRANSCRIÇÃO POR IA
+// ---------------------------------------------------
+async function enhanceTranscription() {
+  if (!state.activeTranscription) return;
+  const btn = document.getElementById('btn-enhance');
+  const box = document.getElementById('enhance-result');
+  const textEl = document.getElementById('enhance-text');
+  const metaEl = document.getElementById('enhance-meta');
+  btn.disabled = true;
+  btn.querySelector('span span').innerText = 'Aprimorando... (pode levar 1 min)';
+  try {
+    const res = await fetch(`/api/transcriptions/${state.activeTranscription.id}/enhance`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
+    box.classList.remove('hidden');
+    textEl.innerText = data.analysis.result_md;
+    metaEl.innerText = `${data.analysis.model} • ${data.analysis.tokens_in + data.analysis.tokens_out} tokens`;
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    alert('Falha ao aprimorar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.querySelector('span span').innerText = 'Aprimorar com IA (corrigir & estruturar)';
+  }
+}
+
+async function loadLatestEnhancement(transcriptionId) {
+  const box = document.getElementById('enhance-result');
+  if (!box) return;
+  box.classList.add('hidden');
+  try {
+    const res = await fetch(`/api/transcriptions/${transcriptionId}/analyses`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    if (!res.ok) return;
+    const rows = await res.json();
+    if (!rows || rows.length === 0) return;
+    const latest = rows[0];
+    box.classList.remove('hidden');
+    document.getElementById('enhance-text').innerText = latest.result_md;
+    document.getElementById('enhance-meta').innerText = `${latest.model} • ${latest.tokens_in + latest.tokens_out} tokens`;
+  } catch (e) { /* silencioso: resultado anterior é opcional */ }
+}
+
+function copyEnhancedText() {
+  const textEl = document.getElementById('enhance-text');
+  if (textEl) navigator.clipboard.writeText(textEl.innerText).then(() => alert('Texto aprimorado copiado!'));
+}
+
+// ---------------------------------------------------
+// T-18: DICIONÁRIO DE CORREÇÕES (GLOSSÁRIO) — CRUD ADMIN
+// ---------------------------------------------------
+async function loadGlossary() {
+  const list = document.getElementById('glossary-list');
+  if (!list) return;
+  try {
+    const res = await fetch('/api/glossary', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    const rows = await res.json();
+    if (!rows.length) {
+      list.innerHTML = '<p class="text-[10px] text-brand-muted dark:text-brand-muted italic">Dicionário vazio. Adicione termos acima.</p>';
+      return;
+    }
+    list.innerHTML = rows.map(g => `
+      <div class="flex items-center justify-between bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-lg px-2.5 py-1.5">
+        <span class="text-xs"><span class="text-red-500 dark:text-red-300 line-through">${escapeHtml(g.wrong)}</span> <span class="text-brand-muted">→</span> <span class="font-bold text-emerald-700 dark:text-emerald-300">${escapeHtml(g.correct)}</span></span>
+        <button onclick="removeGlossaryTerm('${g.id}')" class="text-brand-muted hover:text-red-500 transition" title="Remover"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+      </div>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    console.error('Erro ao carregar dicionário:', e);
+  }
+}
+
+async function addGlossaryTerm() {
+  const wrongEl = document.getElementById('glossary-wrong');
+  const correctEl = document.getElementById('glossary-correct');
+  if (!wrongEl.value.trim() || !correctEl.value.trim()) {
+    alert('Preencha a forma errada e a forma correta.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/glossary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({ wrong: wrongEl.value, correct: correctEl.value })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao adicionar');
+    wrongEl.value = '';
+    correctEl.value = '';
+    loadGlossary();
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+}
+
+async function removeGlossaryTerm(id) {
+  try {
+    await fetch(`/api/admin/glossary/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    loadGlossary();
+  } catch (e) {
+    alert('Erro ao remover: ' + e.message);
+  }
+}
+
+function resetAnalysisPrompt() {
+  document.getElementById('admin-setting-analysis-prompt').value = '';
 }
 
 async function saveAdminSettings(e) {
@@ -2087,7 +2210,9 @@ async function saveAdminSettings(e) {
     max_model: document.getElementById('admin-setting-max-model').value,
     base_enabled: document.getElementById('admin-setting-base-enabled').checked ? 'true' : 'false',
     pro_enabled: document.getElementById('admin-setting-pro-enabled').checked ? 'true' : 'false',
-    max_enabled: document.getElementById('admin-setting-max-enabled').checked ? 'true' : 'false'
+    max_enabled: document.getElementById('admin-setting-max-enabled').checked ? 'true' : 'false',
+    analysis_model: document.getElementById('admin-setting-analysis-model').value,
+    analysis_prompt: document.getElementById('admin-setting-analysis-prompt').value
   };
 
   try {

@@ -217,6 +217,35 @@ async function initDatabase() {
     `);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_chunks_transcription ON transcription_chunks(transcription_id, idx)`);
 
+    // 8. T-18: Análises/aprimoramentos de IA por transcrição (histórico: N por transcrição)
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS ai_analyses (
+        id TEXT PRIMARY KEY,
+        transcription_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'enhance',
+        model TEXT,
+        prompt_used TEXT,
+        glossary_used TEXT,
+        result_md TEXT,
+        tokens_in INTEGER DEFAULT 0,
+        tokens_out INTEGER DEFAULT 0,
+        cost_usd REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(transcription_id) REFERENCES transcriptions(id) ON DELETE CASCADE
+      )
+    `);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_analyses_transcription ON ai_analyses(transcription_id, created_at)`);
+
+    // 9. T-18: Dicionário de correções (glossário) aplicado no aprimoramento
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS glossary (
+        id TEXT PRIMARY KEY,
+        wrong TEXT NOT NULL,
+        correct TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     const workerColumns = await allAsync('PRAGMA table_info(transcriptions)');
     for (const [name, type] of [['worker_attempts', 'INTEGER NOT NULL DEFAULT 0'], ['worker_started_at', 'DATETIME']]) {
       if (!workerColumns.some(column => column.name === name)) await runAsync('ALTER TABLE transcriptions ADD COLUMN ' + name + ' ' + type);
@@ -290,7 +319,9 @@ async function initDatabase() {
       { key: 'max_model', value: 'openai/whisper-large-v3' },
       { key: 'base_enabled', value: 'true' },
       { key: 'pro_enabled', value: 'true' },
-      { key: 'max_enabled', value: 'true' }
+      { key: 'max_enabled', value: 'true' },
+      { key: 'analysis_model', value: 'openai/gpt-4o-mini' },
+      { key: 'analysis_prompt', value: '' }
     ];
 
     // T-16: migração idempotente — renomeia chaves antigas (chita/golfinho/baleia)

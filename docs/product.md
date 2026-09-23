@@ -41,6 +41,11 @@ Planos, FAQ, blog e login são **modais** em `app.js`, não páginas. Não exist
 ### Processamento (assíncrono)
 Detalhado em [../pipeline.md](../pipeline.md). Resumo: `pending` → pré-processamento ffmpeg (16kHz mono FLAC + loudnorm) → split nos silêncios se > 600s → Whisper via OpenRouter por bloco → filtro de alucinações → resumo IA opcional → `completed`.
 
+### Aprimoramento por IA (T-18)
+- Botão "Aprimorar com IA" no detalhe: corrige palavras (com **dicionário** de nomes/marcas configurável no admin), ortografia, concordância e estrutura o texto em parágrafos — sem resumir nem inventar conteúdo
+- **System prompt editável** no painel admin (vazio = padrão de fábrica versionado em `services/prompts.js`); **modelo OpenRouter escolhível** no admin
+- Textos longos são processados em blocos de ~12 mil caracteres; cada rodada fica gravada em `ai_analyses` com modelo, prompt, tokens e resultado
+
 ### Aparencia
 - Alternador Claro / Escuro / Sistema sempre visivel no cabecalho, acessivel por teclado. A escolha fica salva neste navegador.
 - Sistema acompanha a preferencia do dispositivo; Claro/Escuro sao escolhas fixas. Paleta aplicada a dashboard, detalhe, admin, modais e paineis de IA.

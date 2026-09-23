@@ -9,7 +9,8 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
 const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db');
-const { transcribeAudioFile, generateChatCompletion, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
+const { transcribeAudioFile, generateChatCompletion, runAnalysisChat, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
+const { DEFAULT_ENHANCE_SYSTEM_PROMPT, buildEnhanceUserContent, splitTextIntoChunks, PROMPT_VERSION } = require('./services/prompts');
 const secrets = require('./services/secrets');
 const { queuePositionSql } = require('./services/queue');
 const { saveTranscriptSegments } = require('./services/transcript-editor');
@@ -471,6 +472,108 @@ app.post('/api/translate', authenticateToken, async (req, res) => {
   try {
     const translatedText = await translateTranscript(transcript_text || '', target_language || 'English');
     res.json({ translatedText });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ----------------------------------------------------
+// T-18: APRIMORAMENTO DE TRANSCRIÇÃO POR IA (análise estruturada)
+// System prompt e modelo configuráveis pelo admin; dicionário (glossary) aplicado.
+// ----------------------------------------------------
+
+// Lista os aprimoramentos de uma transcrição (mais recente primeiro)
+app.get('/api/transcriptions/:id/analyses', authenticateToken, async (req, res) => {
+  try {
+    const rows = await allAsync(
+      `SELECT id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at
+       FROM ai_analyses WHERE transcription_id = ? ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Roda o aprimoramento: corrige palavras (dicionário), ortografia, concordância
+// e estrutura o texto. Síncrono e em blocos para textos longos. Custo: tokens registrados.
+app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) => {
+  try {
+    const transcription = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [req.params.id]);
+    if (!transcription) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    if (transcription.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado.' });
+    }
+    const sourceText = (transcription.raw_text || '').trim();
+    if (!sourceText) return res.status(400).json({ error: 'Transcrição sem texto para aprimorar.' });
+
+    const settings = await allAsync(`SELECT key, value FROM system_settings`);
+    const settingsMap = {};
+    settings.forEach(s => settingsMap[s.key] = s.value);
+    const systemPrompt = (settingsMap.analysis_prompt || '').trim() || DEFAULT_ENHANCE_SYSTEM_PROMPT;
+    const model = (settingsMap.analysis_model || '').trim() || 'openai/gpt-4o-mini';
+
+    const glossary = await allAsync(`SELECT wrong, correct FROM glossary ORDER BY wrong`);
+    const glossaryJson = JSON.stringify(glossary);
+
+    const chunks = splitTextIntoChunks(sourceText, 12000);
+    const results = [];
+    let tokensIn = 0, tokensOut = 0;
+    for (const chunk of chunks) {
+      const userContent = buildEnhanceUserContent(chunk, glossary);
+      const r = await runAnalysisChat({ systemPrompt, userContent, model });
+      results.push(r.content);
+      tokensIn += r.tokens_in;
+      tokensOut += r.tokens_out;
+    }
+    const resultText = results.join('\n\n');
+
+    const analysisId = uuidv4();
+    await runAsync(
+      `INSERT INTO ai_analyses (id, transcription_id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, created_at)
+       VALUES (?, ?, 'enhance', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [analysisId, req.params.id, model, systemPrompt, glossaryJson, resultText, tokensIn, tokensOut]
+    );
+    res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION } });
+  } catch (e) {
+    console.error('[T-18 Enhance Error]', e);
+    // Sem texto inventado: falha de API/LLM retorna erro explícito, nada é persistido.
+    res.status(502).json({ error: 'Falha ao aprimorar com IA: ' + e.message });
+  }
+});
+
+// Dicionário de correções (glossário) — CRUD admin
+app.get('/api/glossary', authenticateToken, async (req, res) => {
+  try {
+    const rows = await allAsync(`SELECT id, wrong, correct FROM glossary ORDER BY wrong`);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/glossary', authenticateToken, requireAdmin, async (req, res) => {
+  const { wrong, correct } = req.body || {};
+  if (!wrong || !correct || !String(wrong).trim() || !String(correct).trim()) {
+    return res.status(400).json({ error: 'Informe a forma errada e a forma correta.' });
+  }
+  try {
+    const existing = await getAsync(`SELECT id FROM glossary WHERE wrong = ?`, [String(wrong).trim().toLowerCase()]);
+    if (existing) return res.status(409).json({ error: 'Esse termo já existe no dicionário.' });
+    const id = uuidv4();
+    await runAsync(`INSERT INTO glossary (id, wrong, correct) VALUES (?, ?, ?)`, [id, String(wrong).trim().toLowerCase(), String(correct).trim()]);
+    await logAction(req.user.id, 'GLOSSARY_ADD', { wrong, correct }, req.ip);
+    res.json({ success: true, id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/admin/glossary/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await runAsync(`DELETE FROM glossary WHERE id = ?`, [req.params.id]);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
