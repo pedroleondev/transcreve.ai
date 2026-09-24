@@ -176,7 +176,7 @@ E-mail: admin@turboscribe.local
 Senha:  admin123
 ```
 
-**Troque essa senha imediatamente** — hoje isso é feito direto no SQLite ou recriando o usuário pelo painel admin, já que a UI de troca de senha própria ainda não existe (ver [TASKS.md](TASKS.md) T-09). Até lá, trate esse admin default como uma credencial temporária de instalação, não como a conta real de uso.
+**Troque essa senha imediatamente** — a UI de troca de senha *pelo próprio usuário* ainda não existe (ver [TASKS.md](TASKS.md) T-09); enquanto isso, um admin pode redefinir a senha de qualquer conta em **Painel SaaS Admin → Usuários → Resetar senha** (T-23), e a criação de novos usuários/admins também é feita nessa aba. Até lá, trate esse admin default como uma credencial temporária de instalação, não como a conta real de uso.
 
 A chave da OpenRouter que você colocou no `.env` é importada **uma única vez** no primeiro boot: o sistema cifra (AES-256-GCM, com `APP_SECRET_KEY`) e grava no SQLite. A partir daí o banco é a fonte de verdade e o `.env` pode ficar sem `OPENROUTER_API_KEY`.
 

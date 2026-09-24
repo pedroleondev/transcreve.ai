@@ -630,8 +630,14 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   const { name, email, password, role = 'user', daily_limit = 3 } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'Preencha todos os campos obrigatórios.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'E-mail inválido.' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres.' });
+  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Função inválida (use "user" ou "admin").' });
 
   try {
+    const existing = await getAsync('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing) return res.status(409).json({ error: 'Já existe um usuário com este e-mail.' });
+
     const userId = uuidv4();
     const passHash = await bcrypt.hash(password, 10);
     await runAsync(
@@ -646,11 +652,31 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 });
 
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { role, status, daily_limit } = req.body;
+  const { role, status, daily_limit, password } = req.body;
   try {
-    if (role !== undefined) await runAsync(`UPDATE users SET role = ? WHERE id = ?`, [role, req.params.id]);
-    if (status !== undefined) await runAsync(`UPDATE users SET status = ? WHERE id = ?`, [status, req.params.id]);
-    if (daily_limit !== undefined) await runAsync(`UPDATE users SET daily_limit = ? WHERE id = ?`, [daily_limit, req.params.id]);
+    const target = await getAsync('SELECT id FROM users WHERE id = ?', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const isSelf = req.params.id === req.user.id;
+
+    if (role !== undefined) {
+      if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Função inválida (use "user" ou "admin").' });
+      if (isSelf && role !== 'admin') return res.status(400).json({ error: 'Você não pode rebaixar a si mesmo.' });
+      await runAsync(`UPDATE users SET role = ? WHERE id = ?`, [role, req.params.id]);
+    }
+    if (status !== undefined) {
+      if (!['active', 'suspended'].includes(status)) return res.status(400).json({ error: 'Status inválido (use "active" ou "suspended").' });
+      if (isSelf && status !== 'active') return res.status(400).json({ error: 'Você não pode suspender a si mesmo.' });
+      await runAsync(`UPDATE users SET status = ? WHERE id = ?`, [status, req.params.id]);
+    }
+    if (daily_limit !== undefined) {
+      const limit = parseInt(daily_limit, 10);
+      if (!Number.isInteger(limit) || limit < 0) return res.status(400).json({ error: 'Limite diário inválido.' });
+      await runAsync(`UPDATE users SET daily_limit = ? WHERE id = ?`, [limit, req.params.id]);
+    }
+    if (password !== undefined && password !== '') {
+      if (String(password).length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres.' });
+      await runAsync(`UPDATE users SET password_hash = ? WHERE id = ?`, [await bcrypt.hash(String(password), 10), req.params.id]);
+    }
 
     await logAction(req.user.id, 'ADMIN_USER_UPDATED', { target_user: req.params.id, role, status }, req.ip);
     res.json({ success: true });

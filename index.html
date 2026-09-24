@@ -914,6 +914,49 @@
     </div>
   </div>
 
+  <!-- MODAL: CRIAR USUÁRIO (T-23) -->
+  <div id="create-user-modal" class="modal-root hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink">
+      <div class="flex justify-between items-center px-6 py-4 border-b border-brand-line dark:border-brand-line">
+        <h3 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2"><i data-lucide="user-plus" class="w-4 h-4 text-blue-600 dark:text-blue-300"></i> Criar novo usuário</h3>
+        <button onclick="closeCreateUserModal()" aria-label="Fechar" class="text-brand-muted dark:text-brand-muted hover:text-brand-copy dark:hover:text-brand-copy"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <form onsubmit="submitCreateUser(event)" class="px-6 py-5 space-y-4 text-sm">
+        <div>
+          <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Nome</label>
+          <input id="create-user-name" type="text" required placeholder="Ex.: Maria Silva" class="w-full border border-brand-line dark:border-brand-line bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">E-mail</label>
+          <input id="create-user-email" type="email" required placeholder="maria@empresa.com" class="w-full border border-brand-line dark:border-brand-line bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Senha inicial <span class="font-normal text-brand-muted dark:text-brand-muted">(mín. 6 caracteres)</span></label>
+          <input id="create-user-password" type="password" required minlength="6" autocomplete="new-password" class="w-full border border-brand-line dark:border-brand-line bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Função</label>
+            <select id="create-user-role" onchange="onCreateUserRoleChange()" class="w-full border border-brand-line dark:border-brand-line bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              <option value="user">Usuário</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Limite diário</label>
+            <input id="create-user-daily-limit" type="number" min="0" value="3" class="w-full border border-brand-line dark:border-brand-line bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+        </div>
+        <p id="create-user-error" class="text-xs text-red-600 dark:text-red-300 hidden"></p>
+        <p class="text-[11px] text-brand-muted dark:text-brand-muted">O usuário pode fazer login imediatamente. Admins têm acesso ao painel de administração inteiro — incluindo esta tela.</p>
+        <div class="px-6 py-4 border-t border-brand-line dark:border-brand-line flex justify-end gap-2 -mx-6 -mb-5 mt-2">
+          <button type="button" onclick="closeCreateUserModal()" class="text-brand-copy dark:text-brand-copy font-bold text-xs px-4 py-2 rounded-lg hover:bg-brand-raised dark:hover:bg-brand-raised">Cancelar</button>
+          <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-lg">Criar usuário</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- MODAL: GRAVADOR DE MICROFONE -->
   <div id="record-modal" class="modal-root hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-3xl max-w-md w-full shadow-2xl overflow-hidden border border-brand-line dark:border-brand-line p-6 text-center text-brand-ink dark:text-brand-ink">

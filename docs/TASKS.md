@@ -33,6 +33,7 @@
 | T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 98 idiomas + auto-detecção | 🟠 P1 | TODO |
 | T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
 | T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
+| T-23 | Gestão de usuários (admin cria usuários e admins) | 🔴 P0 | DONE |
 
 **Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
 T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
@@ -558,6 +559,29 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 - [ ] Teste com um áudio de 2 pessoas (gerar 2ª voz com TTS `Microsoft Zira` + concatenar com o `sample.ogg`) → ≥ 90% dos segmentos com o locutor certo
 
 **Evidência:** _(preencher)_
+
+---
+
+### T-23 — Gestão de usuários (admin cria usuários e admins)
+**Estado:** DONE (23/09/2026) · **Prioridade:** 🔴 P0 · **Depende de:** T-01
+**Por quê:** hoje não existe forma de criar usuário pela plataforma — só direto no SQLite. Para sair do uso single-admin (ex.: criar `pedro.leon23@gmail.com` como segundo admin) é preciso CRUD de usuários no painel admin.
+**Contexto:** `server.js` (rotas `/api/admin/users`, login), `db.js` (schema `users`), `index.html`/`app.js` (painel admin)
+**Toca:** `server.js`, `index.html`, `app.js`, `test_suite.js`, `docs/TASKS.md`
+**Aceite:**
+- [x] Admin autenticado cria usuário novo (e-mail + senha + role `user`|`admin`) pela UI do painel admin
+- [x] POST de criação com token de `role='user'` → **403**; sem token → **401**
+- [x] Não é possível duplicar e-mail (409) nem reutilizar e-mail inexistente/inválido (400)
+- [x] Admin pode promover/rebaixar role e resetar senha de outro usuário (não de si mesmo — proteção contra lockout)
+- [x] Novo usuário consegue fazer login imediatamente após a criação
+- [x] Senha nunca retornada pela API; lista de usuários mostra e-mail, role e data de criação
+- [x] `test_suite.js` (ou teste novo) verde nos cenários acima
+
+**Evidência (23/09/2026):**
+- `server.js`: `POST /api/admin/users` ganhou validação (e-mail com regex → 400, senha mín. 6 → 400, role fora de `user|admin` → 400, e-mail duplicado → **409** antes do INSERT); `PUT /api/admin/users/:id` ganhou 404 para alvo inexistente, validação de role/status/daily_limit, **reset de senha** (re-hash bcrypt) e proteção contra lockout (admin não pode rebaixar nem suspender a si mesmo → 400).
+- `index.html` + `app.js`: modal real de criação (substitui o fluxo de 3× `prompt()`), ações na tabela — Tornar admin/usuário, Resetar senha, Suspender/Ativar — com ações desabilitadas na própria linha do admin logado; erros da API exibidos (fluxo anterior ignorava 4xx/5xx).
+- `tests/t23_user_management.js` (banco isolado via `DB_PATH`, provedor mock, custo zero): **25/25 PASS** — 401 sem token, 403 como user, 400 e-mail/senha/role inválidos, 409 duplicata, login imediato do novo usuário, lista sem `password_hash`, promoção refletida no `/api/auth/me`, auto-rebaixamento/auto-suspensão → 400, 404 inexistente, reset de senha (antiga para de funcionar, nova funciona).
+- Deploy: container reiniciado (bind-mount, só `.js`/`.html`); `pedro.leon23@gmail.com` promovido a `admin` via SQL no banco de produção (1 linha afetada).
+- Estado alterado para DONE.
 
 ---
 

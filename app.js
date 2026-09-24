@@ -1783,64 +1783,122 @@ async function loadAdminUsers() {
     const res = await fetch('/api/admin/users', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const users = await res.json();
     const tbody = document.getElementById('admin-users-tbody');
-    tbody.innerHTML = users.map(u => `
+    tbody.innerHTML = users.map(u => {
+      const isSelf = u.id === state.currentUser.id;
+      const actionBtn = (onclick, label, color) =>
+        `<button onclick="${onclick}" ${isSelf ? 'disabled title="Esta é a sua conta"' : ''} class="${isSelf ? 'opacity-30 cursor-not-allowed' : 'hover:underline'} text-${color}-600 dark:text-${color}-300 font-semibold text-xs">${label}</button>`;
+      const actions = isSelf
+        ? '<span class="text-brand-muted dark:text-brand-muted text-[10px]">Sua conta</span>'
+        : [
+            actionBtn(`changeUserRole('${u.id}', '${u.role === 'admin' ? 'user' : 'admin'}')`, u.role === 'admin' ? 'Tornar usuário' : 'Tornar admin', u.role === 'admin' ? 'slate' : 'purple'),
+            actionBtn(`resetUserPassword('${u.id}', '${u.email.replace(/'/g, '')}')`, 'Resetar senha', 'amber'),
+            actionBtn(`toggleUserStatus('${u.id}', '${u.status === 'active' ? 'suspended' : 'active'}')`, u.status === 'active' ? 'Suspender' : 'Ativar', 'blue')
+          ].join('<span class="text-brand-line dark:text-brand-line mx-1">|</span>');
+      return `
       <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
         <td class="p-4 font-bold text-brand-ink dark:text-brand-ink">${escapeHtml(u.name)}</td>
         <td class="p-4 text-brand-copy dark:text-brand-copy">${escapeHtml(u.email)}</td>
         <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.role === 'admin' ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${u.role}</span></td>
         <td class="p-4 text-brand-copy dark:text-brand-copy font-semibold">${u.daily_limit} transcrições</td>
         <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'}">${u.status}</span></td>
-        <td class="p-4 text-right">
-          <button onclick="toggleUserStatus('${u.id}', '${u.status === 'active' ? 'suspended' : 'active'}')" class="text-blue-600 dark:text-blue-300 hover:underline font-semibold text-xs">
-            ${u.status === 'active' ? 'Suspender' : 'Ativar'}
-          </button>
-        </td>
-      </tr>
-    `).join('');
+        <td class="p-4 text-right whitespace-nowrap">${actions}</td>
+      </tr>`;
+    }).join('');
   } catch (e) {
     console.error('Erro ao carregar usuários:', e);
   }
 }
 
+async function adminUserAction(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.token}`
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 async function toggleUserStatus(userId, newStatus) {
   try {
-    await fetch(`/api/admin/users/${userId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ status: newStatus })
-    });
+    await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { status: newStatus });
     loadAdminUsers();
   } catch (e) {
     alert('Erro ao atualizar usuário: ' + e.message);
   }
 }
 
-async function openCreateUserModal() {
-  const name = prompt('Nome do novo usuário:');
-  if (!name) return;
-  const email = prompt('E-mail do novo usuário:');
-  if (!email) return;
-  const password = prompt('Senha inicial:');
-  if (!password) return;
-  const role = confirm('Este usuário será Administrador?') ? 'admin' : 'user';
-
+async function changeUserRole(userId, newRole) {
   try {
-    await fetch('/api/admin/users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ name, email, password, role, daily_limit: role === 'admin' ? 99999 : 3 })
-    });
+    await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { role: newRole });
     loadAdminUsers();
   } catch (e) {
-    alert('Erro ao criar usuário: ' + e.message);
+    alert('Erro ao alterar função: ' + e.message);
+  }
+}
+
+async function resetUserPassword(userId, email) {
+  const password = prompt(`Nova senha para ${email} (mín. 6 caracteres):`);
+  if (!password) return;
+  try {
+    await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { password });
+    alert('Senha redefinida com sucesso.');
+  } catch (e) {
+    alert('Erro ao redefinir senha: ' + e.message);
+  }
+}
+
+function openCreateUserModal() {
+  document.getElementById('create-user-name').value = '';
+  document.getElementById('create-user-email').value = '';
+  document.getElementById('create-user-password').value = '';
+  document.getElementById('create-user-role').value = 'user';
+  document.getElementById('create-user-daily-limit').value = 3;
+  onCreateUserRoleChange();
+  setCreateUserError('');
+  document.getElementById('create-user-modal').classList.remove('hidden');
+}
+
+function closeCreateUserModal() {
+  document.getElementById('create-user-modal').classList.add('hidden');
+}
+
+function setCreateUserError(msg) {
+  const el = document.getElementById('create-user-error');
+  el.textContent = msg;
+  el.classList.toggle('hidden', !msg);
+}
+
+function onCreateUserRoleChange() {
+  const role = document.getElementById('create-user-role').value;
+  const limitInput = document.getElementById('create-user-daily-limit');
+  limitInput.value = role === 'admin' ? 99999 : 3;
+  limitInput.disabled = role === 'admin';
+}
+
+async function submitCreateUser(event) {
+  event.preventDefault();
+  setCreateUserError('');
+  const role = document.getElementById('create-user-role').value;
+  try {
+    await adminUserAction('/api/admin/users', 'POST', {
+      name: document.getElementById('create-user-name').value.trim(),
+      email: document.getElementById('create-user-email').value.trim(),
+      password: document.getElementById('create-user-password').value,
+      role,
+      daily_limit: parseInt(document.getElementById('create-user-daily-limit').value, 10) || (role === 'admin' ? 99999 : 3)
+    });
+    closeCreateUserModal();
+    loadAdminUsers();
+  } catch (e) {
+    setCreateUserError(e.message);
   }
 }
 
