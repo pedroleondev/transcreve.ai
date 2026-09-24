@@ -633,7 +633,7 @@ function renderTranscriptionsTable() {
             <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
             <span>Com falhas</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 dark:text-blue-300 hover:underline font-bold">Reprocessar blocos</button>
+          <button onclick="retryTranscription('${item.id}')" class="text-xs text-blue-600 dark:text-blue-300 hover:underline font-bold">Reprocessar blocos</button>
         </div>`;
     } else if (item.status === 'processing') {
       const stageLabel = {
@@ -669,7 +669,7 @@ function renderTranscriptionsTable() {
             <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
             <span>Falhou</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-[10px] text-blue-600 dark:text-blue-300 hover:underline font-bold">Tentar de novo</button>
+          <button onclick="retryTranscription('${item.id}')" class="text-xs text-blue-600 dark:text-blue-300 hover:underline font-bold">Tentar de novo</button>
         </div>`;
     }
     return '';
@@ -1789,7 +1789,7 @@ async function loadAdminUsers() {
     tbody.innerHTML = users.map(u => {
       const isSelf = u.id === state.currentUser.id;
       const actionBtn = (onclick, label, color) =>
-        `<button onclick="${onclick}" ${isSelf ? 'disabled title="Esta é a sua conta"' : ''} class="${isSelf ? 'opacity-30 cursor-not-allowed' : 'hover:underline'} text-${color}-600 dark:text-${color}-300 font-semibold text-xs">${label}</button>`;
+        `<button onclick="${onclick}" ${isSelf ? 'disabled title="Esta é a sua conta"' : ''} class="${isSelf ? 'opacity-30 cursor-not-allowed' : 'hover:underline'} inline-flex items-center min-h-[44px] text-${color}-600 dark:text-${color}-300 font-semibold text-xs">${label}</button>`;
       const actions = isSelf
         ? '<span class="text-brand-muted dark:text-brand-muted text-[10px]">Sua conta</span>'
         : [
@@ -2483,7 +2483,7 @@ try { currentTheme = localStorage.getItem('transcreveai_theme') || 'system'; } c
 if (!['light', 'dark', 'system'].includes(currentTheme)) currentTheme = 'system';
 function applyTheme() {
   document.documentElement.classList.toggle('dark', currentTheme === 'dark' || (currentTheme === 'system' && systemTheme.matches));
-  ['light', 'dark', 'system'].forEach(theme => document.getElementById('theme-btn-' + theme)?.setAttribute('aria-pressed', String(currentTheme === theme)));
+  ['light', 'dark', 'system'].forEach(theme => document.querySelectorAll('[data-theme-option="' + theme + '"]').forEach(btn => btn.setAttribute('aria-pressed', String(currentTheme === theme))));
 }
 function setTheme(theme) {
   if (!['light', 'dark', 'system'].includes(theme)) return;

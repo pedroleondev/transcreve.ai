@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -27,7 +27,6 @@
     [data-theme-option]:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
     #theme-switcher { display: flex; gap: 0.25rem; padding: 0.25rem; border: 1px solid #ffffff66; border-radius: 0.75rem; background: #0002; }
     #theme-switcher button { display: inline-flex; align-items: center; gap: 0.25rem; }
-    @media (max-width: 480px) { #theme-switcher { order: 3; width: 100%; justify-content: center; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; } }
 
     /* --- T-17: responsivo — modais em tela cheia no mobile --- */
@@ -59,6 +58,27 @@
       body.h-screen { height: 100dvh; }
       #app-sidebar { max-height: 100dvh; }
     }
+
+    /* --- Safe-area (S24/iPhone): respeita barra de gestos e notch ---
+       Sem viewport-fit=cover + env(), a barra de gestos do Android cobre
+       botões fixos no rodapé e o drawer fica colado no topo do notch. */
+    @supports (padding: env(safe-area-inset-bottom)) {
+      #top-header { padding-top: calc(0.5rem + env(safe-area-inset-top)); }
+      #app-sidebar { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+      .modal-panel { padding-bottom: env(safe-area-inset-bottom); }
+      #ai-chat-drawer { padding-bottom: env(safe-area-inset-bottom); }
+    }
+
+    /* --- UX mobile: header enxuto — seletor de tema sai do topo no celular
+       (vai para o rodapé da sidebar) e o conteúdo ganha espaço para a
+       bottom nav fixa (64px + safe-area) --- */
+    @media (max-width: 767px) {
+      #theme-switcher { display: none !important; }
+    }
+    @media (max-width: 1023px) {
+      main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+    }
+    #sidebar-theme button[aria-pressed="true"] { background: #2563eb; color: #fff; }
   </style>
   <script id="theme-bootstrap">
     (function() {
@@ -129,7 +149,7 @@
 <body class="h-screen flex flex-col overflow-hidden bg-brand-canvas dark:bg-brand-canvas text-brand-ink dark:text-brand-ink transition-colors duration-150">
 
   <!-- TOP HEADER -->
-  <header class="bg-[#0066FF] text-white min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 z-20 shrink-0 shadow-md">
+  <header id="top-header" class="bg-[#0066FF] text-white min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 z-20 shrink-0 shadow-md">
     <div class="flex items-center space-x-6">
       <button onclick="openSidebar()" class="lg:hidden touch-target -ml-1 rounded-lg hover:bg-white/10 transition shrink-0" aria-label="Abrir menu de navegação">
         <i data-lucide="menu" class="w-5 h-5"></i>
@@ -238,7 +258,13 @@
       </div>
 
       <!-- Rodapé Sidebar Admin Shortcut -->
-      <div class="p-3 border-t border-slate-800">
+      <div class="p-3 border-t border-slate-800 space-y-3">
+        <!-- Tema (só no drawer mobile — no desktop o seletor fica no header) -->
+        <div id="sidebar-theme" class="md:hidden grid grid-cols-3 gap-1 bg-slate-800/80 p-1 rounded-lg" role="group" aria-label="Tema da interface">
+          <button type="button" data-theme-option="light" onclick="setTheme('light')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="sun" class="w-3.5 h-3.5"></i>Claro</button>
+          <button type="button" data-theme-option="dark" onclick="setTheme('dark')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="moon" class="w-3.5 h-3.5"></i>Escuro</button>
+          <button type="button" data-theme-option="system" onclick="setTheme('system')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="monitor" class="w-3.5 h-3.5"></i>Sistema</button>
+        </div>
         <button onclick="showView('admin')" class="w-full flex items-center justify-center space-x-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-bold text-xs py-2.5 rounded-lg border border-blue-500/30 transition">
           <i data-lucide="shield" class="w-4 h-4"></i>
           <span>PAINEL SAAS ADMIN</span>
@@ -355,10 +381,10 @@
             </div>
 
             <!-- Controles de Conforto e Cópia -->
-            <div class="flex items-center space-x-3">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
               <!-- Tamanho da Fonte -->
               <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
-                <span class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Fonte</span>
+                <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Fonte</span>
                 <button onclick="setFontSize('sm')" id="btn-font-sm" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">P</button>
                 <button onclick="setFontSize('md')" id="btn-font-md" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">M</button>
                 <button onclick="setFontSize('lg')" id="btn-font-lg" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">G</button>
@@ -366,7 +392,7 @@
 
               <!-- Largura da Coluna -->
               <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
-                <span class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Coluna</span>
+                <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Coluna</span>
                 <button onclick="setColumnWidth('narrow')" id="btn-col-narrow" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna estreita">Estreita</button>
                 <button onclick="setColumnWidth('normal')" id="btn-col-normal" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna normal">Normal</button>
                 <button onclick="setColumnWidth('wide')" id="btn-col-wide" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna larga">Larga</button>
@@ -394,7 +420,7 @@
           <div>
             <h3 class="text-xs font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-3">Projeto</h3>
             <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-xl p-3.5 space-y-1.5">
-              <label class="block text-[10px] font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wide">Vincular a Projeto</label>
+              <label class="block text-xs font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wide">Vincular a Projeto</label>
               <select id="detail-project-select" onchange="updateTranscriptionProject()" class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-lg px-2.5 py-2 text-xs font-bold text-brand-ink dark:text-brand-ink focus:ring-2 focus:ring-blue-500">
                 <!-- Populado dinamicamente via app.js -->
               </select>
@@ -487,7 +513,7 @@
                   <span class="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Texto aprimorado</span>
                   <div class="flex items-center gap-2">
                     <span id="enhance-meta" class="text-[9px] text-brand-muted dark:text-brand-muted"></span>
-                    <button onclick="copyEnhancedText()" class="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline">Copiar</button>
+                    <button onclick="copyEnhancedText()" class="text-xs font-bold text-violet-700 dark:text-violet-300 hover:underline">Copiar</button>
                   </div>
                 </div>
                 <p id="enhance-text" class="text-xs sm:text-sm text-brand-ink dark:text-brand-ink whitespace-pre-wrap sm:max-h-64 sm:overflow-y-auto sm:custom-scrollbar"></p>
@@ -680,7 +706,7 @@
                 <div>
                   <div class="flex items-center justify-between mb-1">
                     <label class="text-[11px] font-bold text-brand-copy dark:text-brand-copy">System prompt do aprimoramento</label>
-                    <button type="button" onclick="resetAnalysisPrompt()" class="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline">Restaurar padrão</button>
+                    <button type="button" onclick="resetAnalysisPrompt()" class="text-xs font-bold text-violet-700 dark:text-violet-300 hover:underline">Restaurar padrão</button>
                   </div>
                   <textarea id="admin-setting-analysis-prompt" rows="8" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono" placeholder="(vazio = usa o prompt padrão de fábrica)"></textarea>
                   <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Deixe vazio para usar o prompt padrão (correção + concordância + estrutura). Edite para customizar o comportamento da IA.</p>
@@ -731,6 +757,23 @@
       </section>
 
     </main>
+
+    <!-- BOTTOM NAV (mobile) — navegação principal ao alcance do polegar.
+         Desktop (lg+) continua com sidebar fixa + header completos. -->
+    <nav id="bottom-nav" class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-brand-surface/95 dark:bg-brand-surface/95 backdrop-blur-md border-t border-brand-line dark:border-brand-line grid grid-cols-3 items-stretch" style="padding-bottom: env(safe-area-inset-bottom, 0px)" aria-label="Navegação principal">
+      <button onclick="openRecordModal()" class="flex flex-col items-center justify-center gap-0.5 py-2.5 text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink active:text-blue-600 dark:active:text-blue-400 transition min-h-[56px]" aria-label="Gravar áudio">
+        <i data-lucide="mic" class="w-5 h-5"></i>
+        <span class="text-[10px] font-bold">Gravar</span>
+      </button>
+      <button onclick="openTranscribeModal()" class="relative flex flex-col items-center justify-end pb-2.5 min-h-[56px]" aria-label="Transcrever arquivos">
+        <span class="absolute -top-5 w-12 h-12 rounded-full bg-[#0066FF] hover:bg-blue-700 text-white flex items-center justify-center shadow-lg shadow-blue-500/40 border-4 border-brand-canvas dark:border-brand-canvas transition"><i data-lucide="upload-cloud" class="w-5 h-5"></i></span>
+        <span class="text-[10px] font-bold text-brand-ink dark:text-brand-ink">Transcrever</span>
+      </button>
+      <button onclick="openSidebar()" class="flex flex-col items-center justify-center gap-0.5 py-2.5 text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink active:text-blue-600 dark:active:text-blue-400 transition min-h-[56px]" aria-label="Abrir menu">
+        <i data-lucide="menu" class="w-5 h-5"></i>
+        <span class="text-[10px] font-bold">Menu</span>
+      </button>
+    </nav>
   </div>
 
   <!-- MODAL: TRANSCREVER ARQUIVOS -->
@@ -792,11 +835,11 @@
 
           <div class="grid grid-cols-2 gap-3 pt-1">
             <div class="bg-brand-surface/10 dark:bg-brand-surface/10 rounded-xl p-2.5">
-              <p class="text-[10px] text-slate-300 uppercase font-semibold">Preço Aproximado</p>
+              <p class="text-xs text-slate-300 uppercase font-semibold">Preço Aproximado</p>
               <p id="estimate-price-usd" class="text-base font-black text-emerald-400">$0.0000 <span id="estimate-price-brl" class="text-[10px] text-slate-300 font-normal">(~R$ 0.00)</span></p>
             </div>
             <div class="bg-brand-surface/10 dark:bg-brand-surface/10 rounded-xl p-2.5">
-              <p class="text-[10px] text-slate-300 uppercase font-semibold">Nível de Precisão PT-BR</p>
+              <p class="text-xs text-slate-300 uppercase font-semibold">Nível de Precisão PT-BR</p>
               <p id="estimate-precision" class="text-sm font-black text-amber-300">⭐ 5.0 (99.2%)</p>
             </div>
           </div>
@@ -1130,7 +1173,7 @@
   </div>
 
   <!-- DRAWER CHATGPT DA TRANSCRIÇÃO -->
-  <div id="ai-chat-drawer" class="hidden fixed inset-y-0 right-0 w-96 bg-brand-surface dark:bg-brand-surface shadow-2xl z-50 flex flex-col border-l border-brand-line dark:border-brand-line">
+  <div id="ai-chat-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-96 bg-brand-surface dark:bg-brand-surface shadow-2xl z-50 flex flex-col border-l border-brand-line dark:border-brand-line">
     <div class="p-5 border-b border-brand-line dark:border-brand-line bg-emerald-600 text-white flex justify-between items-center">
       <div class="flex items-center space-x-2">
         <i data-lucide="sparkles" class="w-5 h-5"></i>
