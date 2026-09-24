@@ -47,6 +47,18 @@ No máximo 5 linhas, uma por papel envolvido, dizendo o que cada um exige. Papé
 - Se mexeu no `Dockerfile` → `docker compose build` + verificação dentro do container
 - Fluxo validado ponta a ponta no ambiente real
 - Nenhum segredo no diff
+- **`docs/TASKS.md` atualizado no MESMO commit** (ou no commit de merge `--no-ff`): quadro **e** seção da tarefa em `DONE`, com evidência real. Task sem TASKS.md sincronizada **não fechou** — é a regra que transforma "código entregue" em "tarefa entregue". Sem exceção de "atualizo depois": depois nunca chega (essa dívida já aconteceu na prática com T-16/T-17/T-18/T-20: seções DONE, quadro esquecido).
+
+### Sincronização do TASKS.md (duas vistas, uma verdade)
+
+O quadro (tabela no topo) e a seção detalhada (`### T-XX`) são **duas vistas do mesmo estado**. Toda transição `TODO → DOING → DONE` toca as duas, no mesmo commit:
+
+| Onde | O que muda |
+|---|---|
+| Quadro (tabela) | Coluna `Estado` — é a visão de 30 segundos; se estiver errada aqui, a tarefa está errada para quem decide prioridade |
+| Seção `### T-XX` | `**Estado:**` + itens de aceite `[x]` + `**Evidência:**` (comando + saída + data) |
+
+Fecho de sessão = `grep` de verificação: a linha do quadro e o cabeçalho da seção dizem o mesmo estado. Divergência = bug de processo, consertar antes do push.
 
 ## Teste com arquivo base
 

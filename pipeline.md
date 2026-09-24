@@ -99,6 +99,7 @@ git switch -c fix/nome-curto-do-problema main
 - [ ] Se mexeu no `Dockerfile`: imagem reconstruída e dependência verificada **dentro** do container.
 - [ ] Fluxo validado de ponta a ponta no ambiente real (não só unitário) — para transcrição, um áudio real concluindo com `status='completed'` e texto coerente.
 - [ ] Nenhum segredo no diff (`.env`, `turboscribe.sqlite` e `uploads/` são ignorados — mantenha assim).
+- [ ] **`docs/TASKS.md` sincronizado no mesmo commit**: quadro **e** seção da tarefa em `DONE` com evidência. Task sem TASKS.md atualizada não fechou (regra completa em [docs/WORKFLOW.md](docs/WORKFLOW.md) — "Sincronização do TASKS.md").
 
 ### 6.3 Merge
 Merge com `--no-ff` para preservar o agrupamento lógico da entrega:

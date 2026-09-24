@@ -26,17 +26,18 @@
 | T-13 | Baixar áudio original (rota autenticada) + Exportar em massa | 🟠 P1 | TODO |
 | T-14 | UX de modais: Esc/clique fora fecham, foco, sem `prompt()` | 🟢 P3 | TODO |
 | T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | DONE |
-| T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | TODO |
-| T-17 | Layout responsivo: celular e tablet | 🔴 P0 | TODO |
-| T-18 | Análise estruturada por IA (processos, conteúdo, ruído, orientação) | 🔴 P0 | TODO |
+| T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | DONE |
+| T-17 | Layout responsivo: celular e tablet | 🔴 P0 | DONE |
+| T-18 | Aprimoramento de transcrição por IA (correção + estruturação) | 🔴 P0 | DONE |
 | T-19 | Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos) | 🔴 P0 | DONE |
-| T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 98 idiomas + auto-detecção | 🟠 P1 | TODO |
+| T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 100 idiomas + auto-detecção | 🟠 P1 | DONE |
 | T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
 | T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
 | T-23 | Gestão de usuários (admin cria usuários e admins) | 🔴 P0 | DONE |
 
 **Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
 T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
+**Restante (atualizado 24/09):** T-02 → T-03 (fundação multiusuário) · depois T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
 
 ---
 
