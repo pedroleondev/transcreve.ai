@@ -2483,7 +2483,7 @@ try { currentTheme = localStorage.getItem('transcreveai_theme') || 'system'; } c
 if (!['light', 'dark', 'system'].includes(currentTheme)) currentTheme = 'system';
 function applyTheme() {
   document.documentElement.classList.toggle('dark', currentTheme === 'dark' || (currentTheme === 'system' && systemTheme.matches));
-  ['light', 'dark', 'system'].forEach(theme => document.getElementById('theme-btn-' + theme)?.setAttribute('aria-pressed', String(currentTheme === theme)));
+  ['light', 'dark', 'system'].forEach(theme => document.querySelectorAll('[data-theme-option="' + theme + '"]').forEach(btn => btn.setAttribute('aria-pressed', String(currentTheme === theme))));
 }
 function setTheme(theme) {
   if (!['light', 'dark', 'system'].includes(theme)) return;
