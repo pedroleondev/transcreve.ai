@@ -12,8 +12,8 @@
 | ID | Tarefa | Prioridade | Estado |
 |---|---|---|---|
 | T-01 | Fechar autenticação (remover bypass e senhas mestras) | 🔴 P0 | DONE |
-| T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | TODO |
-| T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | TODO |
+| T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | DONE |
+| T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | DONE |
 | T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
 | T-05 | Tema escuro | 🟠 P1 | DONE |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DOING |
@@ -37,7 +37,7 @@
 
 **Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
 T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
-**Restante (atualizado 24/09):** T-02 → T-03 (fundação multiusuário) · depois T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
+**Restante (atualizado 24/09):** T-02 e T-03 DONE (fundação multiusuário entregue). Próximas: T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
 
 ---
 
@@ -63,33 +63,35 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-02 — Isolamento multi-tenant
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01
+**Estado:** DONE (24/09/2026) · **Prioridade:** 🔴 P0 · **Depende de:** T-01
 **Por quê:** nenhuma query filtra por dono; qualquer usuário lê, edita e apaga o conteúdo dos outros ([MULTIUSER.md](MULTIUSER.md) B-03).
 **Contexto:** `server.js:139-400`, `docs/STACK.md` §4
 **Toca:** `server.js`, `db.js`, `test_suite.js`
 **Aceite:**
-- [ ] Helper único `scopeToUser(req)` aplicado em: `/api/projects`, `/api/transcriptions`, `/:id`, `/:id/status`, `PUT`, `DELETE`, `/api/export/:id/:format`, `/api/chat`, `/api/translate`
-- [ ] Admin mantém visão global **apenas** quando enviar `?all=true` explicitamente
-- [ ] Acesso a recurso de outro usuário → **404** (não 403 — não revela existência)
-- [ ] `/uploads` deixa de ser estático público; passa por rota autenticada que valida o dono
-- [ ] Usuário B não enxerga nem baixa nada do usuário A
+- [x] Helper único `scopeToUser(req)` aplicado em: `/api/projects`, `/api/transcriptions`, `/:id`, `/:id/status`, `PUT`, `DELETE`, `/api/export/:id/:format`, `/api/chat`, `/api/translate`
+- [x] Admin mantém visão global **apenas** quando enviar `?all=true` explicitamente
+- [x] Acesso a recurso de outro usuário → **404** (não 403 — não revela existência)
+- [x] `/uploads` deixa de ser estático público; passa por rota autenticada que valida o dono
+- [x] Usuário B não enxerga nem baixa nada do usuário A
 
-**Evidência:** _(preencher)_
+**Evidência (24/09/2026):** helpers `scopeOf(req)`/`ownedTranscription(id, scope)` em `server.js`; `/uploads/:file` autenticado com validação de dono via `file_path` no banco + `path.basename` anti-traversal; `authenticateToken` aceita `?token=` para tags `<audio>`; frontend envia `?all=true` (admin) e `transcription_id` em chat/translate. `test_suite.js` → **79/79 PASS**; `load_multiuser.js` → fases A+B+C **13/13 PASS** (ver T-03). Áudio validado: 200 com token do dono, 401 sem token.
 
 ---
 
 ### T-03 — Teste de carga e isolamento com 10 usuários
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01, T-02
+**Estado:** DOING · **Prioridade:** 🔴 P0 · **Depende de:** T-01, T-02
 **Por quê:** validar a configuração Docker atual sob uso multiusuário real e medir o teto da fila.
 **Contexto:** `tests/load_multiuser.js`, `docs/MULTIUSER.md` §4 e §6
 **Toca:** `tests/load_multiuser.js`, `docs/MULTIUSER.md`
 **Aceite:**
-- [ ] `node tests/load_multiuser.js --no-transcribe` → 100% PASS nas fases A (segurança) e B (isolamento)
-- [ ] `node tests/load_multiuser.js` → fase C conclui os 10 jobs sem `failed` e sem `SQLITE_BUSY`
-- [ ] Tabela de tempos (p50/p95 de resposta, tempo do último job) registrada em `MULTIUSER.md` §4
-- [ ] Nenhum vazamento cruzado detectado
+- [x] `node tests/load_multiuser.js --no-transcribe` → 100% PASS nas fases A (segurança) e B (isolamento)
+- [x] `node tests/load_multiuser.js` → fase C conclui os 10 jobs sem `failed` e sem `SQLITE_BUSY`
+- [x] Tabela de tempos (p50/p95 de resposta, tempo do último job) registrada em `MULTIUSER.md` §4
+- [x] Nenhum vazamento cruzado detectado
 
-**Evidência (baseline 31/08/2026):** script criado e executado; `node tests/load_multiuser.js --no-transcribe` → **3 PASS / 8 FAIL**, exatamente as falhas previstas por T-01 e T-02. Saída completa em [MULTIUSER.md](MULTIUSER.md) §7. A tarefa fecha quando esta mesma execução der 100% PASS.
+**Evidência (baseline 31/08/2026):** script criado e executado; `node tests/load_multiuser.js --no-transcribe` → **3 PASS / 8 FAIL**, exatamente as falhas previstas por T-01 e T-02. Saída completa em [MULTIUSER.md](MULTIUSER.md) §7.
+
+**Evidência (fechamento 24/09/2026):** `node tests/load_multiuser.js --no-transcribe` → **10/10 PASS** (fases A+B). `node tests/load_multiuser.js` → **13/13 PASS** (A+B+C): 10 uploads simultâneos aceitos em 190 ms (p50 177 ms / p95 188 ms de aceite), todos os jobs completaram, nenhum `failed`, nenhum `SQLITE_BUSY`; fim-a-fim mediana 25 s, último 86 s (fila serial). Tempos registrados em [MULTIUSER.md](MULTIUSER.md) §4.
 
 ---
 

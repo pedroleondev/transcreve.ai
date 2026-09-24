@@ -348,7 +348,9 @@ function handleSearch() {
 
 async function fetchProjects() {
   try {
-    let res = await fetch('/api/projects', {
+    // T-02: admin continua vendo tudo (comportamento atual); usuário comum só o seu.
+    const url = '/api/projects' + (state.currentUser?.role === 'admin' ? '?all=true' : '');
+    let res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     if (res.status === 401 || res.status === 403) {
@@ -356,7 +358,7 @@ async function fetchProjects() {
       localStorage.removeItem('turboscribe_token');
       const relogged = await ensureAuthToken();
       if (relogged) {
-        res = await fetch('/api/projects', {
+        res = await fetch(url, {
           headers: { 'Authorization': `Bearer ${state.token}` }
         });
       }
@@ -556,9 +558,10 @@ async function updateTranscriptionProject() {
 async function fetchTranscriptions() {
   try {
     let url = '/api/transcriptions';
-    if (state.currentProjectId) {
-      url += `?project_id=${state.currentProjectId}`;
-    }
+    const params = [];
+    if (state.currentProjectId) params.push(`project_id=${state.currentProjectId}`);
+    if (state.currentUser?.role === 'admin') params.push('all=true');
+    if (params.length) url += '?' + params.join('&');
     const res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
@@ -847,7 +850,9 @@ async function openTranscriptionDetail(id) {
     // Configurar áudio player
     const audioPlayer = document.getElementById('audio-player');
     if (audioPlayer) {
-      audioPlayer.src = data.file_path || '';
+      audioPlayer.src = data.file_path
+        ? data.file_path + (data.file_path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(state.token)
+        : '';
     }
 
     // Atualizar seletor de projeto na barra lateral de detalhes
@@ -1697,7 +1702,8 @@ async function sendAIChatPrompt(e) {
       },
       body: JSON.stringify({
         transcript_text: state.activeTranscription.raw_text,
-        prompt: prompt
+        prompt: prompt,
+        transcription_id: state.activeTranscription.id
       })
     });
     const data = await res.json();
@@ -1727,7 +1733,8 @@ async function openTranslateModal() {
       },
       body: JSON.stringify({
         transcript_text: state.activeTranscription.raw_text,
-        target_language: targetLang
+        target_language: targetLang,
+        transcription_id: state.activeTranscription.id
       })
     });
     const data = await res.json();

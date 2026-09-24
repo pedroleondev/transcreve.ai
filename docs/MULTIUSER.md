@@ -139,6 +139,17 @@ Configuração atual: **1 container, sem `deploy.resources`, sem réplicas**, re
 
 **Estimativa:** para 10 usuários que enviam alguns áudios por dia (não todos ao mesmo tempo), a infra atual dá conta. O problema é **percepção** — sem posição na fila, um usuário atrás de 3 áudios longos acha que o sistema travou.
 
+**Medição real (24/09/2026, T-03, pós T-01/T-02):**
+
+| Métrica | Valor |
+|---|---|
+| Aceite dos 10 uploads simultâneos (até 202) | p50 177 ms · p95 188 ms · max 188 ms |
+| Tempo total para enfileirar os 10 | 190 ms |
+| Fim-a-fim (upload → status final) | primeiro 15 s · mediana 25 s · último 86 s |
+| Jobs `failed` / `SQLITE_BUSY` | 0 / 0 |
+
+Confirma B-04 na prática: a fila é serial — o último job paga a soma de todos. Mas para 10 usuários casuais, o teto de ~86 s com áudio curto é aceitável.
+
 ---
 
 ## 5. O que precisa existir antes do teste de carga valer
@@ -210,3 +221,23 @@ O FAIL mais grave é o segundo da Fase B: o usuário 02 **apagou de fato** o pro
 Os dados de teste (10 usuários, 10 projetos) foram removidos do banco após a execução; o ambiente ficou como estava.
 
 **Conclusão:** a infraestrutura Docker aguenta 10 usuários; a aplicação não. Colocar 10 pessoas neste sistema hoje significa que qualquer uma delas lê e apaga o conteúdo de todas as outras, e que qualquer pessoa com acesso à rede administra o sistema sem senha. Executar T-01 e T-02 antes de qualquer convite.
+
+---
+
+## 8. Execução de fechamento — 24/09/2026 (T-01 + T-02 aplicados)
+
+`node tests/load_multiuser.js --no-transcribe` → **10/10 PASS** (fases A+B).
+`node tests/load_multiuser.js` → **13/13 PASS** (fases A+B+C, com transcrições reais).
+
+```
+FASE A — SEGURANCA: 6/6
+FASE B — ISOLAMENTO: 4/4
+FASE C — CAPACIDADE: 3/3
+  ✅ 10 uploads simultâneos aceitos com 202 (p50 177 ms / p95 188 ms)
+  ✅ Todos os jobs saíram da fila antes do timeout, nenhum failed
+  ✅ Nenhum SQLITE_BUSY
+```
+
+Validação pós-deploy com conta real: `pedro.leon23@gmail.com` (admin) continua vendo suas 97 transcrições via API; áudio serve 200 (42 KB, `audio/ogg`) com `?token=` do dono e 401 sem token. Dados do baseline intactos.
+
+**Conclusão atualizada:** B-01, B-02, B-03 e R-04 estão fechados (T-01, T-02). B-04 (fila serial) permanece como limite conhecido — medido em ~86 s para 10 áudios curtos; T-05/T-06 tratam da percepção da fila.

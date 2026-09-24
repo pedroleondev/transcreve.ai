@@ -86,10 +86,19 @@ async function runTestSuite() {
       adminToken = adminLoginData.token;
     }
 
+    // Usuário COMUM dedicado da suíte: pedro.leon23@gmail.com virou admin
+    // (decisão de produto T-17), então não serve mais como "userToken".
+    const SUITE_USER = { name: 'Suite User', email: 'suite-user@test.local', password: 'suite123', role: 'user' };
+    await fetch(`${BASE_URL}/api/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify(SUITE_USER)
+    }); // 201 ou 409 (já existe) — ambos OK
+
     const userLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'pedro.leon23@gmail.com', password: 'user123' })
+      body: JSON.stringify({ email: SUITE_USER.email, password: SUITE_USER.password })
     });
     const userLoginData = await userLoginRes.json();
     if (userLoginRes.ok && userLoginData.token) {
@@ -455,6 +464,11 @@ async function runTestSuite() {
   } catch (e) {
     assert(false, 'Falha ao limpar glossário: ' + e.message);
   }
+
+  // Limpar usuário comum dedicado da suíte
+  try {
+    await runAsync(`DELETE FROM users WHERE email = 'suite-user@test.local'`);
+  } catch (e) { /* usuário já removido ou ausente */ }
 
   console.log('\n=======================================================');
   console.log(`📊 RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`);
