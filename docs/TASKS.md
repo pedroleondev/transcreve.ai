@@ -12,8 +12,8 @@
 | ID | Tarefa | Prioridade | Estado |
 |---|---|---|---|
 | T-01 | Fechar autenticação (remover bypass e senhas mestras) | 🔴 P0 | DONE |
-| T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | TODO |
-| T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | TODO |
+| T-02 | Isolamento multi-tenant (`WHERE user_id`) em todas as rotas | 🔴 P0 | DOING |
+| T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | DOING |
 | T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
 | T-05 | Tema escuro | 🟠 P1 | DONE |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DOING |
@@ -63,7 +63,7 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-02 — Isolamento multi-tenant
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01
+**Estado:** DOING · **Prioridade:** 🔴 P0 · **Depende de:** T-01
 **Por quê:** nenhuma query filtra por dono; qualquer usuário lê, edita e apaga o conteúdo dos outros ([MULTIUSER.md](MULTIUSER.md) B-03).
 **Contexto:** `server.js:139-400`, `docs/STACK.md` §4
 **Toca:** `server.js`, `db.js`, `test_suite.js`
@@ -79,7 +79,7 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-03 — Teste de carga e isolamento com 10 usuários
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01, T-02
+**Estado:** DOING · **Prioridade:** 🔴 P0 · **Depende de:** T-01, T-02
 **Por quê:** validar a configuração Docker atual sob uso multiusuário real e medir o teto da fila.
 **Contexto:** `tests/load_multiuser.js`, `docs/MULTIUSER.md` §4 e §6
 **Toca:** `tests/load_multiuser.js`, `docs/MULTIUSER.md`

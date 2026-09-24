@@ -74,7 +74,23 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/uploads', express.static(uploadsDir));
+// T-02: /uploads deixou de ser estático público. Cada áudio só é servido ao
+// dono (admin precisa de ?all=true, como nas rotas de dados). O player usa
+// ?token= porque <audio> não envia header Authorization. Nome sanitizado com
+// path.basename para não sair do diretório de uploads.
+app.get('/uploads/:file', authenticateToken, async (req, res) => {
+  try {
+    const fileName = path.basename(req.params.file);
+    const row = await getAsync('SELECT user_id FROM transcriptions WHERE file_path = ?', ['/uploads/' + fileName]);
+    const all = req.user.role === 'admin' && req.query.all === 'true';
+    if (!row || (!all && row.user_id !== req.user.id)) {
+      return res.status(404).send('Arquivo não encontrado.');
+    }
+    res.sendFile(path.join(uploadsDir, fileName));
+  } catch (e) {
+    res.status(500).send('Erro ao servir arquivo.');
+  }
+});
 
 // Estáticos explícitos: o diretório do projeto NÃO é publicado como um todo.
 // (com express.static(__dirname), /turboscribe.sqlite, /.env e o próprio
@@ -87,9 +103,11 @@ app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
 app.get('/languages.js', (req, res) => res.sendFile(path.join(__dirname, 'services', 'languages.js')));
 
 // Middleware de Autenticação JWT
+// Aceita Authorization: Bearer <token> (API/padrão) ou ?token= (elementos de
+// mídia como <audio>, que não enviam header — T-02).
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = (authHeader && authHeader.split(' ')[1]) || (typeof req.query.token === 'string' ? req.query.token : null);
 
   if (!token) {
     return res.status(401).json({ error: 'Acesso negado. Token de autenticação não fornecido.' });
@@ -109,6 +127,21 @@ function requireAdmin(req, res, next) {
   } else {
     res.status(403).json({ error: 'Acesso restrito a Administradores do SaaS.' });
   }
+}
+
+// T-02 — Isolamento multi-tenant.
+// Escopo do usuário autenticado: admin só enxerga tudo com ?all=true EXPLÍCITO;
+// qualquer outro usuário enxerga apenas o que é seu. Acesso a recurso alheio
+// responde 404 (não 403) — não revela nem a existência do recurso.
+function scopeOf(req) {
+  return { userId: req.user.id, all: req.user.role === 'admin' && req.query.all === 'true' };
+}
+
+// Resolve a transcrição se — e somente se — existir E pertencer ao escopo.
+async function ownedTranscription(id, scope) {
+  const row = await getAsync('SELECT id, user_id, status FROM transcriptions WHERE id = ?', [id]);
+  if (!row || (!scope.all && row.user_id !== scope.userId)) return null;
+  return row;
 }
 
 // Inicializar Banco de Dados
@@ -175,9 +208,15 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // ----------------------------------------------------
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const projects = await allAsync(
-      `SELECT p.*, COUNT(t.id) as file_count FROM projects p LEFT JOIN transcriptions t ON p.id = t.project_id GROUP BY p.id ORDER BY p.created_at ASC`
-    );
+    const scope = scopeOf(req);
+    let sql = `SELECT p.*, COUNT(t.id) as file_count FROM projects p LEFT JOIN transcriptions t ON p.id = t.project_id`;
+    const params = [];
+    if (!scope.all) {
+      sql += ` WHERE p.user_id = ?`;
+      params.push(scope.userId);
+    }
+    sql += ` GROUP BY p.id ORDER BY p.created_at ASC`;
+    const projects = await allAsync(sql, params);
     res.json(projects);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -190,7 +229,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
 
   try {
     const projectId = uuidv4();
-    await runAsync(`INSERT INTO projects (id, user_id, name) VALUES (?, ?, ?)`, [projectId, req.user.id || 'admin-local', name]);
+    await runAsync(`INSERT INTO projects (id, user_id, name) VALUES (?, ?, ?)`, [projectId, req.user.id, name]);
     await logAction(req.user.id, 'PROJECT_CREATED', { name }, req.ip);
     res.json({ id: projectId, name, file_count: 0 });
   } catch (e) {
@@ -200,6 +239,11 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
 
 app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
+    const scope = scopeOf(req);
+    const row = await getAsync('SELECT user_id FROM projects WHERE id = ?', [req.params.id]);
+    if (!row || (!scope.all && row.user_id !== scope.userId)) {
+      return res.status(404).json({ error: 'Projeto não encontrado.' });
+    }
     await runAsync(`DELETE FROM projects WHERE id = ?`, [req.params.id]);
     res.json({ success: true });
   } catch (e) {
@@ -212,9 +256,15 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 // ----------------------------------------------------
 app.get('/api/transcriptions', authenticateToken, async (req, res) => {
   try {
+    const scope = scopeOf(req);
     const { project_id, search } = req.query;
     let sql = `SELECT t.*, ${queuePositionSql} AS queue_position, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE 1=1`;
     const params = [];
+
+    if (!scope.all) {
+      sql += ` AND t.user_id = ?`;
+      params.push(scope.userId);
+    }
 
     if (project_id === 'uncategorized') {
       sql += ` AND t.project_id IS NULL`;
@@ -238,12 +288,15 @@ app.get('/api/transcriptions', authenticateToken, async (req, res) => {
 
 app.get('/api/transcriptions/:id', authenticateToken, async (req, res) => {
   try {
+    const scope = scopeOf(req);
     const transcription = await getAsync(
       `SELECT t.*, p.name as project_name FROM transcriptions t LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?`,
       [req.params.id]
     );
 
-    if (!transcription) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+      return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    }
 
     const segments = await allAsync(
       `SELECT * FROM segments WHERE transcription_id = ? ORDER BY start_time ASC`,
@@ -358,7 +411,7 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErro
 // Reprocessa so os blocos que falharam (job em completed_with_errors ou failed)
 app.post('/api/transcriptions/:id/retry', authenticateToken, async (req, res) => {
   try {
-    const row = await getAsync(`SELECT id, status FROM transcriptions WHERE id = ?`, [req.params.id]);
+    const row = await ownedTranscription(req.params.id, scopeOf(req));
     if (!row) return res.status(404).json({ error: 'Transcrição não encontrada.' });
     if (!['failed', 'completed_with_errors'].includes(row.status)) return res.status(409).json({error: 'O job nao esta disponivel para reprocessamento.'});
     const reset = await retryFailedChunks(row.id);
@@ -375,6 +428,9 @@ app.post('/api/transcriptions/:id/retry', authenticateToken, async (req, res) =>
 // Atualizar nome / mover pasta
 app.put('/api/transcriptions/:id', authenticateToken, async (req, res) => {
   const { file_name, project_id, raw_text, segments } = req.body;
+  const scope = scopeOf(req);
+  const owned = await ownedTranscription(req.params.id, scope);
+  if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
   if (segments !== undefined) {
     try {
       if (file_name !== undefined || project_id !== undefined) return res.status(400).json({ error: 'Salve os metadados separadamente da edicao dos segmentos.' });
@@ -402,6 +458,8 @@ app.put('/api/transcriptions/:id', authenticateToken, async (req, res) => {
 // Excluir transcrição
 app.delete('/api/transcriptions/:id', authenticateToken, async (req, res) => {
   try {
+    const owned = await ownedTranscription(req.params.id, scopeOf(req));
+    if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
     await runAsync(`DELETE FROM transcriptions WHERE id = ?`, [req.params.id]);
     await runAsync(`DELETE FROM segments WHERE transcription_id = ?`, [req.params.id]);
     res.json({ success: true });
@@ -418,8 +476,11 @@ app.get('/api/export/:id/:format', authenticateToken, async (req, res) => {
   const includeTimestamps = req.query.timestamps === 'true';
 
   try {
+    const scope = scopeOf(req);
     const transcription = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [id]);
-    if (!transcription) return res.status(404).send('Transcrição não encontrada.');
+    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+      return res.status(404).send('Transcrição não encontrada.');
+    }
 
     const segments = await allAsync(`SELECT * FROM segments WHERE transcription_id = ? ORDER BY start_time ASC`, [id]);
     const baseName = transcription.file_name.replace(/\.[^/.]+$/, '');
@@ -469,10 +530,15 @@ app.get('/api/export/:id/:format', authenticateToken, async (req, res) => {
 // CHAT IA & TRADUÇÃO (OPENROUTER)
 // ----------------------------------------------------
 app.post('/api/chat', authenticateToken, async (req, res) => {
-  const { transcript_text, prompt } = req.body;
+  const { transcript_text, prompt, transcription_id } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Prompt é obrigatório.' });
 
   try {
+    // T-02: quando o texto vem de uma transcrição, o dono precisa ser o usuário.
+    if (transcription_id) {
+      const owned = await ownedTranscription(transcription_id, scopeOf(req));
+      if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    }
     const answer = await generateChatCompletion(transcript_text || '', prompt);
     res.json({ answer });
   } catch (e) {
@@ -481,8 +547,13 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/translate', authenticateToken, async (req, res) => {
-  const { transcript_text, target_language } = req.body;
+  const { transcript_text, target_language, transcription_id } = req.body;
   try {
+    // T-02: idem — escopo por dono quando transcription_id é enviado.
+    if (transcription_id) {
+      const owned = await ownedTranscription(transcription_id, scopeOf(req));
+      if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    }
     const translatedText = await translateTranscript(transcript_text || '', target_language || 'English');
     res.json({ translatedText });
   } catch (e) {
@@ -498,6 +569,8 @@ app.post('/api/translate', authenticateToken, async (req, res) => {
 // Lista os aprimoramentos de uma transcrição (mais recente primeiro)
 app.get('/api/transcriptions/:id/analyses', authenticateToken, async (req, res) => {
   try {
+    const owned = await ownedTranscription(req.params.id, scopeOf(req));
+    if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
     const rows = await allAsync(
       `SELECT id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at
        FROM ai_analyses WHERE transcription_id = ? ORDER BY created_at DESC`,
@@ -513,11 +586,10 @@ app.get('/api/transcriptions/:id/analyses', authenticateToken, async (req, res) 
 // e estrutura o texto. Síncrono e em blocos para textos longos. Custo: tokens registrados.
 app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) => {
   try {
+    // T-02: recurso alheio → 404 (não 403), como nas demais rotas.
+    const owned = await ownedTranscription(req.params.id, scopeOf(req));
+    if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
     const transcription = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [req.params.id]);
-    if (!transcription) return res.status(404).json({ error: 'Transcrição não encontrada.' });
-    if (transcription.user_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Acesso negado.' });
-    }
     const sourceText = (transcription.raw_text || '').trim();
     if (!sourceText) return res.status(400).json({ error: 'Transcrição sem texto para aprimorar.' });
 
@@ -880,10 +952,11 @@ app.put('/api/admin/settings', authenticateToken, requireAdmin, async (req, res)
 // Endpoint para obter progresso da transcrição
 app.get('/api/transcriptions/:id/status', authenticateToken, async (req, res) => {
   try {
-    const row = await getAsync(`SELECT status, stage, progress, error_message, ai_summary FROM transcriptions WHERE id = ?`, [req.params.id]);
-    if (!row) {
+    const owned = await ownedTranscription(req.params.id, scopeOf(req));
+    if (!owned) {
       return res.status(404).json({ error: 'Transcrição não encontrada.' });
     }
+    const row = await getAsync(`SELECT status, stage, progress, error_message, ai_summary FROM transcriptions WHERE id = ?`, [req.params.id]);
     const chunks = await getJobProgress(req.params.id);
     res.json({
       success: true,
