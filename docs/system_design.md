@@ -31,17 +31,15 @@ graph TD
 **Tradeoff aceito:** escritas concorrentes (worker atualizando `progress` + usuários escrevendo) arriscam `SQLITE_BUSY` sob carga. Sem índices em `transcriptions.user_id/status` nem `segments.transcription_id` — cada poll da fila é um full scan.
 **Quando revisitar:** antes de qualquer teste de carga com múltiplos usuários reais simultâneos (ver [MULTIUSER.md](MULTIUSER.md) §5).
 
-### 3. Auth com fallback silencioso para admin
-**Decisão:** `authenticateToken` (`server.js:51-67`) trata requisição sem header `Authorization` como usuário admin local.
+### 3. Auth com fallback silencioso para admin (T-01, fechado em 22/09/2026)
+**Decisão original:** `authenticateToken` tratava requisição sem header `Authorization` como usuário admin local.
 **Por quê:** conveniência de desenvolvimento local single-tenant (uso original do sistema — só o dono operando).
-**Tradeoff aceito — hoje é o bloqueador de segurança nº 1:** qualquer requisição sem token na rede vira admin. Isso não é dívida técnica incidental, é uma decisão que fazia sentido no contexto original (uso único) e deixou de fazer sentido no momento em que o sistema passa a ser multiusuário. Ver [MULTIUSER.md](MULTIUSER.md) §B-01/B-02.
-**Quando revisitar:** antes de convidar qualquer segundo usuário real — é pré-requisito, não melhoria incremental.
+**Estado atual (T-01):** o fallback foi removido — requisição sem token válido recebe 401; senhas mestras hardcoded saíram do login; há rate limit de senha na troca de chave de API. Era o bloqueador de segurança nº 1 (ver [MULTIUSER.md](MULTIUSER.md) §B-01/B-02); validado por `test_suite.js` (79/79) e fase A do `load_multiuser.js` (6/6).
 
-### 4. Nenhuma query filtra por `user_id`
-**Decisão:** todas as rotas de dados (`/api/projects`, `/api/transcriptions`, `/api/export`) leem/escrevem sem cláusula `WHERE user_id = ?`, embora a coluna exista e seja gravada.
+### 4. Queries filtradas por `user_id` (T-02, fechado em 24/09/2026)
+**Decisão original:** todas as rotas de dados (`/api/projects`, `/api/transcriptions`, `/api/export`) liam/escreviam sem cláusula `WHERE user_id = ?`, embora a coluna existisse e fosse gravada.
 **Por quê:** o schema já antecipava multiusuário, mas a camada de rotas nunca chegou a aplicar o filtro — o produto era usado por uma pessoa só.
-**Tradeoff aceito:** vazamento cruzado total de dados entre usuários; qualquer um apaga o trabalho de qualquer outro. Ver [MULTIUSER.md](MULTIUSER.md) §B-03.
-**Quando revisitar:** junto com o item 3, é a mesma classe de problema — tenancy não aplicada.
+**Estado atual (T-02):** helpers `scopeOf(req)`/`ownedTranscription(id, scope)` aplicam tenancy em todas as rotas de dados, `/uploads/:file` é autenticado e valida o dono via `file_path` no banco, e acesso a recurso alheio retorna 404 (não revela existência). Admin vê tudo apenas com `?all=true`. Validação: `load_multiuser.js` 13/13 PASS (ver [MULTIUSER.md](MULTIUSER.md) §8).
 
 ### 5. Front-end sem build step
 **Decisão:** `index.html` + `app.js` em JS vanilla, Tailwind via CDN, sem bundler/TypeScript/framework.

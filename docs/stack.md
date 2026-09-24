@@ -72,16 +72,17 @@ Todas as rotas em `server.js`, prefixo `/api`.
 |---|---|---|---|
 | POST | `/api/auth/login` | pública | — |
 | GET | `/api/auth/me` | token | — |
-| GET/POST/DELETE | `/api/projects[/:id]` | token | ❌ não |
-| GET | `/api/transcriptions` | token | ❌ não |
-| GET/PUT/DELETE | `/api/transcriptions/:id` | token | ❌ não |
-| GET | `/api/transcriptions/:id/status` | token | ❌ não — devolve `stage`, `chunks_done/total/failed`, `eta_seconds` |
-| POST | `/api/transcriptions/:id/retry` | token | ❌ não — reprocessa só os blocos `failed` |
+| GET/POST/DELETE | `/api/projects[/:id]` | token | ✅ dono (admin: `?all=true`) |
+| GET | `/api/transcriptions` | token | ✅ dono (admin: `?all=true`) |
+| GET/PUT/DELETE | `/api/transcriptions/:id` | token | ✅ dono — alheio retorna 404 |
+| GET | `/api/transcriptions/:id/status` | token | ✅ dono |
+| POST | `/api/transcriptions/:id/retry` | token | ✅ dono |
 | POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota; valida com `ffprobe` por arquivo |
-| GET | `/api/export/:id/:format` | token | ❌ não |
-| POST | `/api/chat`, `/api/translate` | token | ❌ não |
-| POST | `/api/transcriptions/:id/enhance` | token | T-18: aprimora o texto (correção/concordância/estrutura) via LLM; custo em tokens |
-| GET | `/api/transcriptions/:id/analyses` | token | T-18: histórico de aprimoramentos |
+| GET | `/api/export/:id/:format` | token | ✅ dono |
+| GET | `/uploads/:file` | token (aceita `?token=` para `<audio>`) | ✅ valida dono via `file_path` no banco; fora de escopo → 404 |
+| POST | `/api/chat`, `/api/translate` | token | ✅ valida `transcription_id` do body quando enviado |
+| POST | `/api/transcriptions/:id/enhance` | token | ✅ dono — T-18: aprimora o texto via LLM; custo em tokens |
+| GET | `/api/transcriptions/:id/analyses` | token | ✅ dono — T-18: histórico de aprimoramentos |
 | GET | `/api/glossary` | token | T-18: dicionário de correções |
 | POST/DELETE | `/api/admin/glossary(/:id)` | token + `requireAdmin` | T-18: CRUD do dicionário |
 | GET | `/api/openrouter/models`, `/api/settings` | pública | — |
