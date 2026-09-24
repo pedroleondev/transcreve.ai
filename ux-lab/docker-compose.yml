@@ -1,0 +1,45 @@
+# Laboratório paralelo do TranscreveAI — testa branches SEM tocar o SaaS de produção.
+#
+# O que isola do ambiente de produção (docker-compose.yml da raiz):
+#   - porta 3001 (produção fica na 3000)
+#   - banco turboscribe.sqlite e uploads/ PRÓPRIOS, nesta pasta
+#   - containers com nome transcreveai-ux-* (nunca conflitam com os de produção)
+#
+# Como usar:
+#   docker-compose -f ux-lab/docker-compose.yml up -d --build   # 1ª vez (build)
+#   docker-compose -f ux-lab/docker-compose.yml up -d           # depois
+#   docker-compose -f ux-lab/docker-compose.yml down            # derrubar o lab
+#
+# Acesse http://192.168.1.3:3001
+#
+# ATENÇÃO (bind-mount): o código servido vem da pasta do repositório, que é a
+# MESMA que a produção monta. Trocar de branch (git checkout) troca na hora o
+# que AMBOS servem — para arquivos estáticos (index.html/app.js) é instantâneo,
+# sem restart. Se a branch mexer em server.js, reinicie: docker-compose restart.
+services:
+  transcreveai-ux:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: transcreveai-ux
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      # Segredos DEDICADOS do lab — se vazarem, não afetam a produção.
+      # Pode sobrescrever criando ux-lab/.env (não versionado).
+      - JWT_SECRET=${UX_JWT_SECRET:-transcreveai_ux_lab_jwt_secret_2026}
+      - APP_SECRET_KEY=${UX_APP_SECRET_KEY:-transcreveai_ux_lab_app_secret_32c!}
+      - OPENROUTER_API_KEY=${UX_OPENROUTER_API_KEY:-}
+    volumes:
+      - ..:/app
+      - /app/node_modules
+      - ./turboscribe.sqlite:/app/turboscribe.sqlite
+      - ./uploads:/app/uploads
+    networks:
+      - ux-lab
+
+networks:
+  ux-lab:
+    driver: bridge
