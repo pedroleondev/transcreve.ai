@@ -84,7 +84,7 @@ async function main() {
     await shot(`${s.label}-1-login.png`);
 
     // injeta token e recarrega -> dashboard
-    await evalJs(`localStorage.setItem('turboscribe_token', ${JSON.stringify(token)}); location.reload(); 'ok'`);
+    await evalJs(`localStorage.setItem('turboscribe_token', ${JSON.stringify(token)}); location.href='/?nocache='+Date.now(); 'ok'`);
     await sleep(2500);
     await shot(`${s.label}-2-dashboard.png`);
 
