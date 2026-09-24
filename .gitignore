@@ -24,3 +24,6 @@ turboscribe.sqlite-shm
 
 # CA e certificados locais (contem chave privada da CA - NUNCA versionar)
 certs/
+
+# Backups locais do banco/uploads (gerados via tar - ver docs/INSTALL.md secao 7)
+backups/
