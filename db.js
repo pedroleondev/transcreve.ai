@@ -55,7 +55,14 @@ function allAsync(sql, params = []) {
 
 // Inicializar Esquema de Tabelas
 async function initDatabase() {
-  await runAsync('PRAGMA journal_mode=WAL');
+  // 25/09: journal_mode=DELETE (era WAL). O banco vive em bind-mount Windows
+  // (Docker Desktop gRPC-FUSE), onde WAL+mmap corrompe a imagem em shutdown
+  // abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Em DELETE mode as
+  // escritas são sequenciais e o fs tolera; busy_timeout protege os readers
+  // durante o lock do writer. A migração do banco para volume nomeado
+  // (WAL-safe) fica como task de infra.
+  await runAsync('PRAGMA journal_mode=DELETE');
+  await runAsync('PRAGMA busy_timeout=5000');
   try {
     // 0. Migração de Folders para Projects se necessário
     const foldersTableExists = await getAsync(`SELECT name FROM sqlite_master WHERE type='table' AND name='folders'`);

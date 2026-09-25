@@ -29,6 +29,7 @@ graph TD
 **Decisão:** arquivo único `turboscribe.sqlite`, sem `PRAGMA journal_mode=WAL`.
 **Por quê:** zero infraestrutura de banco, backup é copiar um arquivo.
 **Tradeoff aceito:** escritas concorrentes (worker atualizando `progress` + usuários escrevendo) arriscam `SQLITE_BUSY` sob carga. Sem índices em `transcriptions.user_id/status` nem `segments.transcription_id` — cada poll da fila é um full scan.
+**Incidente 25/09:** WAL sobre bind-mount Windows corrompeu a imagem (SQLITE_CORRUPT) no shutdown abrupto do Docker Desktop. Recuperado com `.recover` (97 transcrições do dono preservadas, 2 termos de glossário e 6 análises de IA órfãs). Journal mode trocado para DELETE + `busy_timeout=5000` em `db.js`. A saída definitiva é o banco em volume nomeado (T-24).
 **Quando revisitar:** antes de qualquer teste de carga com múltiplos usuários reais simultâneos (ver [MULTIUSER.md](MULTIUSER.md) §5).
 
 ### 3. Auth com fallback silencioso para admin (T-01, fechado em 22/09/2026)
@@ -36,6 +37,7 @@ graph TD
 **Por quê:** conveniência de desenvolvimento local single-tenant (uso original do sistema — só o dono operando).
 **Estado atual (T-01):** o fallback foi removido — requisição sem token válido recebe 401; senhas mestras hardcoded saíram do login; há rate limit de senha na troca de chave de API. Era o bloqueador de segurança nº 1 (ver [MULTIUSER.md](MULTIUSER.md) §B-01/B-02); validado por `test_suite.js` (79/79) e fase A do `load_multiuser.js` (6/6).
 **Correção 24/09:** `requireAdmin` deixou de confiar no `role` congelado no JWT (30d de expiração) e passa a ler `role`/`status` do banco a cada request. Sem isso, uma promoção a admin só valia após novo login (painel SaaS exibia `undefined` nas métricas com token antigo) e um admin rebaixado/suspenso mantia poder até o token expirar. Suspensão e rebaixamento passam a valer imediatamente.
+**Correção 25/09:** o mesmo vale para `authenticateToken` — toda request autenticada valida `status`/`role` no banco (1 SELECT; custo irrelevante no scale atual). Usuário suspenso é cortado em todas as rotas, não só nas de admin; promoção a admin vale sem novo login.
 
 ### 4. Queries filtradas por `user_id` (T-02, fechado em 24/09/2026)
 **Decisão original:** todas as rotas de dados (`/api/projects`, `/api/transcriptions`, `/api/export`) liam/escreviam sem cláusula `WHERE user_id = ?`, embora a coluna existisse e fosse gravada.

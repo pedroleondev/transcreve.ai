@@ -105,6 +105,12 @@ app.get('/languages.js', (req, res) => res.sendFile(path.join(__dirname, 'servic
 // Middleware de Autenticação JWT
 // Aceita Authorization: Bearer <token> (API/padrão) ou ?token= (elementos de
 // mídia como <audio>, que não enviam header — T-02).
+//
+// VALIDAÇÃO DE CONTA A CADA REQUEST (25/09): após verificar a assinatura do
+// JWT, o middleware lê role/status FRESH do banco. Sem isso, um usuário
+// suspenso (T-23) continuava usando a API normal até o token expirar (30d),
+// e um usuário promovido a admin só ganhava o escopo ampliado após novo
+// login. Suspenso ou deletado = 403 imediato, em qualquer rota.
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = (authHeader && authHeader.split(' ')[1]) || (typeof req.query.token === 'string' ? req.query.token : null);
@@ -113,30 +119,30 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Acesso negado. Token de autenticação não fornecido.' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) return res.status(403).json({ error: 'Sessão inválida ou expirada.' });
-    req.user = user;
-    next();
+    try {
+      const row = await getAsync(`SELECT role, status FROM users WHERE id = ?`, [user.id]);
+      if (!row) return res.status(403).json({ error: 'Conta não encontrada.' });
+      if (row.status !== 'active') {
+        return res.status(403).json({ error: 'Conta suspensa. Contate o administrador.' });
+      }
+      req.user = { ...user, role: row.role };
+      next();
+    } catch (e) {
+      res.status(500).json({ error: 'Falha ao validar sessão.' });
+    }
   });
 }
 
-// Middleware de Verificação de Admin — role SEMPRE lido do banco, nunca do JWT.
-// O JWT congela o papel no login (30d); sem isso, um admin rebaixado/suspenso
-// mantém poder de admin até o token expirar, e uma promoção só valeria após
-// novo login (bug real: painel SaaS exibia "undefined" nas métricas).
-async function requireAdmin(req, res, next) {
-  try {
-    const user = await getAsync(`SELECT role, status FROM users WHERE id = ?`, [req.user.id]);
-    if (!user || user.status !== 'active') {
-      return res.status(403).json({ error: 'Conta inativa ou inexistente.' });
-    }
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: 'Acesso restrito a Administradores do SaaS.' });
-    }
-    req.user.role = user.role;
+// Middleware de Verificação de Admin. O role JÁ vem fresco do banco via
+// authenticateToken (que também garante status='active'), então aqui basta
+// conferir o papel — sem nova query.
+function requireAdmin(req, res, next) {
+  if (req.user && req.user.role === 'admin') {
     next();
-  } catch (e) {
-    res.status(500).json({ error: 'Falha ao validar permissão de administrador.' });
+  } else {
+    res.status(403).json({ error: 'Acesso restrito a Administradores do SaaS.' });
   }
 }
 

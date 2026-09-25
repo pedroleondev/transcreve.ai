@@ -104,11 +104,14 @@ Todas as rotas em `server.js`, prefixo `/api`.
 volumes:
   - .:/app                                  # bind-mount de código (hot reload de .js)
   - /app/node_modules                       # anonymous volume, preserva deps da imagem
-  - ./turboscribe.sqlite:/app/turboscribe.sqlite
   - ./uploads:/app/uploads
 ```
 
 O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Dockerfile` → `docker compose build`. Mudou só `.js` → `docker compose restart transcreveai`. Detalhe em [pipeline.md](../pipeline.md).
+
+⚠️ **Nunca usar bind de arquivo único** (`./turboscribe.sqlite:/app/turboscribe.sqlite`): se o arquivo for substituído no host (backup restore, mv/cp), o container segue o inode antigo e abre nada (SQLITE_CANTOPEN). O banco resolve pelo bind do diretório (`.:/app`).
+
+**Journal mode = DELETE (desde 25/09; era WAL).** WAL faz mmap de `-wal`/`-shm`, e o bind-mount Windows do Docker Desktop (gRPC-FUSE) corrompe a imagem em shutdown abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Custo: um writer por vez (mitigado por `busy_timeout=5000`; o worker já é serial). A migração do banco para volume nomeado (WAL-safe) está no backlog (T-24).
 
 ## Limites técnicos conhecidos
 

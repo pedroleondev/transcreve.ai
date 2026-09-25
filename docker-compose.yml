@@ -15,7 +15,6 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - ./turboscribe.sqlite:/app/turboscribe.sqlite
       - ./uploads:/app/uploads
     # Roteamento fica no Traefik via arquivo (traefik/dynamic.yml) — ver
     # comentário no serviço traefik abaixo.
@@ -32,7 +31,7 @@ services:
     ports:
       - "80:80"      # HTTP -> redirect 308 para HTTPS
       - "443:443"    # HTTPS (certificado local em certs/)
-      - "8080:8080"  # dashboard do Traefik
+      - "8088:8080"  # dashboard do Traefik (8080 fica com o ma-manager)
     volumes:
       - ./traefik:/etc/traefik:ro
       - ./certs:/certs:ro
