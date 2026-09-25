@@ -120,12 +120,23 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Middleware de Verificação de Admin
-function requireAdmin(req, res, next) {
-  if (req.user && req.user.role === 'admin') {
+// Middleware de Verificação de Admin — role SEMPRE lido do banco, nunca do JWT.
+// O JWT congela o papel no login (30d); sem isso, um admin rebaixado/suspenso
+// mantém poder de admin até o token expirar, e uma promoção só valeria após
+// novo login (bug real: painel SaaS exibia "undefined" nas métricas).
+async function requireAdmin(req, res, next) {
+  try {
+    const user = await getAsync(`SELECT role, status FROM users WHERE id = ?`, [req.user.id]);
+    if (!user || user.status !== 'active') {
+      return res.status(403).json({ error: 'Conta inativa ou inexistente.' });
+    }
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso restrito a Administradores do SaaS.' });
+    }
+    req.user.role = user.role;
     next();
-  } else {
-    res.status(403).json({ error: 'Acesso restrito a Administradores do SaaS.' });
+  } catch (e) {
+    res.status(500).json({ error: 'Falha ao validar permissão de administrador.' });
   }
 }
 

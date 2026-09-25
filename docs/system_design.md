@@ -35,6 +35,7 @@ graph TD
 **Decisão original:** `authenticateToken` tratava requisição sem header `Authorization` como usuário admin local.
 **Por quê:** conveniência de desenvolvimento local single-tenant (uso original do sistema — só o dono operando).
 **Estado atual (T-01):** o fallback foi removido — requisição sem token válido recebe 401; senhas mestras hardcoded saíram do login; há rate limit de senha na troca de chave de API. Era o bloqueador de segurança nº 1 (ver [MULTIUSER.md](MULTIUSER.md) §B-01/B-02); validado por `test_suite.js` (79/79) e fase A do `load_multiuser.js` (6/6).
+**Correção 24/09:** `requireAdmin` deixou de confiar no `role` congelado no JWT (30d de expiração) e passa a ler `role`/`status` do banco a cada request. Sem isso, uma promoção a admin só valia após novo login (painel SaaS exibia `undefined` nas métricas com token antigo) e um admin rebaixado/suspenso mantia poder até o token expirar. Suspensão e rebaixamento passam a valer imediatamente.
 
 ### 4. Queries filtradas por `user_id` (T-02, fechado em 24/09/2026)
 **Decisão original:** todas as rotas de dados (`/api/projects`, `/api/transcriptions`, `/api/export`) liam/escreviam sem cláusula `WHERE user_id = ?`, embora a coluna existisse e fosse gravada.

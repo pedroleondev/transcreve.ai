@@ -86,7 +86,7 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET | `/api/glossary` | token | T-18: dicionário de correções |
 | POST/DELETE | `/api/admin/glossary(/:id)` | token + `requireAdmin` | T-18: CRUD do dicionário |
 | GET | `/api/openrouter/models`, `/api/settings` | pública | — |
-| GET/POST/PUT/DELETE | `/api/admin/*` | token + `requireAdmin` | — |
+| GET/POST/PUT/DELETE | `/api/admin/*` | token + `requireAdmin` (role/status lidos do banco a cada request — promoção/suspensão valem na hora, sem novo login) | — |
 
 ## Configuração e segredos
 

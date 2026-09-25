@@ -1775,11 +1775,12 @@ async function loadAdminMetrics() {
     const res = await fetch('/api/admin/metrics', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
-    const data = await res.json();
-    document.getElementById('metric-users').innerText = data.users_total;
-    document.getElementById('metric-hours').innerText = data.hours_transcribed + 'h';
-    document.getElementById('metric-storage').innerText = data.storage_used_mb + ' MB';
-    document.getElementById('metric-apikeys').innerText = data.active_api_keys;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    document.getElementById('metric-users').innerText = data.users_total ?? '—';
+    document.getElementById('metric-hours').innerText = (data.hours_transcribed ?? '—') + 'h';
+    document.getElementById('metric-storage').innerText = (data.storage_used_mb ?? '—') + ' MB';
+    document.getElementById('metric-apikeys').innerText = data.active_api_keys ?? '—';
   } catch (e) {
     console.error('Erro ao carregar métricas:', e);
   }
