@@ -34,10 +34,11 @@
 | T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
 | T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
 | T-23 | Gestão de usuários (admin cria usuários e admins) | 🔴 P0 | DONE |
+| T-24 | JEV (juiz de validação) no aprimoramento — viabilidade e desenho | 🟠 P1 | TODO |
 
 **Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
 T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
-**Restante (atualizado 24/09):** T-02 e T-03 DONE (fundação multiusuário entregue). Próximas: T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
+**Restante (atualizado 25/09):** T-02 e T-03 DONE (fundação multiusuário entregue). Próximas: T-24 (JEV — análise/viabilidade) · T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
 
 ---
 
@@ -585,6 +586,23 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 - `tests/t23_user_management.js` (banco isolado via `DB_PATH`, provedor mock, custo zero): **25/25 PASS** — 401 sem token, 403 como user, 400 e-mail/senha/role inválidos, 409 duplicata, login imediato do novo usuário, lista sem `password_hash`, promoção refletida no `/api/auth/me`, auto-rebaixamento/auto-suspensão → 400, 404 inexistente, reset de senha (antiga para de funcionar, nova funciona).
 - Deploy: container reiniciado (bind-mount, só `.js`/`.html`); `pedro.leon23@gmail.com` promovido a `admin` via SQL no banco de produção (1 linha afetada).
 - Estado alterado para DONE.
+
+---
+
+### T-24 — JEV (juiz de validação) no aprimoramento — análise e viabilidade
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-18 (done), T-15 (done — chave OpenRouter configurável via painel)
+**Por quê:** o aprimoramento (T-18) é uma única passada de LLM sem validação: o que o modelo devolve vai direto para o usuário (`server.js:604-646`). Um JEV — modelo juiz também via OpenRouter — avaliaria o resultado antes da entrega. Potencial: trocar o gerador por um modelo mais barato (economia de tokens) mantendo a precisão, e reduzir entregas ruins ao usuário (o juiz reprova e dispara retry com feedback). Mas cada chamada extra custa — sem recursos abundantes, a viabilidade precisa ser provada com números antes de qualquer implementação.
+**Contexto:** fluxo atual do enhance: `POST /api/transcriptions/:id/enhance` → lê `analysis_model`/`analysis_prompt` de `system_settings` → monta chunk de ~12.000 chars com glossário (`splitTextIntoChunks`, `buildEnhanceUserContent`) → `runAnalysisChat` (um LLM, sem segundo par) → persiste em `ai_analyses` (com `tokens_in`/`tokens_out` reais — base de custo da análise) → resposta. Candidatos a etapa JEV: (a) após a geração de cada chunk; (b) após o resultado final; (c) `POST /api/chat` e `/api/translate` (mesmo padrão de chamada única). Não existe hoje etapa de validação em nenhuma delas.
+**Toca:** nada em código nesta task — análise e desenho apenas. Implementação, se aprovada, vira T-25+.
+**Aceite:**
+- [ ] Mapa das etapas do pipeline de aprimoramento (e de chat/translate) com o ponto de inserção do JEV desenhado e justificado — onde entra, o que recebe, o que devolve
+- [ ] Números reais de custo: média de `tokens_in`/`tokens_out` por aprimoramento em `ai_analyses` (produção) vs. projeção gerador-mais-barato + juiz; economia estimada em % e em US$
+- [ ] Prompt do juiz desenhado (critérios objetivos: fidelidade ao texto original — nada inventado, aplicação do glossário, estrutura, concordância) + modelo do juiz selecionável no painel admin (mesmo padrão de `analysis_model`)
+- [ ] Estratégia de retry definida: limite de tentativas, o que acontece se o juiz reprovar tudo (entrega com aviso? erro explícito? — sem texto inventado)
+- [ ] Decisão **go/no-go** registrada com motivo: se go, especificação pronta para virar T-25; se no-go, o motivo (ex.: custo do juiz > economia do gerador barato)
+- [ ] Análise de precisão: como medir se o JEV melhora a entrega (amostra real de aprimoramentos avaliada antes/depois)
+
+**Evidência:** _(preencher)_
 
 ---
 
