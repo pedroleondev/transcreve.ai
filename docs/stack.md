@@ -81,7 +81,7 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET | `/api/export/:id/:format` | token | ✅ dono |
 | GET | `/uploads/:file` | token (aceita `?token=` para `<audio>`) | ✅ valida dono via `file_path` no banco; fora de escopo → 404 |
 | POST | `/api/chat`, `/api/translate` | token | ✅ valida `transcription_id` do body quando enviado |
-| POST | `/api/transcriptions/:id/enhance` | token | ✅ dono — T-18: aprimora o texto via LLM; custo em tokens |
+| POST | `/api/transcriptions/:id/enhance` | token | ✅ dono — T-18 aprimora o texto via LLM; **T-25: juiz (JEV) valida cada chunk antes da entregar** (1 retry com feedback se reprovar; `judge_model`/`judge_enabled` no admin); custo em tokens |
 | GET | `/api/transcriptions/:id/analyses` | token | ✅ dono — T-18: histórico de aprimoramentos |
 | GET | `/api/glossary` | token | T-18: dicionário de correções |
 | POST/DELETE | `/api/admin/glossary(/:id)` | token + `requireAdmin` | T-18: CRUD do dicionário |

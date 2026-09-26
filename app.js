@@ -2171,6 +2171,9 @@ async function loadAdminSettingsForm() {
     // T-18: análise/aprimoramento IA
     document.getElementById('admin-setting-analysis-model').value = s.analysis_model || 'openai/gpt-4o-mini';
     document.getElementById('admin-setting-analysis-prompt').value = s.analysis_prompt || '';
+    // T-25: JEV — juiz de validação (default: ativado)
+    document.getElementById('admin-setting-judge-model').value = s.judge_model || 'openai/gpt-4o-mini';
+    document.getElementById('admin-setting-judge-enabled').checked = s.judge_enabled !== '0';
     loadGlossary();
   } catch (e) {
     console.error('Erro ao carregar configurações admin:', e);
@@ -2197,7 +2200,7 @@ async function enhanceTranscription() {
     if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
     box.classList.remove('hidden');
     textEl.innerText = data.analysis.result_md;
-    metaEl.innerText = `${data.analysis.model} • ${data.analysis.tokens_in + data.analysis.tokens_out} tokens`;
+    metaEl.innerText = `${data.analysis.model} • ${data.analysis.tokens_in + data.analysis.tokens_out} tokens${judgeMetaSuffix(data.analysis)}`;
     if (window.lucide) lucide.createIcons();
   } catch (e) {
     alert('Falha ao aprimorar: ' + e.message);
@@ -2205,6 +2208,23 @@ async function enhanceTranscription() {
     btn.disabled = false;
     btn.querySelector('span span').innerText = 'Aprimorar com IA (corrigir & estruturar)';
   }
+}
+
+// T-25: sufixo de métricas com o veredicto do juiz (resposta do enhance
+// tem `judge` em objeto; linhas do histórico têm judge_approved/judge_model).
+function judgeMetaSuffix(a) {
+  const judgeObj = a.judge || null;
+  const approved = judgeObj
+    ? judgeObj.approved
+    : (a.judge_approved === null || a.judge_approved === undefined ? null : !!a.judge_approved);
+  if (approved === null) return '';
+  const model = (judgeObj && judgeObj.model) || a.judge_model || '';
+  const label = approved ? '✓ Aprovado pelo juiz' : '⚠ Juiz recomenda revisão';
+  const parts = [label + (model ? ` (${model})` : '')];
+  if ((a.attempts || 1) > 1) parts.push(`${a.attempts} tentativas`);
+  const issues = (judgeObj && judgeObj.issues) || [];
+  if (!approved && issues.length) parts.push(issues[0]);
+  return ' • ' + parts.join(' • ');
 }
 
 async function loadLatestEnhancement(transcriptionId) {
@@ -2221,7 +2241,7 @@ async function loadLatestEnhancement(transcriptionId) {
     const latest = rows[0];
     box.classList.remove('hidden');
     document.getElementById('enhance-text').innerText = latest.result_md;
-    document.getElementById('enhance-meta').innerText = `${latest.model} • ${latest.tokens_in + latest.tokens_out} tokens`;
+    document.getElementById('enhance-meta').innerText = `${latest.model} • ${latest.tokens_in + latest.tokens_out} tokens${judgeMetaSuffix(latest)}`;
   } catch (e) { /* silencioso: resultado anterior é opcional */ }
 }
 
@@ -2304,7 +2324,9 @@ async function saveAdminSettings(e) {
     pro_enabled: document.getElementById('admin-setting-pro-enabled').checked ? 'true' : 'false',
     max_enabled: document.getElementById('admin-setting-max-enabled').checked ? 'true' : 'false',
     analysis_model: document.getElementById('admin-setting-analysis-model').value,
-    analysis_prompt: document.getElementById('admin-setting-analysis-prompt').value
+    analysis_prompt: document.getElementById('admin-setting-analysis-prompt').value,
+    judge_model: document.getElementById('admin-setting-judge-model').value,
+    judge_enabled: document.getElementById('admin-setting-judge-enabled').checked ? '1' : '0'
   };
 
   try {

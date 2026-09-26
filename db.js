@@ -254,6 +254,16 @@ async function initDatabase() {
     `);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_analyses_transcription ON ai_analyses(transcription_id, created_at)`);
 
+    // 8b. T-25: JEV — veredicto do juiz de validação por aprimoramento
+    const analysisColumns = await allAsync('PRAGMA table_info(ai_analyses)');
+    if (!analysisColumns.some(col => col.name === 'judge_model')) {
+      console.log('Adicionando colunas do JEV na tabela "ai_analyses"...');
+      await runAsync(`ALTER TABLE ai_analyses ADD COLUMN judge_model TEXT`);
+      await runAsync(`ALTER TABLE ai_analyses ADD COLUMN judge_approved INTEGER`);
+      await runAsync(`ALTER TABLE ai_analyses ADD COLUMN judge_feedback TEXT`);
+      await runAsync(`ALTER TABLE ai_analyses ADD COLUMN attempts INTEGER DEFAULT 1`);
+    }
+
     // 9. T-18: Dicionário de correções (glossário) aplicado no aprimoramento
     await runAsync(`
       CREATE TABLE IF NOT EXISTS glossary (

@@ -12,6 +12,7 @@ const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db'
 const { transcribeAudioFile, generateChatCompletion, runAnalysisChat, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
 const { isValidLanguage } = require('./services/languages');
 const { DEFAULT_ENHANCE_SYSTEM_PROMPT, buildEnhanceUserContent, splitTextIntoChunks, PROMPT_VERSION } = require('./services/prompts');
+const { enhanceWithJudge } = require('./services/judge');
 const secrets = require('./services/secrets');
 const { queuePositionSql } = require('./services/queue');
 const { saveTranscriptSegments } = require('./services/transcript-editor');
@@ -589,7 +590,8 @@ app.get('/api/transcriptions/:id/analyses', authenticateToken, async (req, res) 
     const owned = await ownedTranscription(req.params.id, scopeOf(req));
     if (!owned) return res.status(404).json({ error: 'Transcrição não encontrada.' });
     const rows = await allAsync(
-      `SELECT id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at
+      `SELECT id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at,
+              judge_model, judge_approved, judge_feedback, attempts
        FROM ai_analyses WHERE transcription_id = ? ORDER BY created_at DESC`,
       [req.params.id]
     );
@@ -615,29 +617,36 @@ app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) 
     settings.forEach(s => settingsMap[s.key] = s.value);
     const systemPrompt = (settingsMap.analysis_prompt || '').trim() || DEFAULT_ENHANCE_SYSTEM_PROMPT;
     const model = (settingsMap.analysis_model || '').trim() || 'openai/gpt-4o-mini';
+    // T-25 (JEV): juiz de validação — modelos configuráveis no painel admin.
+    // Desligado explicitamente com judge_enabled='0' (fluxo T-18 puro).
+    const judgeEnabled = (settingsMap.judge_enabled || '1').trim() !== '0';
+    const judgeModel = (settingsMap.judge_model || '').trim() || 'openai/gpt-4o-mini';
 
     const glossary = await allAsync(`SELECT wrong, correct FROM glossary ORDER BY wrong`);
     const glossaryJson = JSON.stringify(glossary);
 
-    const chunks = splitTextIntoChunks(sourceText, 12000);
-    const results = [];
-    let tokensIn = 0, tokensOut = 0;
-    for (const chunk of chunks) {
-      const userContent = buildEnhanceUserContent(chunk, glossary);
-      const r = await runAnalysisChat({ systemPrompt, userContent, model });
-      results.push(r.content);
-      tokensIn += r.tokens_in;
-      tokensOut += r.tokens_out;
-    }
+    const chunks = splitTextIntoChunks(sourceText, 12000).map((original, index) => ({
+      index,
+      original,
+      userContent: buildEnhanceUserContent(original, glossary)
+    }));
+
+    // T-25: geração + validação do juiz (retry com feedback se reprovar).
+    const generate = async (userContent) => runAnalysisChat({ systemPrompt, userContent, model });
+    const { results, tokensIn, tokensOut, attempts, judge } = await enhanceWithJudge({
+      chunks, generate, glossary, judgeModel, judgeEnabled
+    });
     const resultText = results.join('\n\n');
 
     const analysisId = uuidv4();
     await runAsync(
-      `INSERT INTO ai_analyses (id, transcription_id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, created_at)
-       VALUES (?, ?, 'enhance', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [analysisId, req.params.id, model, systemPrompt, glossaryJson, resultText, tokensIn, tokensOut]
+      `INSERT INTO ai_analyses (id, transcription_id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, judge_model, judge_approved, judge_feedback, attempts, created_at)
+       VALUES (?, ?, 'enhance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [analysisId, req.params.id, model, systemPrompt, glossaryJson, resultText, tokensIn, tokensOut,
+       judgeEnabled ? judgeModel : null, judge ? (judge.approved ? 1 : 0) : null,
+       judge && judge.issues.length ? JSON.stringify(judge.issues) : null, attempts]
     );
-    res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION } });
+    res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION, attempts, judge } });
   } catch (e) {
     console.error('[T-18 Enhance Error]', e);
     // Sem texto inventado: falha de API/LLM retorna erro explícito, nada é persistido.

@@ -703,6 +703,21 @@
                   </datalist>
                   <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Modelo usado no "Aprimorar com IA". Os 5 acima são os mais baratos/eficientes para revisão de texto.</p>
                 </div>
+                <!-- T-25: JEV — juiz de validação -->
+                <div class="border-t border-violet-200 dark:border-violet-800 pt-3 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="font-bold text-violet-900 dark:text-violet-300 text-xs flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Juiz de Validação (JEV)</span>
+                    <label class="flex items-center gap-2 text-[11px] font-bold text-brand-copy dark:text-brand-copy cursor-pointer">
+                      <input type="checkbox" id="admin-setting-judge-enabled" checked class="w-4 h-4 accent-violet-600">
+                      Ativado
+                    </label>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-brand-copy dark:text-brand-copy mb-1">Modelo do juiz (OpenRouter)</label>
+                    <input type="text" id="admin-setting-judge-model" value="openai/gpt-4o-mini" list="analysis-model-suggestions" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono">
+                    <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">O juiz avalia cada trecho aprimorado antes de entregar: fidelidade ao original, glossário aplicado, estrutura e idioma. Se reprovar, a IA refaz o trecho com a crítica (1 retry). Permite usar um modelo de análise mais barato sem perder qualidade.</p>
+                  </div>
+                </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
                     <label class="text-[11px] font-bold text-brand-copy dark:text-brand-copy">System prompt do aprimoramento</label>
@@ -1246,6 +1261,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.7.0"></script>
+  <script src="app.js?v=3.8.0"></script>
 </body>
 </html>

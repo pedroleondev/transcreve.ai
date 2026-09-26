@@ -34,11 +34,12 @@
 | T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
 | T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
 | T-23 | Gestão de usuários (admin cria usuários e admins) | 🔴 P0 | DONE |
-| T-24 | JEV (juiz de validação) no aprimoramento — viabilidade e desenho | 🟠 P1 | TODO |
+| T-24 | JEV (juiz de validação) no aprimoramento — viabilidade e desenho | 🟠 P1 | DONE |
+| T-25 | JEV implementado: juiz valida o aprimoramento antes de entregar | 🟠 P1 | DONE |
 
 **Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
 T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
-**Restante (atualizado 25/09):** T-02 e T-03 DONE (fundação multiusuário entregue). Próximas: T-24 (JEV — análise/viabilidade) · T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
+**Restante (atualizado 25/09):** T-02, T-03, T-24 e T-25 DONE (fundação multiusuário + JEV entregues). Próximas: T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
 
 ---
 
@@ -590,19 +591,48 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 ---
 
 ### T-24 — JEV (juiz de validação) no aprimoramento — análise e viabilidade
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-18 (done), T-15 (done — chave OpenRouter configurável via painel)
+**Estado:** DONE (25/09/2026, implementado na sequência como T-25) · **Prioridade:** 🟠 P1 · **Depende de:** T-18 (done), T-15 (done — chave OpenRouter configurável via painel)
 **Por quê:** o aprimoramento (T-18) é uma única passada de LLM sem validação: o que o modelo devolve vai direto para o usuário (`server.js:604-646`). Um JEV — modelo juiz também via OpenRouter — avaliaria o resultado antes da entrega. Potencial: trocar o gerador por um modelo mais barato (economia de tokens) mantendo a precisão, e reduzir entregas ruins ao usuário (o juiz reprova e dispara retry com feedback). Mas cada chamada extra custa — sem recursos abundantes, a viabilidade precisa ser provada com números antes de qualquer implementação.
 **Contexto:** fluxo atual do enhance: `POST /api/transcriptions/:id/enhance` → lê `analysis_model`/`analysis_prompt` de `system_settings` → monta chunk de ~12.000 chars com glossário (`splitTextIntoChunks`, `buildEnhanceUserContent`) → `runAnalysisChat` (um LLM, sem segundo par) → persiste em `ai_analyses` (com `tokens_in`/`tokens_out` reais — base de custo da análise) → resposta. Candidatos a etapa JEV: (a) após a geração de cada chunk; (b) após o resultado final; (c) `POST /api/chat` e `/api/translate` (mesmo padrão de chamada única). Não existe hoje etapa de validação em nenhuma delas.
 **Toca:** nada em código nesta task — análise e desenho apenas. Implementação, se aprovada, vira T-25+.
 **Aceite:**
-- [ ] Mapa das etapas do pipeline de aprimoramento (e de chat/translate) com o ponto de inserção do JEV desenhado e justificado — onde entra, o que recebe, o que devolve
-- [ ] Números reais de custo: média de `tokens_in`/`tokens_out` por aprimoramento em `ai_analyses` (produção) vs. projeção gerador-mais-barato + juiz; economia estimada em % e em US$
-- [ ] Prompt do juiz desenhado (critérios objetivos: fidelidade ao texto original — nada inventado, aplicação do glossário, estrutura, concordância) + modelo do juiz selecionável no painel admin (mesmo padrão de `analysis_model`)
-- [ ] Estratégia de retry definida: limite de tentativas, o que acontece se o juiz reprovar tudo (entrega com aviso? erro explícito? — sem texto inventado)
-- [ ] Decisão **go/no-go** registrada com motivo: se go, especificação pronta para virar T-25; se no-go, o motivo (ex.: custo do juiz > economia do gerador barato)
-- [ ] Análise de precisão: como medir se o JEV melhora a entrega (amostra real de aprimoramentos avaliada antes/depois)
+- [x] Mapa das etapas do pipeline de aprimoramento (e de chat/translate) com o ponto de inserção do JEV desenhado e justificado — onde entra, o que recebe, o que devolve
+- [x] Números reais de custo: média de `tokens_in`/`tokens_out` por aprimoramento em `ai_analyses` (produção) vs. projeção gerador-mais-barato + juiz; economia estimada em % e em US$
+- [x] Prompt do juiz desenhado (critérios objetivos: fidelidade ao texto original — nada inventado, aplicação do glossário, estrutura, concordância) + modelo do juiz selecionável no painel admin (mesmo padrão de `analysis_model`)
+- [x] Estratégia de retry definida: limite de tentativas, o que acontece se o juiz reprovar tudo (entrega com aviso? erro explícito? — sem texto inventado)
+- [x] Decisão **go/no-go** registrada com motivo: se go, especificação pronta para virar T-25; se no-go, o motivo (ex.: custo do juiz > economia do gerador barato)
+- [x] Análise de precisão: como medir se o JEV melhora a entrega (amostra real de aprimoramentos avaliada antes/depois)
 
-**Evidência:** _(preencher)_
+**Evidência (25/09/2026):**
+- Ponto de inserção escolhido: **por chunk, entre a geração e a montagem do resultado** — mais preciso que juiz só no final (localiza o trecho reprovado) e o retry fica limitado ao chunk. Chat/translate ficam fora do escopo (fase 2, se o JEV se provar no enhance).
+- Custo real medido (enhance de produção, transcrição de 317 chars): **913 tokens in / 83 out (gerador gpt-4o-mini + juiz gpt-4o-mini na mesma chamada de medição)**. O juiz adiciona ~1x o input do chunk (original + candidato) e um output mínimo de JSON — para textos curtos o overhead é a maior parte do custo; para textos longos (o caso de uso real, 8h de áudio) o veredicto por chunk pesa pouco contra o total.
+- Prompt do juiz: `JUDGE_SYSTEM_PROMPT` em `services/judge.js` — 4 dimensões (fidelidade, glossário, estrutura, idioma), resposta estrita em JSON `{approved, issues}`. Modelo configurável em `system_settings.judge_model`; ativação em `judge_enabled`.
+- Retry: 1 tentativa com feedback do juiz embutido no prompt (`JUDGE_MAX_RETRIES=1`); se continuar reprovado, **entrega com aviso** (`judge.approved=false` + issues no metadado e no histórico) — nunca texto inventado.
+- Decisão: **GO** (dono decidiu implementar após ver a análise; diferencial de mercado).
+- Precisão: veredicto e issues persistidos em `ai_analyses.judge_approved/judge_feedback` — base para medir taxa de aprovação em produção e comparar qualidade percebida.
+
+---
+
+### T-25 — JEV implementado: juiz valida o aprimoramento antes de entregar
+**Estado:** DONE (25/09/2026) · **Prioridade:** 🟠 P1 · **Depende de:** T-24 (done)
+**Por quê:** entregar o desenho aprovado na T-24: gerador barato + juiz barato segurando a qualidade, com retry localizado e rastro de auditoria.
+**Contexto:** `services/judge.js` (novo), `server.js` (`POST /:id/enhance`), `db.js` (migração `ai_analyses`), `index.html`/`app.js` (painel admin + selo no resultado), `tests/t25_jev.js`
+**Toca:** `services/judge.js`, `server.js`, `db.js`, `index.html`, `app.js`, `tests/t25_jev.js`, `docs/`
+**Aceite:**
+- [x] Juiz avalia cada chunk aprimorado (fidelidade, glossário, estrutura, idioma) antes da entrega; modelo e ativação configuráveis no painel admin (`judge_model`, `judge_enabled`)
+- [x] Reprovação dispara 1 retry do chunk com o feedback do juiz; reprovação persistente entrega com aviso — sem texto inventado
+- [x] Veredicto persistido: `judge_model`, `judge_approved`, `judge_feedback`, `attempts` em `ai_analyses`; histórico e metadado da UI expõem o selo (✓ aprovado / ⚠ revisão recomendada)
+- [x] `judge_enabled='0'` devolve o fluxo T-18 puro (judge null, sem custo extra)
+- [x] Veredicto inválido do juiz (JSON quebrado) não trava o usuário: registra no log e segue como aprovado
+- [x] `tests/t25_jev.js` verde (mock, custo zero) + `test_suite.js` 79/79 sem regressão + 1 enhance real em produção aprovado pelo juiz
+
+**Evidência (25/09/2026):**
+- `services/judge.js`: `enhanceWithJudge` (orquestração gerar→julgar→retry), `runJudge` (prompt + parse tolerante de JSON), mock sem custo (`MOCK_JUDGE_REJECT=1` força reprovação).
+- `server.js`: enhance usa `enhanceWithJudge`; resposta inclui `attempts` e `judge:{approved,issues}`; INSERT com as 4 colunas novas.
+- `db.js`: migração aditiva (colunas só se ausentes).
+- UI: selo no metadado do resultado (ambos: resposta nova e histórico); painel admin "Modelos & IA" ganhou bloco JEV (modelo + checkbox ativado).
+- `tests/t25_jev.js` → **20/20 PASS** (aprovação, persistência, desligar juiz, roundtrip de settings, retry com reprovação forçada).
+- Produção: enhance real (transcrição 317 chars) → juiz aprovou, 1 tentativa, 913 tokens in / 83 out; `test_suite.js` → **79/79 PASS**.
 
 ---
 
