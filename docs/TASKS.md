@@ -16,7 +16,7 @@
 | T-03 | Teste de carga e isolamento com 10 usuários | 🔴 P0 | DONE |
 | T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
 | T-05 | Tema escuro | 🟠 P1 | DONE |
-| T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DOING |
+| T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DONE |
 | T-07 | Aplicar `daily_limit` e limite de upload | 🟡 P2 | TODO |
 | T-08 | Endurecer SQLite (WAL + índices) | 🟡 P2 | TODO |
 | T-09 | Página de Conta do usuário (perfil + trocar senha) | 🟡 P2 | TODO |
