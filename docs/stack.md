@@ -96,6 +96,8 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | `JWT_SECRET` | `.env` / compose | ⚠️ sim — cai em string hardcoded em `server.js:18` e no `docker-compose.yml` |
 | `OPENROUTER_API_KEY` | `.env`, sincronizada para `api_keys` no boot | não |
 | `WORKER_CONCURRENCY` | `.env` | não — default 2; jobs de transcrição processados em paralelo (T-06) |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `.env` / compose | ⚠️ senha tem default de dev — obrigatório trocar em produção (T-08, service `db`) |
+| `DATABASE_URL` | `.env` | usada pelo ETL de migração; sobrescreve as vars POSTGRES_* |
 
 `.env`, `turboscribe.sqlite` e `uploads/` estão no `.gitignore`.
 
@@ -112,7 +114,9 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 
 ⚠️ **Nunca usar bind de arquivo único** (`./turboscribe.sqlite:/app/turboscribe.sqlite`): se o arquivo for substituído no host (backup restore, mv/cp), o container segue o inode antigo e abre nada (SQLITE_CANTOPEN). O banco resolve pelo bind do diretório (`.:/app`).
 
-**Journal mode = DELETE (desde 25/09; era WAL).** WAL faz mmap de `-wal`/`-shm`, e o bind-mount Windows do Docker Desktop (gRPC-FUSE) corrompe a imagem em shutdown abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Custo: um writer por vez (mitigado por `busy_timeout=5000`; o worker já é serial). A migração do banco para volume nomeado (WAL-safe) está no backlog (T-24).
+**Journal mode = DELETE (desde 25/09; era WAL).** WAL faz mmap de `-wal`/`-shm`, e o bind-mount Windows do Docker Desktop (gRPC-FUSE) corrompe a imagem em shutdown abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Custo: um writer por vez (mitigado por `busy_timeout=5000`; o worker já é serial).
+
+**T-08 (28/09): migração para PostgreSQL em andamento.** O problema real não era o WAL — é o writer único do SQLite, que não escala aos 35 mil usuários mirados. Fase 1 entregue: service `db` (postgres:16-alpine, volume nomeado `pgdata`, healthcheck `pg_isready`) no compose e ETL `scripts/migrate-sqlite-to-postgres.js` (fonte READONLY, transação única, validação de contagens, `--dry-run`/`--force`). Fase 2 (driver swap, `DB_DRIVER=postgres`) pendente — o app continua no SQLite até lá. Rollback da migração = seguir apontando para o SQLite; o arquivo nunca é alterado pelo ETL.
 
 ## Limites técnicos conhecidos
 

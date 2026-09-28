@@ -21,6 +21,28 @@ services:
     networks:
       - default
 
+  # T-08: PostgreSQL — banco-alvo da migração (fase 1: ETL validado; o app ainda
+  # roda em SQLite até a fase 2 do driver swap). Volume nomeado: no Linux/KVM2
+  # o WAL do Postgres é seguro, diferente do bind-mount Windows que corrompia
+  # o SQLite. Em dev local, o serviço sobe junto e fica disponível p/ testes.
+  db:
+    image: postgres:16-alpine
+    container_name: transcreveai-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-transcreveai}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-transcreveai_local_dev}
+      - POSTGRES_DB=${POSTGRES_DB:-transcreveai}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
   traefik:
     image: traefik:v3.2
     container_name: transcreveai-traefik
@@ -59,5 +81,6 @@ networks:
   default:
     driver: bridge
 
-# volumes:
-#   portainer_data:
+volumes:
+  pgdata:
+  # portainer_data:

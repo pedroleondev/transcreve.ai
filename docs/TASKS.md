@@ -2,7 +2,7 @@
 
 > Fonte única de verdade do que fazer. Uma tarefa por sessão (ver [WORKFLOW.md](WORKFLOW.md)).
 > Estados: `TODO` · `DOING` · `DONE` · `BLOCKED`
-> Atualizado em 21/09/2026.
+> Atualizado em 28/09/2026 (backlog remodelado na virada SaaS: T-08 redesenhada, T-11 rescopada, T-12/T-14 absorvidas, T-26 a T-33 criadas).
 > **Foco atual (decisão de 14/09):** uso pessoal, sem cota. O sistema é para **gravações longas (8h/dia de trabalho), recebidas por upload**, transcritas com qualidade independente do tamanho, e depois **lidas, editadas e transformadas em informação** (processos, conteúdo, orientação). Gravar pelo navegador não é prioridade. Multiusuário (T-01/T-02/T-03/T-07) continua no backlog, mas não bloqueia.
 >
 > **Paridade-alvo com o concorrente:** arquivos de até 10 h / 5 GB · 50 arquivos por vez · todos os formatos que o ffmpeg lê · 98 idiomas · exportar PDF/DOCX/TXT/SRT/VTT/CSV, em massa · locutores reais · tradução com legendas · sem limite de uso. Cada item está mapeado numa tarefa abaixo.
@@ -17,29 +17,36 @@
 | T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
 | T-05 | Tema escuro | 🟠 P1 | DONE |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DONE |
-| T-07 | Aplicar `daily_limit` e limite de upload | 🟡 P2 | TODO |
-| T-08 | Endurecer SQLite (WAL + índices) | 🟡 P2 | TODO |
-| T-09 | Página de Conta do usuário (perfil + trocar senha) | 🟡 P2 | TODO |
+| T-07 | Cotas e limites de uso (`daily_limit`, max upload/duração), editáveis pelo admin | 🔴 P0 | TODO |
+| T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado, sem perda; troca do driver = fase 2) | 🔴 P0 | DOING |
+| T-09 | Página de Conta (perfil, trocar senha, esqueci senha por e-mail, logs de uso) | 🟠 P1 | TODO |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
-| T-11 | Gravador de voz: waveform, pausar, idioma, transcrever direto | 🟢 P3 | TODO |
-| T-12 | Player fixo no rodapé da tela de detalhe | 🟠 P1 | TODO |
-| T-13 | Baixar áudio original (rota autenticada) + Exportar em massa | 🟠 P1 | TODO |
-| T-14 | UX de modais: Esc/clique fora fecham, foco, sem `prompt()` | 🟢 P3 | TODO |
+| T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | TODO |
+| T-12 | ~~Player fixo no rodapé~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
+| T-13 | Baixar áudio original (rota autenticada) + exportar em massa | 🔴 P0 | TODO |
+| T-14 | ~~UX de modais~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
 | T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | DONE |
 | T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | DONE |
 | T-17 | Layout responsivo: celular e tablet | 🔴 P0 | DONE |
 | T-18 | Aprimoramento de transcrição por IA (correção + estruturação) | 🔴 P0 | DONE |
 | T-19 | Pipeline resiliente para áudios longos (10 h / 5 GB / 50 arquivos) | 🔴 P0 | DONE |
 | T-20 | Formatos e idiomas: aceitar tudo que o ffmpeg lê, 100 idiomas + auto-detecção | 🟠 P1 | DONE |
-| T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟠 P1 | TODO |
-| T-22 | Reconhecimento de locutores **real** (diarização) | 🟠 P1 | TODO |
+| T-21 | Exportar CSV + Ferramenta de Tradução com legendas | 🟢 P3 | TODO |
+| T-22 | Reconhecimento de locutores **real** (diarização) | 🟢 P3 | TODO |
 | T-23 | Gestão de usuários (admin cria usuários e admins) | 🔴 P0 | DONE |
 | T-24 | JEV (juiz de validação) no aprimoramento — viabilidade e desenho | 🟠 P1 | DONE |
 | T-25 | JEV implementado: juiz valida o aprimoramento antes de entregar | 🟠 P1 | DONE |
+| T-26 | MinIO/S3 para arquivos (camada de storage isolada) | 🟡 P2 | TODO |
+| T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | TODO |
+| T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | TODO |
+| T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | TODO |
+| T-30 | API pública + webhooks (tool para LLMs) | 🟡 P2 | TODO |
+| T-31 | MCP server / skills sobre a API | 🟢 P3 | TODO |
+| T-32 | Deploy one-click (compose prod, `.env` documentado, INSTALL) | 🟠 P1 | TODO |
+| T-33 | Gravador de voz (waveform, pausar, idioma) | 🟢 P3 | TODO |
 
-**Ordem de execução (módulos):** **T-19** → T-15 → T-16 → T-17 → T-04 → **T-18** → T-20 → T-22 → T-21 → T-13 → T-12 → T-14 → T-11.
-T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem ele, T-18 não tem o que analisar.
-**Restante (atualizado 25/09):** T-02, T-03, T-24 e T-25 DONE (fundação multiusuário + JEV entregues). Próximas: T-06, T-07, T-08 (capacidade) · T-09, T-14 (UX de conta e modais) · T-11, T-12, T-13, T-21, T-22 (recursos).
+**Ordeiro de execução (remodelado 28/09 — virada SaaS):** **T-08** (Postgres, fundação) → T-07 (cotas) → T-13 (export em massa) → T-28 (landing/cadastro) → T-27 (Asaas) → T-32 (deploy) → T-29 (UX/UI, pode correr em paralelo desde a Fase 1) → T-09 · T-11 · T-30 → T-26 → T-21 · T-22 · T-31 · T-33.
+Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, deploy em KVM2/Portainer. T-08 vai primeiro porque billing, cadastro e API pública todos escrevem no banco — em SQLite seriam `SQLITE_BUSY` na primeira campanha.
 
 ---
 
@@ -181,45 +188,63 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 
 ---
 
-### T-07 — Cotas e limites de upload
-**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** T-01
-**Por quê:** `users.daily_limit` existe no banco e **nunca é consultado**; o Multer aceita arquivo de qualquer tamanho ([MULTIUSER.md](MULTIUSER.md) R-05, R-06).
+### T-07 — Cotas e limites de uso
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01 · **Bloqueia:** T-27 (Asaas cobra por uso)
+**Por quê:** `users.daily_limit` existe no banco e **nunca é consultado**; o Multer aceita arquivo de qualquer tamanho ([MULTIUSER.md](MULTIUSER.md) R-05, R-06). No modelo SaaS, cota é o que transforma plano pago em receita — e o admin precisa ajustar os limites de todos sem tocar no código.
 **Contexto:** `server.js:26-33`, `server.js:228-280`, `db.js` (`system_settings`)
-**Toca:** `server.js`
+**Toca:** `server.js`, `app.js`
 **Aceite:**
 - [ ] `/api/transcribe` conta as transcrições do usuário nas últimas 24 h e retorna **429** ao exceder `daily_limit`
 - [ ] Admin (`daily_limit: 999999`) não é bloqueado
 - [ ] `multer({ limits: { fileSize } })` alimentado por `system_settings.max_file_size_mb`
 - [ ] Rejeição de duração acima de `max_duration_hours` após o `ffprobe`, com `error_message` claro
 - [ ] UI mostra "X de Y transcrições hoje"
+- [ ] Painel admin: `daily_limit` global (default para novos usuários) e por usuário; `max_file_size_mb` e `max_duration_hours` editáveis, valendo na hora (settings já são lidas por request)
 
 **Evidência:** _(preencher)_
 
 ---
 
-### T-08 — Endurecer SQLite
-**Estado:** TODO · **Prioridade:** 🟡 P2
-**Por quê:** banco sem WAL e sem índices; com 10 usuários mais o worker atualizando `progress` a cada etapa, aparece `SQLITE_BUSY` ([MULTIUSER.md](MULTIUSER.md) R-02, R-03).
-**Contexto:** `db.js:1-45`, `docs/STACK.md` §3
-**Toca:** `db.js`
-**Aceite:**
-- [ ] `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`, `PRAGMA foreign_keys=ON` no boot
-- [ ] Índices: `transcriptions(user_id, created_at)`, `transcriptions(status)`, `segments(transcription_id)`, `projects(user_id)`
-- [ ] Criação idempotente (`CREATE INDEX IF NOT EXISTS`), sem quebrar o banco existente
-- [ ] `test_suite.js` verde contra o banco já populado
+### T-08 — Migração SQLite → PostgreSQL
+**Estado:** DOING (fase 1, 28/09/2026) · **Prioridade:** 🔴 P0 · **Substitui** o escopo antigo "endurecer SQLite (WAL + índices)"
+**Por quê:** o WAL corrompia o banco no bind-mount do Docker Desktop (incidente 25/09) e foi desligado; mas o problema real não é o WAL — é que o SQLite **serializa todas as escritas num writer único**. Com 35 mil usuários esperados (login, fila, billing, webhooks do Asaas escritos ao mesmo tempo), `SQLITE_BUSY` viria na primeira campanha. O banco precisa sair do app.
+**Contexto:** `db.js` (schema + helpers `runAsync`/`getAsync`/`allAsync`), `docker-compose.yml`, `docs/stack.md` §journal, `scripts/migrate-sqlite-to-postgres.js`, `tests/t08_migration.js`
+**Toca:** `docker-compose.yml` (service `db`), `scripts/` (novo), `tests/` (novo), `package.json` (`pg`), `.env.example`, `db.js` (fase 2)
 
-**Evidência:** _(preencher)_
+**Desenho em 2 fases (decidido 28/09):**
+- **Fase 1 (esta sessão):** infra + ferramental de migração, **sem trocar o banco do app**. App continua em SQLite (`DB_DRIVER=sqlite`). Entregue: service `db` (postgres:16-alpine, volume nomeado, healthcheck) no compose; script ETL `scripts/migrate-sqlite-to-postgres.js` (fonte aberta READONLY, DDL espelhando o schema, cópia em transação única, validação de contagens, `--dry-run` e `--force`, recusa de destino não-vazio); teste `tests/t08_migration.js` com banco de teste descartável.
+- **Fase 2 (próxima sessão):** driver swap. Camada de acesso em `db.js` (`DB_DRIVER=postgres`) async-ificando as queries (a API do sqlite3 já é por Promise — o gap é o dialeto: `?` → `$1`, `PRAGMA` → nada, `sqlite_master` → `information_schema`). Rollback = `DB_DRIVER=sqlite` de volta.
+
+**Aceite (fase 1):**
+- [x] `docker compose up -d db` sobe o Postgres com volume nomeado e healthcheck `pg_isready`
+- [x] ETL migra as 10 tabelas sem perda: contagens fonte = destino linha a linha, relatório impresso
+- [x] SQLite fonte aberto READONLY — nada altera a origem; rollback = continuar apontando pro SQLite
+- [x] `--dry-run` gera DDL + plano sem conectar destrutivamente; sem `--force`, destino não-vazio é recusado
+- [x] Conversão de tipos: `REAL` → `DOUBLE PRECISION`, `DATETIME` → `TIMESTAMP`, `0/1` → `BOOLEAN`
+- [x] `tests/t08_migration.js` verde dentro do container contra o service `db` (banco de teste criado e destruído pelo teste)
+- [x] `test_suite.js` sem regressão (app inalterado nesta fase)
+- [ ] Fase 2: app roda com `DB_DRIVER=postgres` e a suíte passa contra o Postgres
+
+**Evidência (fase 1, 28/09/2026):**
+- Service `db` adicionado ao `docker-compose.yml` (postgres:16-alpine, `pgdata` nomeado, healthcheck).
+- `scripts/migrate-sqlite-to-postgres.js`: ETL com transação única, validação de contagens, READONLY na fonte, `--dry-run`/`--force`.
+- `tests/t08_migration.js`: fixture SQLite completo (10 tabelas) → migração contra banco de teste descartável no service `db` → contagens e conversões de tipo verificadas.
+- Dependência `pg` adicionada; docs (`stack.md`, `.env.example`) atualizados.
+- **Testes (28/09/2026):** `tests/t08_migration.js` → **25/25 PASS** dentro do container (conversões booleanas, `REAL`→double, acentos preservados, chave cifrada `enc:v1:` intacta, trava de destino não-vazio, dry-run não-destrutivo). `test_suite.js` → **79/79 PASS** sem regressão. Dry-run contra o banco real: 145 transcrições, 2.066 segmentos, 465 logs, 10 tabelas — plano íntegro, fonte inalterada.
 
 ---
 
-### T-09 — Página de Conta
-**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** T-01
+### T-09 — Página de Conta do usuário
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-01 · **Contexto SaaS (28/09):** a Conta é onde o usuário se vira sozinho — sem ela, cada troca de senha vira suporte manual e não há porta de entrada para cobrança.
 **Por quê:** não existe tela de perfil; trocar senha exige o admin ([PRODUCT.md](PRODUCT.md) P-03).
 **Contexto:** `index.html` (views), `app.js:240-257` (`showView`), `server.js:84-137`
 **Toca:** `server.js`, `index.html`, `app.js`
 **Aceite:**
 - [ ] View `#view-account` com nome, e-mail, papel, consumo do dia e preferências (tema, modo de leitura)
 - [ ] `PUT /api/auth/password` exigindo a senha atual
+- [ ] **Esqueci a senha:** fluxo por e-mail (token único, expiração 30 min, link da landing) — `POST /api/auth/forgot` + `POST /api/auth/reset`; e-mail via provider configurável em `.env` (SMTP ou API)
+- [ ] **Assinatura e pagamentos:** seção que espelha o status da assinatura Asaas (T-27) com botão "Gerenciar" que leva ao portal do Asaas
+- [ ] **Logs de uso:** lista das próprias transcrições recentes com data, duração e custo estimado em tokens
 - [ ] Logout que limpa o `localStorage` e volta ao modal de login
 - [ ] Sem token válido, a SPA mostra o login em vez do dashboard (hoje ela assume um usuário padrão em `app.js:3`)
 
@@ -240,69 +265,54 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 
 ---
 
-### T-11 — Gravador de voz: waveform, pausar, idioma, transcrever direto
-**Estado:** TODO · **Prioridade:** 🟢 P3 · **Decisão 14/09:** gravar pelo navegador não é o caso de uso principal (o fluxo é receber arquivo). Fica como polimento.
-**Por quê:** o gravador atual (`app.js:996-1050`) é um timer `00:00` estático com botão "Iniciar gravação". Não tem feedback visual de que o microfone está captando, não pausa, não pergunta idioma, e o fluxo pós-gravação não leva direto à transcrição. Comparado à referência (waveform ao vivo + "Pausar gravação" + idioma + botão TRANSCREVER), é o gap visual mais gritante.
-**Contexto:** `app.js:996-1050`, `index.html` (modal `#recorder-modal` ou equivalente — localizar por `recording-timer`), `server.js:228-280` (`/api/transcribe`)
-**Toca:** `app.js`, `index.html`
+### T-11 — Entrada por link (YouTube/Vimeo) + arquivos de vídeo
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Rescopeada 28/09** (era "Gravador de voz" — o gravador virou a T-33, prioridade baixa)
+**Por quê:** o fluxo de recebimento de material hoje é só upload de arquivo. O que chega na prática do usuário-alvo é um link do YouTube/Vimeo (palestra, reunião gravada, entrevista) ou um vídeo no celular. Aceitar link direto remove o passo manual de "baixar com outra ferramenta e subir aqui".
+**Contexto:** `server.js:228-280` (`/api/transcribe`), `services/audio.js` (`preprocessAudio` — já extrai áudio de vídeo via ffmpeg), `app.js` (modal de upload)
+**Toca:** `server.js`, `services/audio.js` (novo `downloadFromUrl`), `app.js`, `index.html`, `package.json`
 **Aceite:**
-- [ ] Waveform ao vivo via `AudioContext` + `AnalyserNode` desenhado em `<canvas>` (sem lib)
-- [ ] Botões: Iniciar → (Pausar ⇄ Retomar) → Parar; `MediaRecorder.pause()/resume()` reais, timer congela na pausa
-- [ ] Seletor de idioma com **apenas** 4 opções: Português (Brasil) `pt` (padrão), English `en`, Español `es`, 日本語 `ja`
-- [ ] Seletor de projeto mantido (já existe)
-- [ ] Ao parar: botão principal vira **TRANSCREVER** e envia direto para `/api/transcribe` com `language` e `project_id`; sem passo intermediário de "baixar e subir"
-- [ ] Nome do arquivo gerado: `Gravação {dd-mm-aaaa HH-mm}.webm` (ou `.ogg` se o navegador suportar)
-- [ ] Permissão de microfone negada → mensagem clara no modal, não `alert()`
+- [ ] Campo "Cole um link" no modal de upload (YouTube/Vimeo suportados; validação de URL explícita — domínio não suportado → erro claro, sem dados inventados)
+- [ ] Backend baixa o áudio/vídeo (yt-dlp em container, ou fetch direto para arquivos `.mp3/.mp4/.wav` com URL direta), converte via ffmpeg (reaproveita o pipeline atual) e segue o fluxo normal da fila
+- [ ] Arquivos de vídeo (`.mp4`, `.mkv`, `.mov`…) aceitos direto no upload — o `preprocessAudio` já isola o áudio
+- [ ] Falha de download/link privado/removido → `failed` com `error_message` específico
+- [ ] Mesmos limites de T-07 (tamanho/duração) valem para links
+- [ ] Teste com URL direta de arquivo (mock/http local) — sem chamar YouTube de verdade na suíte
 
-**Fora de escopo (decidido 14/09):** gravação de dia inteiro pelo navegador. O dia de vendas é gravado em aparelho e enviado como arquivo (T-19).
+**Fora de escopo:** bypass de paywall/conteúdo restrito, playlists inteiras (uma URL = uma transcrição).
 
 **Evidência:** _(preencher)_
 
 ---
 
 ### T-12 — Player fixo no rodapé da tela de detalhe
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Faz par com:** T-04, T-17
-**Por quê:** o player hoje fica no topo de `#view-details` e some ao rolar. Numa transcrição de 10 min com timestamps clicáveis, o usuário rola o texto e perde o controle do áudio. A referência mantém o player sempre visível no rodapé (nome do arquivo, play, barra, tempo, volume).
-**Contexto:** `index.html:221-260` (`#view-details`), `app.js` (`renderCurrentTranscript`, handlers de seek por timestamp)
-**Toca:** `index.html`, `app.js`
-**Aceite:**
-- [ ] Player em barra `position: sticky; bottom: 0` (ou `fixed`) dentro de `#view-details`, com nome do arquivo, play/pause, barra de progresso arrastável, tempo atual/total, volume, velocidade (1x/1.25x/1.5x/2x)
-- [ ] Clique em timestamp continua dando seek e o player reflete a posição
-- [ ] Segmento atual em reprodução ganha destaque visual e a página faz auto-scroll suave para ele (desligável)
-- [ ] O conteúdo da transcrição ganha `padding-bottom` para não ficar escondido atrás do player
-- [ ] Funciona em largura de celular (integra com T-17)
+**Estado:** ABSORVIDA (28/09/2026) → **T-29** (Reformulação UX/UI "Obsidian Wave", Fase 3)
+**Por quê da absorção:** a reformulação redesenha a tela de detalhe inteira (player com waveform em canvas, blocos de fala, toolbar unificada). Implementar o player fixo agora seria construir duas vezes o mesmo componente. O requisito foi preservado no aceite da T-29.
 
-**Evidência:** _(preencher)_
+**Evidência:** _(ver T-29)_
 
 ---
 
 ### T-13 — Baixar áudio original + Exportar em massa
-**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** nada para funcionar; T-02 para ser seguro em multiusuário
-**Por quê:** (a) o painel de detalhe da referência oferece "Baixar áudio (4,46 MB)"; o nosso não tem. Hoje o áudio só é acessível pela URL pública `/uploads/...` (risco R-04). A forma certa de oferecer o download é uma **rota autenticada**, o que já adianta parte de T-02. (b) A barra de ações em massa da referência tem Exportar; a nossa só tem Mover e Excluir.
-**Contexto:** `server.js` (rotas `/api/export/:id/:format`, `express.static('/uploads')`), `app.js` (barra `#bulk-actions` — localizar por "selecionados"), `services/exporter.js`
-**Toca:** `server.js`, `app.js`, `index.html`
+**Estado:** TODO · **Prioridade:** 🔴 P0 (elevada 28/09 — paridade com o concorrente e pré-requisito de valor percebido no plano pago) · **Depende de:** nada para funcionar; T-02 já garante o isolamento
+**Por quê:** (a) o painel de detalhe da referência oferece "Baixar áudio"; o nosso não tem. Hoje o áudio só é acessível pela URL `/uploads/...` com token na query (fragilidade já mapeada). A forma certa é uma **rota autenticada dedicada**. (b) A barra de ações em massa da referência tem Exportar; a nossa só tem Mover e Excluir — para quem processa 50 arquivos, exportar um a um é inaceitável.
+**Contexto:** `server.js` (rotas `/api/export/:id/:format`, `/uploads`), `app.js` (barra de ações em massa), `services/exporter.js`
+**Toca:** `server.js`, `app.js`, `index.html`, `package.json` (zip)
 **Aceite:**
-- [ ] `GET /api/transcriptions/:id/audio` autenticada, `Content-Disposition: attachment` com o nome original, tamanho exibido no botão do painel ("Baixar áudio · 4,4 MB")
-- [ ] `express.static('/uploads')` removido — o áudio do player passa a vir da rota autenticada (com `Range` para seek funcionar)
-- [ ] Barra de ações em massa ganha **Exportar** → escolhe formato (PDF/DOCX/TXT/SRT/VTT) → baixa um `.zip` com um arquivo por transcrição (`archiver` ou stream zip mínimo; avaliar peso da dependência)
-- [ ] `test_suite.js` cobre a rota de áudio (200 com token, 401 sem)
+- [ ] `GET /api/transcriptions/:id/audio` autenticada, `Content-Disposition: attachment` com o nome original; suporta `Range` (seek do player continua funcionando)
+- [ ] Botão "Baixar áudio" no painel de detalhe com tamanho do arquivo ("Baixar áudio · 4,4 MB")
+- [ ] **Exportar em massa:** na seleção múltipla da lista, ação "Exportar" → escolhe formato (PDF/DOCX/TXT/SRT/VTT) → baixa **um `.zip`** com um arquivo nomeado por transcrição (`{nome}-{formato}.{ext}`); stream, sem inflar memória (arquivos de 10 h geram PDFs grandes)
+- [ ] Falha em uma transcrição do lote não aborta as demais — ela entra num `erros.txt` dentro do zip
+- [ ] `test_suite.js`: rota de áudio 200 com token / 401 sem / 404 de outro usuário; zip em massa com 2 transcrições contém 2 arquivos + lista de nomes correta
 
 **Evidência:** _(preencher)_
 
 ---
 
 ### T-14 — UX de modais
-**Estado:** TODO · **Prioridade:** 🟢 P3
-**Por quê:** testado em 14/09: `Esc` não fecha o modal de upload; clique fora também não. A tela de admin cadastra chave via `prompt()` nativo do navegador (`app.js:1368`). São detalhes pequenos que, somados, fazem o app parecer inacabado.
-**Contexto:** `app.js` (funções `open*Modal`/`close*Modal`), `index.html` (todos os `[id$="-modal"]`)
-**Toca:** `app.js`, `index.html`
-**Aceite:**
-- [ ] Um único helper de modal: abre, fecha por `Esc`, fecha por clique no backdrop, devolve o foco ao elemento que abriu, trava scroll do body
-- [ ] Todos os modais existentes migrados para o helper
-- [ ] Nenhum `prompt()`/`alert()`/`confirm()` nativo sobrando no `app.js` — confirmações viram modal próprio
-- [ ] Botão de fechar (X) com `aria-label`
+**Estado:** ABSORVIDA (28/09/2026) → **T-29** (Reformulação UX/UI "Obsidian Wave", Fase 2)
+**Por quê da absorção:** a reformulação constrói o sistema de componentes do zero (bottom sheets, drawers, foco, Esc/backdrop). O helper de modal único da T-14 é exatamente um desses componentes — será entregue lá, no padrão novo, em vez de agora e depois reescrito.
 
-**Evidência:** _(preencher)_
+**Evidência:** _(ver T-29)_
 
 ---
 
@@ -650,3 +660,149 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 | Correção do endpoint `/api/chat` | `cb798b2` |
 | Suíte de testes adaptada ao pipeline assíncrono | `6f7484d` |
 | Premissa de deploy Docker + Git Flow formalizados | `4c5f316` |
+
+---
+
+### T-26 — MinIO/S3 para arquivos (camada de storage isolada)
+**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** T-08 (fase 2) · **Antes de:** escala multi-node
+**Por quê:** os áudios vivem em `./uploads` no disco do container. Num único nó KVM2 funciona (volume nomeado), mas 35 mil usuários gerando áudio de horas vão encher o disco e prender os arquivos à máquina. Storage S3-compatível (MinIO self-hosted ou S3 de verdade) desacopla "onde o app roda" de "onde o áudio mora".
+**Contexto:** `services/audio.js` (gravação dos blocos), `server.js` (`/uploads`, rotas de export), `services/exporter.js`
+**Toca:** novo `services/storage.js` (interface `put/get/delete` — primeiro implementação filesystem, depois S3), `services/audio.js`, `server.js`, `docker-compose.yml` (service minio opcional)
+**Aceite:**
+- [ ] Interface de storage única; trocar filesystem → S3 é mudança de `.env` (`STORAGE_DRIVER=fs|s3`), zero código
+- [ ] Service `minio` no compose (perfil opcional), credenciais via `.env`
+- [ ] Arquivos novos no S3 quando configurado; legado continua servindo do filesystem (fallback por existência)
+- [ ] Nenhuma URL de arquivo expõe o backend de storage (rotas autenticadas, T-13)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-27 — Asaas: assinaturas, webhook de pagamento, suspensão automática
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2), T-07 (cotas), T-28 (cadastro)
+**Por quê:** "ganhar dinheiro dormindo" exige cobrança sem intervenção: o usuário assina, paga, usa; deixou de pagar, o sistema suspende sozinho. O Asaas é o PSP escolhido (PIX/boleto/cartão, sem burocracia de gateway internacional).
+**Contexto:** `db.js` (`users.status`, `daily_limit` — base do controle), `server.js` (rotas admin)
+**Toca:** novo `services/billing.js`, `server.js` (webhook público + rotas de assinatura), `db.js` (tabela `subscriptions`), `app.js` (seção Assinatura na Conta, T-09), `docker-compose.yml`, `.env.example`
+**Aceite:**
+- [ ] `POST /webhooks/asaas` (público) validando token de assinatura do webhook; eventos `PAYMENT_CONFIRMED`/`PAYMENT_OVERDUE`/`SUBSCRIPTION_CANCELLED` idempotentes (recebido 2× = efeito 1×)
+- [ ] Pagamento confirmado → usuário `active` com cota do plano; vencido → `suspended` (login bloqueia com mensagem clara, dados intactos)
+- [ ] Tabela `subscriptions` (user_id, asaas_customer_id, asaas_subscription_id, plan, status, timestamps) — histórico, não só estado atual
+- [ ] Sem token de webhook configurado em produção → servidor recusa subir (mesmo padrão do `JWT_SECRET`)
+- [ ] Testes com payloads assinados gerados no próprio teste (sem chamar Asaas de verdade)
+- [ ] `docs/INSTALL.md`: como conectar a conta Asaas (API key + webhook token no `.env`)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-28 — Landing page + auto-cadastro + confirmação de e-mail
+**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2 — cadastro escreve no banco); design base pronto no Stitch (`transcreve.ai_landing_page_oficial`)
+**Por quê:** hoje não há porta de entrada: quem quiser usar precisa que o admin crie a conta. A landing é o funil: visitante → demo/argumento → cadastro → e-mail confirmado → primeiro upload. É a peça que transforma o sistema em produto vendável.
+**Contexto:** `server.js:84-137` (auth), `db.js` (users), material do Stitch em `files_frontend_example/stitch_transcreve.ai_mobile_redesign/transcreve.ai_landing_page_oficial/`
+**Toca:** `landing.html` (novo, separado da SPA), `server.js` (rotas públicas de cadastro + verificação de e-mail), `app.js` (deep-link de confirmação), `.env.example` (SMTP), `package.json`
+**Aceite:**
+- [ ] Landing estática servida em `/` para não-autenticado (SPA continua em `/app`): hero com gradiente no verbo, métricas reais do sistema (não inventadas — só publicar número se for medido), pricing, FAQ, CTA de cadastro
+- [ ] `POST /api/auth/register`: nome, e-mail, senha → conta `pending_verification`; e-mail de confirmação com token único (30 min de validade); só após clicar a conta fica `active`
+- [ ] Sem SMTP configurado em produção → cadastro desabilitado com aviso explícito no admin (nunca conta ativa sem verificação)
+- [ ] E-mail duplicado → 409 claro; senha fraca → 400 com regra explícita
+- [ ] Rate limit no register e no resend de confirmação (por IP)
+- [ ] Testes: fluxo completo com SMTP mock (custo zero)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-29 — Reformulação UX/UI "Obsidian Wave" (absorve T-12/T-14)
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Análise completa:** sessão de 28/09/2026 com o Designer sobre o material do Stitch
+**Por quê:** a interface atual é visualmente idêntica à da concorrente que plagiou o design. O redesign "Obsidian Wave" (material em `files_frontend_example/stitch_transcreve.ai_mobile_redesign/colors_obsidian_wave/DESIGN.md`) dá identidade própria: canvas obsidiana `#06080F`, ciano `#00F2FE`, violeta `#7928CA`, Plus Jakarta Sans, elevação por camadas tonais. Gap técnico quase zero — mesma stack (Tailwind CDN, SPA vanilla). O que diferencia de verdade não é a paleta (gradiente ciano→violeta é clichê de SaaS de IA) — é a **tipografia de dados**: blocos de locutor, métricas, player persistente.
+**Contexto:** `index.html` (Tailwind config inline), `app.js`, material do Stitch (3 telas + DESIGN.md)
+**Toca:** `index.html`, `app.js` (CSS/tokens/layout; nenhuma rota)
+
+**Fases (uma por sessão, cada uma commitável):**
+- **F1 — Tokens:** `tokens.css` (variáveis das duas paletas, escuro + claro) + tailwind.config estendido (paleta, raios, Jakarta Sans). Aceite: app escuro inteiro na nova paleta, zero mudança estrutural. Tema claro com cores sombreadas (ciano puro falha contraste em fundo branco — usar `#00A6B0`), glow desligado no claro.
+- **F2 — Componentes atômicos:** botões (press 0.97), inputs, chips de status (cor a 12% opacidade), badges de tier, cards, drawer/bottom sheet, **helper único de modal** (Esc, backdrop, foco, sem `prompt()` — fecha o escopo da T-14).
+- **F3 — Telas, nesta ordem:** (1) **Editor de transcrição** primeiro (tela de maior retenção): blocos de fala, player com waveform em canvas, **player fixo/barra persistente** (fecha o escopo da T-12), toolbar unificada; (2) **Workspace/lista**: 3 colunas desktop, card de job ativo, painel player persistente, sidebar colapsável, empilhamento mobile; (3) **Landing** por último (menor risco, identidade pública).
+- **F4 — Polimento:** glow em no máximo 1 elemento por viewport, `prefers-reduced-motion`, auditoria de contraste AA no claro, passada do Avaliador UX/UI nos fluxos-chave.
+
+**Regras de ouro do redesign (decididas na análise):**
+- Uma paleta só — descartar os tokens Material 3 genéricos que o Stitch gerou junto
+- Glow: 1 elemento ativo por viewport; gradiente ciano→violeta só em logo/H1/FAB/card Pro
+- Waveform só no player (canvas + rAF), nunca em todos os cards da lista
+- Glassmorphism só em elementos fixos (bottom bar/drawer), nunca em itens de lista
+- Mobile-first em cada fase: cada tela entrega primeiro <640px, depois ≥1024px
+- Migração por seções (`grep -n` + blocos) — nunca reescrita big-bang do `index.html`
+
+**Aceite:**
+- [ ] F1 entregue com app escuro na paleta nova e tema claro derivado (contraste AA auditado)
+- [ ] F2 com helper de modal único e zero `prompt()`/`alert()` no `app.js` (T-14 fechada)
+- [ ] F3 com player persistente na tela de detalhe (T-12 fechada) e editor em blocos de fala
+- [ ] `tests/ui_regressions.js` verde a cada fase; screenshots das 3 larguras (375/768/1440) na evidência
+- [ ] Doc de design tokens em `docs/` (a paleta oficial, matando a duplicidade do DESIGN.md)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-30 — API pública + webhooks (tool para LLMs)
+**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** T-08 (fase 2), T-07 (cotas — API consome cota)
+**Por quê:** o próximo canal de aquisição de usuários não é humano: é LLM. Quando alguém monta um agente que precisa transcrever, a TranscreveAI precisa ser callable por máquina — endpoint estável, auth por API key, webhook de conclusão. É também a base do MCP (T-31).
+**Contexto:** `server.js` (rotas `/api/*`), `db.js`
+**Toca:** `server.js` (novas rotas sob `/v1/`), `db.js` (`api_tokens` por usuário), `docs/` (API reference), `.env.example`
+**Aceite:**
+- [ ] `POST /v1/transcriptions` (URL ou multipart) autenticado por `Authorization: Bearer tk_...` — o token é do usuário (não da OpenRouter); tokens armazenados em hash, prefixo visível
+- [ ] `GET /v1/transcriptions/:id` com status e resultado; escopo: só vê o que o dono do token criou
+- [ ] Webhook de conclusão: usuário registra URL + secret; a app POSTa `{event, id, status}` assinado com HMAC-SHA256 do secret; retry com backoff em falha (5 tentativas)
+- [ ] Cota de API = mesma `daily_limit` da UI (T-07); headers `X-RateLimit-*` nas respostas
+- [ ] API reference em `docs/API.md` com exemplos curl; versão no path (`/v1/`)
+- [ ] `test_suite.js` cobre auth, escopo e assinatura do webhook (sem chamadas externas)
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-31 — MCP server / skills sobre a API
+**Estado:** TODO · **Prioridade:** 🟢 P3 · **Depende de:** T-30
+**Por quê:** com a API pública estável, um MCP server é uma camada fina que coloca a TranscreveAI dentro de Claude/Cursor/Kimi como ferramenta nativa — canal de distribuição com custo quase zero de implementação.
+**Contexto:** `docs/API.md` (da T-30), spec MCP (modelcontextprotocol.io)
+**Toca:** novo diretório `mcp/` (server独立, empacotável separado)
+**Aceite:**
+- [ ] Server MCP (stdio ou HTTP) expondo: `transcreve.upload`, `transcreve.status`, `transcreve.result` sobre a API `/v1/`
+- [ ] Auth via API key do usuário (config do client MCP)
+- [ ] Publicável no registry de MCPs com README de instalação em ≤5 linhas
+- [ ] Zero lógica de negócio duplicada — o MCP só traduz chamadas
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-32 — Deploy one-click (compose prod, `.env` documentado, INSTALL)
+**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-08 (fase 2), T-27 (Asaas), T-28 (landing)
+**Por quê:** o produto é vendível também para quem quer self-host ("compre e suba em poucos cliques"). Hoje o compose é de dev: bind-mount de código, segredos default, Traefik local com cert autoassinado. O compose de produção precisa ser seguro por padrão e configurável só via `.env`.
+**Contexto:** `docker-compose.yml`, `Dockerfile`, `.env.example`, `docs/INSTALL.md`
+**Toca:** `docker-compose.prod.yml` (novo), `.env.example`, `docs/INSTALL.md`, `README.md`
+**Aceite:**
+- [ ] `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` sobe app + db (+ minio opcional) sem bind-mount de código
+- [ ] Todos os segredos vêm do `.env` — nenhum default funcional em produção (servidor já recusa JWT_SECRET/APP_SECRET_KEY default; estender ao Postgres e ao webhook do Asaas)
+- [ ] `docs/INSTALL.md` com trilhas: Portainer (upload do compose), VPS Docker, dev local — cada uma com checklist de `.env`
+- [ ] Backup documentado: `pg_dump` agendado + `uploads/` (ou S3) — o dono do SaaS precisa dormir tranquilo também
+- [ ] Healthchecks em todos os services; restart policy `unless-stopped`
+
+**Evidência:** _(preencher)_
+
+---
+
+### T-33 — Gravador de voz: waveform, pausar, idioma, transcrever direto
+**Estado:** TODO · **Prioridade:** 🟢 P3 · **Rescopeada 28/09** (era a T-11 — perdeu prioridade para entrada por link, que virou a nova T-11)
+**Por quê:** o gravador atual (`app.js:996-1050`) é um timer `00:00` estático sem feedback de microfone, sem pausa, sem idioma. Não é o caso de uso principal (receber arquivo/link), mas é polimento que completa o app.
+**Contexto:** `app.js:996-1050`, `index.html` (modal do gravador), `server.js:228-280` (`/api/transcribe`)
+**Toca:** `app.js`, `index.html`
+**Aceite:**
+- [ ] Waveform ao vivo via `AudioContext` + `AnalyserNode` em `<canvas>` (sem lib)
+- [ ] Iniciar → (Pausar ⇄ Retomar) → Parar com `MediaRecorder.pause()/resume()` reais
+- [ ] Seletor de idioma (4 opções) + projeto
+- [ ] Ao parar: botão **TRANSCREVER** envia direto para `/api/transcribe`
+- [ ] Permissão negada → mensagem clara no modal, não `alert()`
+
+**Fora de escopo:** gravação de dia inteiro pelo navegador (T-19 cobre o fluxo de arquivo).
+
+**Evidência:** _(preencher)_
