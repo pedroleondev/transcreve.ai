@@ -655,11 +655,12 @@ function renderTranscriptionsTable() {
           <span class="text-[10px] text-brand-muted dark:text-brand-muted font-mono font-bold">${progress}%</span>
         </div>`;
     } else if (item.status === 'pending') {
+      const posLabel = item.queue_position ? `<span class="text-[10px] text-amber-600 dark:text-amber-300 font-bold"> ${item.queue_position}º na fila</span>` : '';
       return `
         <div class="flex flex-col items-start space-y-1">
           <div class="flex items-center space-x-1.5">
             <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
-            <span class="text-amber-700 dark:text-amber-300 font-bold text-xs">Na Fila</span>
+            <span class="text-amber-700 dark:text-amber-300 font-bold text-xs">Na Fila</span>${posLabel}
           </div>
           <div class="w-full bg-brand-line dark:bg-brand-line rounded-full h-1.5 overflow-hidden">
             <div class="bg-amber-400 h-1.5 rounded-full animate-pulse" style="width: 8%"></div>
@@ -1432,7 +1433,12 @@ function describeJobProgress(s) {
     case 'assembling': return '🧩 Montando a transcrição...';
     case 'analyzing': return '🤖 Gerando resumo com foco no assunto...';
     default:
-      return s.status === 'pending' ? '⏳ Na fila, aguardando o worker...' : 'Processando...';
+      if (s.status === 'pending') {
+        return s.queue_position
+          ? `⏳ ${s.queue_position}º na fila, aguardando o worker...`
+          : '⏳ Na fila, aguardando o worker...';
+      }
+      return 'Processando...';
   }
 }
 

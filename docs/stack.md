@@ -15,7 +15,7 @@ graph TD
     OR --> WH[Whisper large-v3 / turbo / whisper-1 / Gemini]
 ```
 
-Monolito de processo único: API HTTP e worker de transcrição rodam no mesmo processo Node. O worker (`services/pipeline.js`) processa **um job por vez**, mas dentro do job transcreve os blocos de áudio em paralelo (`CHUNK_CONCURRENCY`, default 3), com retry por bloco e retomada após queda. Ver [system_design.md](system_design.md) §6 e [MULTIUSER.md](MULTIUSER.md).
+Monolito de processo único: API HTTP e worker de transcrição rodam no mesmo processo Node. O worker (`services/pipeline.js`) processa **N jobs em paralelo** (`WORKER_CONCURRENCY`, env, default 2 — T-06), com claim atômico condicional e recuperação de jobs travados no boot (volta pra `pending`, máx 3 tentativas); dentro de cada job transcreve os blocos de áudio em paralelo (`CHUNK_CONCURRENCY`, default 3), com retry por bloco e retomada após queda. Jobs `pending` expõem `queue_position` (ordem na fila) em `GET /api/transcriptions` e em `GET /:id/status` — é o "Nº na fila" da UI. Ver [system_design.md](system_design.md) §6 e [MULTIUSER.md](MULTIUSER.md).
 
 ## Runtime e dependências
 
@@ -75,7 +75,7 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET/POST/DELETE | `/api/projects[/:id]` | token | ✅ dono (admin: `?all=true`) |
 | GET | `/api/transcriptions` | token | ✅ dono (admin: `?all=true`) |
 | GET/PUT/DELETE | `/api/transcriptions/:id` | token | ✅ dono — alheio retorna 404 |
-| GET | `/api/transcriptions/:id/status` | token | ✅ dono |
+| GET | `/api/transcriptions/:id/status` | token | ✅ dono — inclui `queue_position` (T-06) |
 | POST | `/api/transcriptions/:id/retry` | token | ✅ dono |
 | POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota; valida com `ffprobe` por arquivo |
 | GET | `/api/export/:id/:format` | token | ✅ dono |
@@ -95,6 +95,7 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | `PORT` | `.env` / compose | não |
 | `JWT_SECRET` | `.env` / compose | ⚠️ sim — cai em string hardcoded em `server.js:18` e no `docker-compose.yml` |
 | `OPENROUTER_API_KEY` | `.env`, sincronizada para `api_keys` no boot | não |
+| `WORKER_CONCURRENCY` | `.env` | não — default 2; jobs de transcrição processados em paralelo (T-06) |
 
 `.env`, `turboscribe.sqlite` e `uploads/` estão no `.gitignore`.
 

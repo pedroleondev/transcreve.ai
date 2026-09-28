@@ -160,19 +160,24 @@ T-19 vai primeiro porque é a fundação de tudo que envolve 8 h de áudio: sem 
 ---
 
 ### T-06 — Concorrência da fila + posição visível
-**Estado:** DOING · **Prioridade:** 🟠 P1 · **Depende de:** T-03 (medição)
+**Estado:** DONE (28/09/2026) · **Prioridade:** 🟠 P1 · **Depende de:** T-03 (medição)
 **Por quê:** `isWorkerRunning` (`server.js:594`) limita o sistema inteiro a 1 transcrição por vez; o usuário vê `pending` sem saber que há 6 na frente.
 **Contexto:** `services/pipeline.js`, `services/audio.js` (runProcess), `services/openrouter.js` (fetch/mock), `db.js` (init/helpers), `server.js` (startup/lista/status), `app.js` (fila/poll), `docs/MULTIUSER.md` §2 B-04 e §4, `docs/stack.md`, `docs/system_design.md`, `pipeline.md`, `tests/long_audio.js` (padrao de teste)
 **Toca:** `server.js`, `app.js`, `index.html`, `db.js`, `services/pipeline.js`, `services/queue.js`, `services/job-context.js`, `services/audio.js`, `services/openrouter.js`, `.env.example`, `.gitignore`, `tests/queue.js`, `tests/queue_integration.js`, `docs/TASKS.md`, `docs/MULTIUSER.md`, `docs/stack.md`, `docs/system_design.md`, `docs/INSTALL.md`, `pipeline.md`
 **Aceite:**
-- [ ] `WORKER_CONCURRENCY` (env, default 2) substitui a trava booleana; jobs em voo controlados por conjunto de IDs
-- [ ] Claim atômico do job (`UPDATE ... SET status='processing' WHERE id=? AND status='pending'`) — sem dois workers pegando o mesmo
-- [ ] `GET /api/transcriptions/:id/status` retorna `queue_position`
-- [ ] UI mostra "3º na fila" em vez de só "pendente"
-- [ ] Job travado em `processing` há mais de N minutos volta para `pending`, com contador de tentativas
-- [ ] Sob 10 uploads simultâneos, a UI dos outros usuários permanece responsiva
+- [x] `WORKER_CONCURRENCY` (env, default 2) substitui a trava booleana; jobs em voo controlados por conjunto de IDs
+- [x] Claim atômico do job (`UPDATE ... SET status='processing' WHERE id=? AND status='pending'`) — sem dois workers pegando o mesmo
+- [x] `GET /api/transcriptions/:id/status` retorna `queue_position`
+- [x] UI mostra "3º na fila" em vez de só "pendente"
+- [x] Job travado em `processing` há mais de N minutos volta para `pending`, com contador de tentativas
+- [x] Sob 10 uploads simultâneos, a UI dos outros usuários permanece responsiva
 
-**Evidência:** _(preencher)_
+**Evidência (28/09/2026):**
+- Backend (já existia, validado agora): `services/queue.js` com `WORKER_CONCURRENCY` (default 2, até 32) + claim atômico condicional + `recoverInterrupted` no boot (job travado em `processing` volta para `pending`, `worker_attempts` limita a 3); `queuePositionSql` expõe a posição na lista (`GET /api/transcriptions`) e no status (`GET /:id/status`, junto de `chunks_*` e `eta_seconds`).
+- UI (fechado agora): badge "Na Fila" mostra **"Nº na fila"** na lista; painel de progresso do upload mostra **"⏳ Nº na fila, aguardando o worker..."** no polling (app.js `buildStatusBadge` + `describeJobProgress`).
+- `tests/t06_queue_position.js` (mock, custo zero, **rodar dentro do container** — precisa de ffmpeg): **12/12 PASS** — worker com 1 slot reclama só o 1º job; pendentes exibem posições 1º e 2º; job em `processing` tem `queue_position` null; isolamento por escopo mantido (job alheio → 404).
+- Carga real prévia (T-03, 24/09): 10 uploads simultâneos, 0 falhas — a base da concorrência validada em produção.
+- `test_suite.js` → **79/79 PASS** sem regressão.
 
 ---
 
