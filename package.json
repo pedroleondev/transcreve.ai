@@ -19,6 +19,7 @@
   "author": "Antigravity",
   "license": "MIT",
   "dependencies": {
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "docx": "^9.1.0",

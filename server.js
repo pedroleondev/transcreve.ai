@@ -17,6 +17,7 @@ const secrets = require('./services/secrets');
 const { queuePositionSql } = require('./services/queue');
 const { saveTranscriptSegments } = require('./services/transcript-editor');
 const { generateTXT, generateSRT, generateVTT, generateDOCX, generatePDF } = require('./services/exporter');
+const archiver = require('archiver');
 const { probeMedia } = require('./services/audio');
 const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./services/pipeline');
 
@@ -42,19 +43,77 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
-const MAX_UPLOAD_GB = Number(process.env.MAX_UPLOAD_GB || 5);
 const MAX_FILES_PER_UPLOAD = Number(process.env.MAX_FILES_PER_UPLOAD || 50);
-const MAX_AUDIO_HOURS = Number(process.env.MAX_AUDIO_HOURS || 10);
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_UPLOAD_GB * 1024 * 1024 * 1024, files: MAX_FILES_PER_UPLOAD }
-});
+
+// T-07: limite de tamanho e de duração vivem em system_settings (admin edita
+// no painel e vale na hora, sem restart). O env é apenas fallback.
+async function getLimitSettings() {
+  const rows = await allAsync(
+    `SELECT key, value FROM system_settings WHERE key IN ('max_file_size_mb', 'max_duration_hours')`
+  );
+  const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  // Valor '0' é VÁLIDO (bloqueia tudo): presença da chave decide, não o valor > 0.
+  const rawMb = map.max_file_size_mb;
+  const mb = (rawMb !== undefined && rawMb !== null && String(rawMb).trim() !== '' && !Number.isNaN(Number(rawMb)))
+    ? Number(rawMb)
+    : Number(process.env.MAX_UPLOAD_GB || 5) * 1024;
+  const rawHours = map.max_duration_hours;
+  const hours = (rawHours !== undefined && rawHours !== null && String(rawHours).trim() !== '' && !Number.isNaN(Number(rawHours)))
+    ? Number(rawHours)
+    : Number(process.env.MAX_AUDIO_HOURS || 10);
+  return { maxFileSizeMb: mb, maxDurationHours: hours };
+}
+
+// Multer montado por request: o fileSize vem do settings ATUAL do admin.
+function uploadWithDynamicLimits(req, res, next) {
+  getLimitSettings()
+    .then(({ maxFileSizeMb }) => {
+      res.locals.maxFileSizeMb = maxFileSizeMb;
+      multer({
+        storage,
+        limits: { fileSize: maxFileSizeMb * 1024 * 1024, files: MAX_FILES_PER_UPLOAD }
+      }).array('files')(req, res, next);
+    })
+    .catch(next);
+}
+
+// T-07: estado da cota do usuário. daily_limit lido do banco a cada request
+// (mesma filosofia do role/status no authenticateToken). Admin e contas com
+// daily_limit >= 999999 são ilimitadas.
+async function getQuotaState(userId) {
+  const user = await getAsync(`SELECT role, daily_limit FROM users WHERE id = ?`, [userId]);
+  if (!user) return null;
+  const limit = Number(user.daily_limit);
+  if (user.role === 'admin' || limit >= 999999) {
+    return { exempt: true, used: 0, limit: limit || 999999 };
+  }
+  const row = await getAsync(
+    `SELECT COUNT(*) AS n FROM transcriptions WHERE user_id = ? AND created_at >= datetime('now', '-24 hours')`,
+    [userId]
+  );
+  return { exempt: false, used: row ? row.n : 0, limit };
+}
+
+// Middleware: recusa 429 antes mesmo de aceitar os bytes do upload.
+async function checkDailyQuota(req, res, next) {
+  try {
+    const quota = await getQuotaState(req.user.id);
+    if (quota && !quota.exempt && quota.used >= quota.limit) {
+      return res.status(429).json({
+        success: false,
+        error: `Limite diário atingido: ${quota.used} de ${quota.limit} transcrições nas últimas 24 h. Tente novamente mais tarde ou fale com o administrador.`
+      });
+    }
+    next();
+  } catch (e) { next(e); }
+}
 
 // Multer aborta a requisicao inteira ao estourar um limite; traduz para JSON claro.
 function uploadErrorHandler(err, req, res, next) {
   if (!(err instanceof multer.MulterError)) return next(err);
+  const maxMb = res.locals.maxFileSizeMb ?? Number(process.env.MAX_UPLOAD_GB || 5) * 1024;
   const map = {
-    LIMIT_FILE_SIZE: [413, `Arquivo maior que o limite de ${MAX_UPLOAD_GB} GB.`],
+    LIMIT_FILE_SIZE: [413, `Arquivo maior que o limite de ${maxMb} MB.`],
     LIMIT_FILE_COUNT: [400, `No maximo ${MAX_FILES_PER_UPLOAD} arquivos por envio.`],
     LIMIT_UNEXPECTED_FILE: [400, `Campo de arquivo inesperado: use "files".`]
   };
@@ -215,7 +274,15 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     if (!user) {
       return res.json({ user: req.user });
     }
-    res.json({ user });
+    // T-07: consumo do dia para a UI exibir "X de Y transcrições hoje".
+    const quota = await getQuotaState(user.id);
+    res.json({
+      user: {
+        ...user,
+        used_today: quota ? quota.used : 0,
+        quota_unlimited: quota ? quota.exempt : true
+      }
+    });
   } catch (e) {
     res.json({ user: req.user });
   }
@@ -333,7 +400,7 @@ app.get('/api/openrouter/models', (req, res) => {
 });
 
 // Upload & Processamento de Transcrição (Assíncrono)
-app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErrorHandler, async (req, res) => {
+app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynamicLimits, uploadErrorHandler, async (req, res) => {
   const { mode: rawMode = 'max', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body;
 
   // T-20: idioma padrão é 'auto' (detecção automática pelo Whisper). Códigos
@@ -357,6 +424,19 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErro
     return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
   }
 
+  // T-07: lote não pode estourar a cota restante (o pre-check já recusou
+  // quem está no limite; aqui cobre "faltam 1, veio 3"). Arquivos aceitos no
+  // multer são apagados antes de recusar.
+  const quota = await getQuotaState(req.user.id);
+  if (quota && !quota.exempt && quota.used + req.files.length > quota.limit) {
+    await Promise.all(req.files.map(f => fs.promises.unlink(f.path).catch(() => {})));
+    return res.status(429).json({
+      success: false,
+      error: `Limite diário: restam ${Math.max(quota.limit - quota.used, 0)} de ${quota.limit} transcrições nas últimas 24 h e você enviou ${req.files.length} arquivo(s).`
+    });
+  }
+
+  const { maxDurationHours } = await getLimitSettings();
   const results = [];
   const errors = [];
   const effectiveModel = model_id || mode;
@@ -379,8 +459,8 @@ app.post('/api/transcribe', authenticateToken, upload.array('files'), uploadErro
         await reject('O arquivo nao contem trilha de audio.');
         continue;
       }
-      if (probe.duration > MAX_AUDIO_HOURS * 3600) {
-        await reject(`Duracao de ${(probe.duration / 3600).toFixed(1)} h excede o limite de ${MAX_AUDIO_HOURS} h.`);
+      if (probe.duration > maxDurationHours * 3600) {
+        await reject(`Duracao de ${(probe.duration / 3600).toFixed(1)} h excede o limite de ${maxDurationHours} h.`);
         continue;
       }
 
@@ -541,6 +621,139 @@ app.get('/api/export/:id/:format', authenticateToken, async (req, res) => {
     }
   } catch (e) {
     res.status(500).send('Erro ao exportar arquivo: ' + e.message);
+  }
+});
+
+// ----------------------------------------------------
+// T-13 — ÁUDIO ORIGINAL AUTENTICADO
+// Mesma política de escopo do resto do sistema: dono ou admin com ?all=true;
+// recurso alheio responde 404. Suporte a Range (206) para seek de players.
+// ----------------------------------------------------
+app.get('/api/transcriptions/:id/audio', authenticateToken, async (req, res) => {
+  try {
+    const scope = scopeOf(req);
+    const transcription = await getAsync(
+      `SELECT id, user_id, file_name, file_path FROM transcriptions WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+      return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    }
+
+    const fileName = path.basename(transcription.file_path || '');
+    const fullPath = path.join(uploadsDir, fileName);
+    if (!fileName || !fs.existsSync(fullPath)) {
+      return res.status(404).json({ error: 'Arquivo de áudio não encontrado no servidor.' });
+    }
+
+    const stat = fs.statSync(fullPath);
+    const encodedName = encodeURIComponent(transcription.file_name || fileName);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    const range = req.headers.range;
+    const m = range && /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (m) {
+      const start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : stat.size - 1;
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+        res.setHeader('Content-Range', `bytes */${stat.size}`);
+        return res.status(416).end();
+      }
+      end = Math.min(end, stat.size - 1);
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+      res.setHeader('Content-Length', end - start + 1);
+      return fs.createReadStream(fullPath, { start, end }).pipe(res);
+    }
+
+    res.setHeader('Content-Length', stat.size);
+    return fs.createReadStream(fullPath).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
+// ----------------------------------------------------
+// T-13 — EXPORTAÇÃO EM MASSA (ZIP)
+// Reusa os exporters existentes; item inválido/alheio vira linha em _erros.txt
+// e NÃO aborta o restante do lote.
+// ----------------------------------------------------
+const EXPORT_FORMATS = ['txt', 'srt', 'vtt', 'docx', 'pdf'];
+const BULK_EXPORT_MAX_ITEMS = 100;
+
+// Gera o buffer de um único item num formato (reuso dos exporters de exporter.js).
+function renderExportBuffer(format, transcription, segments, includeTimestamps) {
+  return new Promise((resolve, reject) => {
+    switch (format) {
+      case 'txt': return resolve(Buffer.from(generateTXT(transcription, segments, includeTimestamps), 'utf8'));
+      case 'srt': return resolve(Buffer.from(generateSRT(segments), 'utf8'));
+      case 'vtt': return resolve(Buffer.from(generateVTT(segments), 'utf8'));
+      case 'docx': return generateDOCX(transcription, segments, includeTimestamps).then(resolve, reject);
+      case 'pdf':
+        return generatePDF(transcription, segments, includeTimestamps, (err, buf) =>
+          err ? reject(err) : resolve(buf));
+      default: return reject(new Error('Formato não suportado.'));
+    }
+  });
+}
+
+app.post('/api/export/bulk', authenticateToken, async (req, res) => {
+  const { ids, format } = req.body || {};
+  const fmt = String(format || '').toLowerCase();
+  const includeTimestamps = req.body && req.body.include_timestamps === true;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Informe ao menos um id.' });
+  }
+  if (ids.length > BULK_EXPORT_MAX_ITEMS) {
+    return res.status(400).json({ error: `Máximo de ${BULK_EXPORT_MAX_ITEMS} itens por exportação em massa.` });
+  }
+  if (!EXPORT_FORMATS.includes(fmt)) {
+    return res.status(400).json({ error: 'Formato inválido. Use: ' + EXPORT_FORMATS.join(', ') });
+  }
+
+  try {
+    const scope = scopeOf(req);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const errors = [];
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="transcreveai-${fmt}-${new Date().toISOString().slice(0, 10)}.zip"`
+    );
+    archive.on('error', () => { /* stream já em andamento; nada mais a responder */ });
+    archive.pipe(res);
+
+    const usedNames = new Set();
+    for (const id of ids) {
+      try {
+        const t = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [id]);
+        if (!t || (!scope.all && t.user_id !== scope.userId)) {
+          errors.push(`${id}: não encontrada ou sem permissão.`);
+          continue;
+        }
+        const segments = await allAsync(
+          `SELECT * FROM segments WHERE transcription_id = ? ORDER BY start_time ASC`, [id]);
+        const buf = await renderExportBuffer(fmt, t, segments, includeTimestamps);
+
+        const base = (t.file_name || id).replace(/\.[^/.]+$/, '');
+        let name = `${base}.${fmt}`;
+        let n = 1;
+        while (usedNames.has(name)) name = `${base} (${n++}).${fmt}`;
+        usedNames.add(name);
+        archive.append(buf, { name });
+      } catch (e) {
+        errors.push(`${id}: ${e.message}`);
+      }
+    }
+
+    if (errors.length) archive.append(errors.join('\n'), { name: '_erros.txt' });
+    await archive.finalize();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 

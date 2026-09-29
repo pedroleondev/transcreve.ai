@@ -28,32 +28,35 @@ const state = {
   columnWidth: localStorage.getItem('transcreveai_column_width') || 'normal' // 'narrow' | 'normal' | 'wide'
 };
 
-// Garantir token válido de autenticação (auto-login fallback se necessário)
+// SEGURANÇA (hotfix 28/09): NUNCA fazer auto-login com credenciais
+// hardcoded — sem token válido, o app mostra o modal de login. O fallback
+// anterior entrava sozinho como usuário demo em qualquer navegador novo.
 async function ensureAuthToken() {
   if (state.token) return true;
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'pedro.leon23@gmail.com', password: 'user123' })
-    });
-    const data = await res.json();
-    if (res.ok && data.token) {
-      state.token = data.token;
-      state.currentUser = data.user;
-      localStorage.setItem('turboscribe_token', data.token);
-      return true;
-    }
-  } catch (e) {
-    console.warn('Auto-login fallback falhou:', e);
+  const stored = localStorage.getItem('turboscribe_token');
+  if (stored) {
+    try {
+      const res = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${stored}` } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          state.token = stored;
+          state.currentUser = data.user;
+          return true;
+        }
+      }
+    } catch (_) { /* rede falhou: tentativa silenciosa abaixo reabre login */ }
+    localStorage.removeItem('turboscribe_token');
   }
+  openLoginModal();
   return false;
 }
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
-  await ensureAuthToken();
+  const authed = await ensureAuthToken();
+  if (!authed) return; // sem sessão: só o modal de login; os dados carregam após o login
   fetchSystemSettings();
   fetchOpenRouterModels();
   fetchProjects();
@@ -165,6 +168,19 @@ async function checkAuthUser() {
       const adminLink = document.getElementById('admin-menu-link');
       if (adminLink) {
         adminLink.style.display = data.user.role === 'admin' ? 'flex' : 'none';
+      }
+
+      // T-07: consumo do dia no dashboard ("X de Y transcrições hoje").
+      const badge = document.getElementById('quota-badge');
+      const badgeText = document.getElementById('quota-badge-text');
+      if (badge && badgeText) {
+        if (data.user.quota_unlimited) {
+          badgeText.innerText = 'Uso ilimitado';
+        } else {
+          badgeText.innerText = `${data.user.used_today ?? 0} de ${data.user.daily_limit} hoje`;
+        }
+        badge.classList.remove('hidden');
+        badge.classList.add('flex');
       }
     }
   } catch (e) {
@@ -848,12 +864,20 @@ async function openTranscriptionDetail(id) {
     const projectDisplay = data.project_name ? ` • Projeto: ${data.project_name}` : '';
     document.getElementById('detail-meta').innerText = `${new Date(data.created_at).toLocaleString('pt-BR')} • ${formatDuration(data.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
 
-    // Configurar áudio player
+    // Configurar áudio player — T-13: player passa a usar a rota autenticada
+    // dedicada (Range/seek suportado), não mais a URL direta de /uploads.
     const audioPlayer = document.getElementById('audio-player');
     if (audioPlayer) {
-      audioPlayer.src = data.file_path
-        ? data.file_path + (data.file_path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(state.token)
-        : '';
+      audioPlayer.src = `/api/transcriptions/${data.id}/audio?token=` + encodeURIComponent(state.token);
+    }
+
+    // T-13: rótulo do botão de download com o tamanho do arquivo ("Áudio original · 4,4 MB").
+    const audioLabel = document.getElementById('download-audio-label');
+    if (audioLabel) {
+      const mb = (data.file_size || 0) / (1024 * 1024);
+      audioLabel.innerText = mb >= 1
+        ? `Áudio original · ${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
+        : 'Áudio original';
     }
 
     // Atualizar seletor de projeto na barra lateral de detalhes
@@ -1958,7 +1982,14 @@ async function loadAdminUsers() {
         <td class="p-4 font-bold text-brand-ink dark:text-brand-ink">${escapeHtml(u.name)}</td>
         <td class="p-4 text-brand-copy dark:text-brand-copy">${escapeHtml(u.email)}</td>
         <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.role === 'admin' ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${u.role}</span></td>
-        <td class="p-4 text-brand-copy dark:text-brand-copy font-semibold">${u.daily_limit} transcrições</td>
+        <td class="p-4 text-brand-copy dark:text-brand-copy font-semibold">
+          <span class="inline-flex items-center gap-1.5" title="Limite de transcrições por 24 h (999999 = ilimitado)">
+            <input type="number" min="0" step="1" value="${u.daily_limit}" ${isSelf ? 'disabled' : ''}
+              onchange="updateUserDailyLimit('${u.id}', this.value)"
+              class="w-20 bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-lg px-2 py-1 text-xs font-mono ${isSelf ? 'opacity-40 cursor-not-allowed' : ''}">
+            <span class="text-[10px] text-brand-muted dark:text-brand-muted">/24h</span>
+          </span>
+        </td>
         <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'}">${u.status}</span></td>
         <td class="p-4 text-right whitespace-nowrap">${actions}</td>
       </tr>`;
@@ -1997,6 +2028,23 @@ async function changeUserRole(userId, newRole) {
     loadAdminUsers();
   } catch (e) {
     alert('Erro ao alterar função: ' + e.message);
+  }
+}
+
+// T-07: cota diária editável inline na tabela de usuários
+async function updateUserDailyLimit(userId, value) {
+  const limit = parseInt(value, 10);
+  if (!Number.isInteger(limit) || limit < 0) {
+    alert('Limite diário inválido.');
+    loadAdminUsers();
+    return;
+  }
+  try {
+    await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { daily_limit: limit });
+    loadAdminUsers();
+  } catch (e) {
+    alert('Erro ao atualizar limite: ' + e.message);
+    loadAdminUsers();
   }
 }
 
@@ -2322,6 +2370,9 @@ async function loadAdminSettingsForm() {
     // T-25: JEV — juiz de validação (default: ativado)
     document.getElementById('admin-setting-judge-model').value = s.judge_model || 'openai/gpt-4o-mini';
     document.getElementById('admin-setting-judge-enabled').checked = s.judge_enabled !== '0';
+    // T-07: limites de uso
+    document.getElementById('admin-setting-max-file-size-mb').value = s.max_file_size_mb || '5120';
+    document.getElementById('admin-setting-max-duration-hours').value = s.max_duration_hours || '10';
     loadGlossary();
   } catch (e) {
     console.error('Erro ao carregar configurações admin:', e);
@@ -2469,7 +2520,10 @@ async function saveAdminSettings(e) {
     analysis_model: document.getElementById('admin-setting-analysis-model').value,
     analysis_prompt: document.getElementById('admin-setting-analysis-prompt').value,
     judge_model: document.getElementById('admin-setting-judge-model').value,
-    judge_enabled: document.getElementById('admin-setting-judge-enabled').checked ? '1' : '0'
+    judge_enabled: document.getElementById('admin-setting-judge-enabled').checked ? '1' : '0',
+    // T-07: limites de uso
+    max_file_size_mb: document.getElementById('admin-setting-max-file-size-mb').value,
+    max_duration_hours: document.getElementById('admin-setting-max-duration-hours').value
   };
 
   try {
@@ -2576,6 +2630,92 @@ async function deleteSelectedTranscriptions() {
     btn.disabled = false;
     btn.innerHTML = oldText;
   }
+}
+
+// ---------------------------------------------------
+// T-13 — ÁUDIO ORIGINAL & EXPORT EM MASSA (ZIP)
+// ---------------------------------------------------
+function downloadOriginalAudio() {
+  if (!state.activeTranscription) return;
+  // A rota exige Authorization, então baixamos via fetch + blob (window.open perderia o token).
+  downloadAuthenticatedBlob(
+    `/api/transcriptions/${state.activeTranscription.id}/audio`,
+    state.activeTranscription.file_name || 'audio'
+  );
+}
+
+// Download autenticado genérico: fetch com Bearer → objectURL → clique temporário.
+async function downloadAuthenticatedBlob(url, fallbackName) {
+  try {
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${state.token}` } });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Falha ao baixar (HTTP ' + res.status + ').');
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const starMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const name = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : fallbackName);
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+  } catch (e) {
+    alert('Erro ao baixar: ' + e.message);
+  }
+}
+
+function toggleBulkExportMenu(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById('bulk-export-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+// Fecha o menu ao clicar em qualquer lugar fora dele.
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('bulk-export-menu');
+  if (menu && !menu.classList.contains('hidden') && !e.target.closest('#bulk-export-menu') && !e.target.closest('[onclick="toggleBulkExportMenu(event)"]')) {
+    menu.classList.add('hidden');
+  }
+});
+
+async function exportSelectedTranscriptions(format) {
+  toggleBulkExportMenu();
+  const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+  const ids = Array.from(checkedBoxes).map(cb => cb.value);
+  if (ids.length === 0) return;
+
+  const res = await fetch('/api/export/bulk', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.token}`
+    },
+    body: JSON.stringify({ ids, format })
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert('Erro ao exportar: ' + (data.error || 'HTTP ' + res.status));
+    return;
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const starMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+  const name = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : `transcreveai-${format}.zip`);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
 }
 
 function openBulkMoveModal() {

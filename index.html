@@ -302,6 +302,12 @@
               <i data-lucide="upload-cloud" class="w-4 h-4"></i>
               <span>Transcrever Arquivos</span>
             </button>
+
+            <!-- T-07: consumo do dia (preenchido via checkAuthUser) -->
+            <span id="quota-badge" class="hidden shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-raised dark:bg-brand-raised border border-brand-line dark:border-brand-line text-[11px] font-bold text-brand-copy dark:text-brand-copy" title="Transcrições nas últimas 24 h">
+              <i data-lucide="gauge" class="w-3.5 h-3.5 text-blue-600 dark:text-blue-300"></i>
+              <span id="quota-badge-text">—</span>
+            </span>
           </div>
         </div>
 
@@ -440,6 +446,14 @@
           <div>
             <h3 class="text-xs font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-3">Exportar</h3>
             <div class="space-y-2">
+              <button onclick="downloadOriginalAudio()" class="w-full flex items-center justify-between px-3.5 py-2.5 bg-brand-surface dark:bg-brand-surface hover:bg-brand-raised dark:hover:bg-brand-raised border border-brand-line dark:border-brand-line rounded-xl text-xs font-semibold text-brand-copy dark:text-brand-copy transition">
+                <span class="flex items-center space-x-2">
+                  <i data-lucide="music" class="w-4 h-4 text-emerald-500 dark:text-emerald-300"></i>
+                  <span id="download-audio-label">Áudio original</span>
+                </span>
+                <i data-lucide="download" class="w-3.5 h-3.5 text-brand-muted dark:text-brand-muted"></i>
+              </button>
+
               <button onclick="exportCurrentFile('pdf')" class="w-full flex items-center justify-between px-3.5 py-2.5 bg-brand-surface dark:bg-brand-surface hover:bg-brand-raised dark:hover:bg-brand-raised border border-brand-line dark:border-brand-line rounded-xl text-xs font-semibold text-brand-copy dark:text-brand-copy transition">
                 <span class="flex items-center space-x-2">
                   <i data-lucide="file-text" class="w-4 h-4 text-red-500 dark:text-red-300"></i>
@@ -725,6 +739,22 @@
                   <textarea id="admin-setting-analysis-prompt" rows="8" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono" placeholder="(vazio = usa o prompt padrão de fábrica)"></textarea>
                   <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-1">Deixe vazio para usar o prompt padrão (correção + concordância + estrutura). Edite para customizar o comportamento da IA.</p>
                 </div>
+              </div>
+
+              <!-- T-07: Limites de uso (tamanho, duração, cota) -->
+              <div class="mt-8 bg-emerald-50/60 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 space-y-3">
+                <span class="font-bold text-emerald-900 dark:text-emerald-300 text-xs flex items-center gap-1"><i data-lucide="gauge" class="w-3.5 h-3.5"></i> Limites de uso (T-07)</span>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-brand-copy dark:text-brand-copy mb-1">Tamanho máx. por arquivo (MB)</label>
+                    <input type="number" min="1" step="1" id="admin-setting-max-file-size-mb" value="5120" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-brand-copy dark:text-brand-copy mb-1">Duração máx. por arquivo (horas)</label>
+                    <input type="number" min="1" step="1" id="admin-setting-max-duration-hours" value="10" class="w-full bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-1.5 text-xs font-mono">
+                  </div>
+                </div>
+                <p class="text-[10px] text-brand-muted dark:text-brand-muted">Valem na hora, sem reiniciar. A cota diária (transcrições/usuário) é editada por usuário na tabela abaixo.</p>
               </div>
 
               <div class="flex justify-end">
@@ -1219,6 +1249,20 @@
     <span class="text-xs font-bold text-slate-300"><span id="selected-count" class="text-blue-400 font-extrabold">0</span> selecionados</span>
     <div class="h-4 w-px bg-slate-700"></div>
     <div class="flex items-center space-x-3">
+      <div class="relative">
+        <button onclick="toggleBulkExportMenu(event)" class="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition">
+          <i data-lucide="package-down" class="w-3.5 h-3.5"></i>
+          <span>Exportar</span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </button>
+        <div id="bulk-export-menu" class="hidden absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden min-w-[10rem]">
+          <button onclick="exportSelectedTranscriptions('txt')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">TXT (.zip)</button>
+          <button onclick="exportSelectedTranscriptions('srt')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">SRT (.zip)</button>
+          <button onclick="exportSelectedTranscriptions('vtt')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">VTT (.zip)</button>
+          <button onclick="exportSelectedTranscriptions('docx')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">DOCX (.zip)</button>
+          <button onclick="exportSelectedTranscriptions('pdf')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">PDF (.zip)</button>
+        </div>
+      </div>
       <button onclick="openBulkMoveModal()" class="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition">
         <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
         <span>Mover para Projeto</span>
