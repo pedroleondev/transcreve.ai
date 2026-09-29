@@ -122,7 +122,7 @@ async function runTestSuite() {
   // TEST 1 (T-15): Chave OpenRouter CIFRADA em repouso e NUNCA exposta pela API.
   const UNMASKED_KEY_RE = /sk-or-v1-[A-Za-z0-9_-]{15,}/;
   try {
-    const keyRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1`);
+    const keyRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE`);
     assert(keyRow && keyRow.key_value.length > 0, 'Chave OpenRouter ativa presente no banco SQLite.');
     assert(!keyRow.key_value.startsWith('sk-or-v1-'), 'Chave cifrada em repouso: key_value NAO comeca com sk-or-v1-.');
     assert(keyRow.key_value.startsWith('enc:v1:'), 'key_value no formato enc:v1:<iv>:<tag>:<ciphertext>.');
@@ -176,7 +176,7 @@ async function runTestSuite() {
 
   // T-15: salvar/trocar chave exige a senha do admin autenticado (com a propria chave ativa)
   try {
-    const activeRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1`);
+    const activeRow = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE`);
     const saveRes = await fetch(`${BASE_URL}/api/admin/apikeys`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },

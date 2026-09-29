@@ -122,7 +122,7 @@ function getAvailableOpenRouterModels() {
  */
 // Unico ponto do sistema que decifra a chave — e so no momento da chamada.
 async function getActiveOpenRouterKey() {
-  const row = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+  const row = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE LIMIT 1`);
   if (row && row.key_value) {
     // O banco e a fonte de verdade: falha de decifragem (APP_SECRET_KEY trocada
     // ou registro adulterado) e erro EXPLICITO — sem fallback silencioso para

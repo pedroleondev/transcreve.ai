@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
-const { initDatabase, runAsync, getAsync, allAsync, logAction } = require('./db');
+const { initDatabase, runAsync, getAsync, allAsync, logAction, isPostgres } = require('./db');
 const { transcribeAudioFile, generateChatCompletion, runAnalysisChat, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
 const { isValidLanguage } = require('./services/languages');
 const { DEFAULT_ENHANCE_SYSTEM_PROMPT, buildEnhanceUserContent, splitTextIntoChunks, PROMPT_VERSION } = require('./services/prompts');
@@ -87,9 +87,13 @@ async function getQuotaState(userId) {
   if (user.role === 'admin' || limit >= 999999) {
     return { exempt: true, used: 0, limit: limit || 999999 };
   }
+  // T-08: datetime('now','-24 hours') é SQLite-only — cutoff calculado em JS
+  // no formato 'YYYY-MM-DD HH:MM:SS' (comparável lexicamente no SQLite e
+  // coercível a TIMESTAMP no Postgres).
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
   const row = await getAsync(
-    `SELECT COUNT(*) AS n FROM transcriptions WHERE user_id = ? AND created_at >= datetime('now', '-24 hours')`,
-    [userId]
+    `SELECT COUNT(*) AS n FROM transcriptions WHERE user_id = ? AND created_at >= ?`,
+    [userId, cutoff]
   );
   return { exempt: false, used: row ? row.n : 0, limit };
 }
@@ -482,7 +486,7 @@ app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynami
           effectiveModel,
           'pending',
           '',
-          speaker_diarization ? 1 : 0,
+          speaker_diarization === true || speaker_diarization === 'true',
           0,
           ai_focus || null
         ]
@@ -856,7 +860,7 @@ app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) 
       `INSERT INTO ai_analyses (id, transcription_id, kind, model, prompt_used, glossary_used, result_md, tokens_in, tokens_out, judge_model, judge_approved, judge_feedback, attempts, created_at)
        VALUES (?, ?, 'enhance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [analysisId, req.params.id, model, systemPrompt, glossaryJson, resultText, tokensIn, tokensOut,
-       judgeEnabled ? judgeModel : null, judge ? (judge.approved ? 1 : 0) : null,
+       judgeEnabled ? judgeModel : null, judge ? !!judge.approved : null,
        judge && judge.issues.length ? JSON.stringify(judge.issues) : null, attempts]
     );
     res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION, attempts, judge } });
@@ -912,7 +916,7 @@ app.get('/api/admin/metrics', authenticateToken, requireAdmin, async (req, res) 
   try {
     const userCount = await getAsync(`SELECT COUNT(*) as count FROM users`);
     const totalTranscriptions = await getAsync(`SELECT COUNT(*) as count, SUM(duration_seconds) as total_duration, SUM(file_size) as total_size FROM transcriptions`);
-    const apiKeyCount = await getAsync(`SELECT COUNT(*) as count FROM api_keys WHERE is_active = 1`);
+    const apiKeyCount = await getAsync(`SELECT COUNT(*) as count FROM api_keys WHERE is_active = TRUE`);
     const recentLogs = await allAsync(`SELECT l.*, u.email as user_email FROM system_logs l LEFT JOIN users u ON l.user_id = u.id ORDER BY l.timestamp DESC LIMIT 10`);
 
     res.json({
@@ -1050,7 +1054,7 @@ app.get('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res) 
 // Estado da chave ativa, para o indicador da sidebar (nunca inclui a chave).
 app.get('/api/admin/apikeys/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const active = await getAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+    const active = await getAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE LIMIT 1`);
     if (!active) return res.json({ configured: false });
     res.json({ configured: true, ...publicKeyRow(active) });
   } catch (e) {
@@ -1064,7 +1068,7 @@ app.post('/api/admin/apikeys/test', authenticateToken, requireAdmin, async (req,
     let candidate = (req.body && req.body.key_value || '').trim();
     let activeId = null;
     if (!candidate) {
-      const active = await getAsync(`SELECT id, key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = 1 LIMIT 1`);
+      const active = await getAsync(`SELECT id, key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE LIMIT 1`);
       if (!active) return res.status(404).json({ valid: false, error: 'Nenhuma chave configurada.' });
       candidate = secrets.decrypt(active.key_value);
       activeId = active.id;
@@ -1076,7 +1080,7 @@ app.post('/api/admin/apikeys/test', authenticateToken, requireAdmin, async (req,
     if (activeId) {
       await runAsync(
         `UPDATE api_keys SET last_check_at = CURRENT_TIMESTAMP, last_check_ok = ?, last_check_info = ? WHERE id = ?`,
-        [result.valid ? 1 : 0, JSON.stringify(result.info || { error: result.error }), activeId]
+        [result.valid, JSON.stringify(result.info || { error: result.error }), activeId]
       );
     }
     res.status(result.valid ? 200 : 422).json({ valid: result.valid, info: result.info, error: result.error, masked_key: secrets.mask(candidate) });
@@ -1107,10 +1111,10 @@ app.post('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res)
     keyAuthFailures.delete(ip);
 
     const keyId = uuidv4();
-    await runAsync(`UPDATE api_keys SET is_active = 0 WHERE provider = 'openrouter'`);
+    await runAsync(`UPDATE api_keys SET is_active = FALSE WHERE provider = 'openrouter'`);
     await runAsync(
       `INSERT INTO api_keys (id, provider, name, key_value, is_active, last_check_at, last_check_ok, last_check_info)
-       VALUES (?, 'openrouter', ?, ?, 1, CURRENT_TIMESTAMP, 1, ?)`,
+       VALUES (?, 'openrouter', ?, ?, TRUE, CURRENT_TIMESTAMP, TRUE, ?)`,
       [keyId, name || 'Chave OpenRouter', secrets.encrypt(candidate), JSON.stringify(check.info)]
     );
     await logAction(req.user.id, 'ADMIN_APIKEY_ADDED', { name, masked: secrets.mask(candidate) }, ip);
@@ -1122,8 +1126,8 @@ app.post('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res)
 
 app.put('/api/admin/apikeys/:id/activate', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await runAsync(`UPDATE api_keys SET is_active = 0 WHERE provider = 'openrouter'`);
-    await runAsync(`UPDATE api_keys SET is_active = 1 WHERE id = ?`, [req.params.id]);
+    await runAsync(`UPDATE api_keys SET is_active = FALSE WHERE provider = 'openrouter'`);
+    await runAsync(`UPDATE api_keys SET is_active = TRUE WHERE id = ?`, [req.params.id]);
     await logAction(req.user.id, 'ADMIN_APIKEY_ACTIVATED', { key_id: req.params.id }, req.ip);
     res.json({ success: true });
   } catch (e) {
@@ -1179,7 +1183,11 @@ app.put('/api/admin/settings', authenticateToken, requireAdmin, async (req, res)
   const { settings } = req.body;
   try {
     for (const [key, value] of Object.entries(settings || {})) {
-      await runAsync(`INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)`, [key, String(value)]);
+      // T-08: INSERT OR REPLACE é SQLite-only; o equivalente Postgres é ON CONFLICT.
+      const upsertSql = isPostgres
+        ? `INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+        : `INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)`;
+      await runAsync(upsertSql, [key, String(value)]);
     }
     await logAction(req.user.id, 'ADMIN_SETTINGS_UPDATED', settings, req.ip);
     res.json({ success: true });

@@ -1,30 +1,99 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const secrets = require('./services/secrets');
 const { getJobSignal } = require('./services/job-context');
 
-// DB_PATH (env) permite isolar o banco em testes que sobem um segundo servidor
-// (incidente T-19: duas instâncias disputando o mesmo SQLite). Fora de testes,
-// nao definir — usa o turboscribe.sqlite padrao do diretorio do projeto.
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'turboscribe.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Erro ao conectar ao banco de dados SQLite:', err.message);
-  } else {
-    console.log('Conectado ao banco de dados SQLite local:', dbPath);
+// T-08 fase 2 — driver swap. DB_DRIVER=sqlite (default, produção atual) ou
+// DB_DRIVER=postgres (service `db` do compose). A camada de acesso abaixo
+// traduz o dialeto (? → $n, booleans) para o resto do app continuar igual;
+// rollback = voltar DB_DRIVER=sqlite apontando pro arquivo antigo.
+const DRIVER = (process.env.DB_DRIVER || 'sqlite').toLowerCase();
+const isPostgres = DRIVER === 'postgres';
+const { PG_DDL } = require('./scripts/migrate-sqlite-to-postgres');
+
+// ---------------------------------------------------------------------------
+// Conexão por driver
+// ---------------------------------------------------------------------------
+let db;          // sqlite3.Database (driver sqlite)
+let pool;        // pg.Pool (driver postgres)
+
+function pgConfig() {
+  if (process.env.DATABASE_URL) return { connectionString: process.env.DATABASE_URL };
+  return {
+    host: process.env.PGHOST || 'db',
+    port: parseInt(process.env.PGPORT || '5432', 10),
+    user: process.env.PGUSER || 'transcreveai',
+    password: process.env.PGPASSWORD || 'transcreveai_local_dev',
+    database: process.env.PGDATABASE || 'transcreveai',
+  };
+}
+
+if (isPostgres) {
+  const { Pool } = require('pg');
+  pool = new Pool({ ...pgConfig(), max: parseInt(process.env.PGPOOL_MAX || '10', 10) });
+  pool.on('error', (err) => console.error('Erro inesperado no pool PostgreSQL:', err.message));
+  console.log('Driver PostgreSQL ativo:', JSON.stringify({ host: pgConfig().host, database: pgConfig().database }));
+} else {
+  const sqlite3 = require('sqlite3').verbose();
+  // DB_PATH (env) permite isolar o banco em testes que sobem um segundo servidor
+  // (incidente T-19: duas instâncias disputando o mesmo SQLite). Fora de testes,
+  // nao definir — usa o turboscribe.sqlite padrao do diretorio do projeto.
+  const dbPath = process.env.DB_PATH || path.join(__dirname, 'turboscribe.sqlite');
+  db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('Erro ao conectar ao banco de dados SQLite:', err.message);
+    } else {
+      console.log('Conectado ao banco de dados SQLite local:', dbPath);
+    }
+  });
+  db.configure('busyTimeout', 5000);
+}
+
+// ---------------------------------------------------------------------------
+// Tradução de dialeto (apenas driver postgres)
+// ---------------------------------------------------------------------------
+// ? → $1..$n, ignorando ? dentro de strings ('...') e identificadores ("...").
+// O SQL do projeto não usa '' escapado dentro de literal nem operadores ?|/?&,
+// então a varredura simples cobre 100% das queries existentes.
+function toPgPlaceholders(sql) {
+  let out = '', n = 0, inStr = false, inId = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (inStr) { out += c; if (c === "'") inStr = false; continue; }
+    if (inId) { out += c; if (c === '"') inId = false; continue; }
+    if (c === "'") { inStr = true; out += c; continue; }
+    if (c === '"') { inId = true; out += c; continue; }
+    if (c === '?') { out += '$' + (++n); continue; }
+    out += c;
   }
-});
+  return out;
+}
 
-db.configure('busyTimeout', 5000);
+// Booleans: o pg aceita JS boolean nativo; o node-sqlite3 não — converte p/ 1/0.
+// SQL deve usar os literais TRUE/FALSE (válidos nos dois dialetos modernos).
+function normalizeParams(params = []) {
+  if (isPostgres) return params;
+  return params.map(p => (typeof p === 'boolean' ? (p ? 1 : 0) : p));
+}
 
-// Helper de exec em Promise
+// ---------------------------------------------------------------------------
+// Helpers de exec em Promise — mesma API para os dois drivers
+// ---------------------------------------------------------------------------
 function runAsync(sql, params = []) {
+  if (isPostgres) {
+    return new Promise((resolve, reject) => {
+      const signal = getJobSignal();
+      if (signal?.aborted) return reject(signal.reason);
+      pool.query(toPgPlaceholders(sql), normalizeParams(params))
+        .then(r => resolve({ changes: r.rowCount, lastID: null }))
+        .catch(reject);
+    });
+  }
   return new Promise((resolve, reject) => {
     const signal = getJobSignal();
     if (signal?.aborted) return reject(signal.reason);
-    db.run(sql, params, function (err) {
+    db.run(sql, normalizeParams(params), function (err) {
       if (err) reject(err);
       else resolve(this);
     });
@@ -32,10 +101,19 @@ function runAsync(sql, params = []) {
 }
 
 function getAsync(sql, params = []) {
+  if (isPostgres) {
+    return new Promise((resolve, reject) => {
+      const signal = getJobSignal();
+      if (signal?.aborted) return reject(signal.reason);
+      pool.query(toPgPlaceholders(sql), normalizeParams(params))
+        .then(r => resolve(r.rows[0] || null))
+        .catch(reject);
+    });
+  }
   return new Promise((resolve, reject) => {
     const signal = getJobSignal();
     if (signal?.aborted) return reject(signal.reason);
-    db.get(sql, params, (err, row) => {
+    db.get(sql, normalizeParams(params), (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
@@ -43,18 +121,35 @@ function getAsync(sql, params = []) {
 }
 
 function allAsync(sql, params = []) {
+  if (isPostgres) {
+    return new Promise((resolve, reject) => {
+      const signal = getJobSignal();
+      if (signal?.aborted) return reject(signal.reason);
+      pool.query(toPgPlaceholders(sql), normalizeParams(params))
+        .then(r => resolve(r.rows))
+        .catch(reject);
+    });
+  }
   return new Promise((resolve, reject) => {
     const signal = getJobSignal();
     if (signal?.aborted) return reject(signal.reason);
-    db.all(sql, params, (err, rows) => {
+    db.all(sql, normalizeParams(params), (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
   });
 }
 
+// ---------------------------------------------------------------------------
 // Inicializar Esquema de Tabelas
+// ---------------------------------------------------------------------------
 async function initDatabase() {
+  if (isPostgres) return initDatabasePostgres();
+  return initDatabaseSqlite();
+}
+
+// ---- SQLite (legado, padrão) ----
+async function initDatabaseSqlite() {
   // 25/09: journal_mode=DELETE (era WAL). O banco vive em bind-mount Windows
   // (Docker Desktop gRPC-FUSE), onde WAL+mmap corrompe a imagem em shutdown
   // abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Em DELETE mode as
@@ -281,113 +376,130 @@ async function initDatabase() {
     await runAsync('CREATE INDEX IF NOT EXISTS idx_transcriptions_queue ON transcriptions(status, created_at)');
     console.log('Tabelas SQLite verificadas/criadas com sucesso.');
 
-    // Seed Admin Padrão
-    const adminUser = await getAsync(`SELECT * FROM users WHERE email = ?`, ['admin@turboscribe.local']);
-    if (!adminUser) {
-      const adminId = uuidv4();
-      const passHash = await bcrypt.hash('admin123', 10);
-      await runAsync(
-        `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [adminId, 'Administrador SaaS', 'admin@turboscribe.local', passHash, 'admin', 999999, 'active']
-      );
-      console.log('Usuário Admin criado: admin@turboscribe.local / admin123');
+    await seedCoreData();
+  }
+}
 
-      // Seed Usuário Padrão de Demonstração
-      const userId = uuidv4();
-      const userPassHash = await bcrypt.hash('user123', 10);
-      await runAsync(
-        `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [userId, 'Pedro León', 'pedro.leon23@gmail.com', userPassHash, 'user', 3, 'active']
-      );
-      console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
-    }
+// ---- PostgreSQL (T-08 fase 2) ----
+async function initDatabasePostgres() {
+  // DDL espelha o schema SQLite (PG_DDL, fonte única compartilhada com o ETL
+  // da fase 1). As migrações imperativas do SQLite (PRAGMA, sqlite_master,
+  // ALTER ADD COLUMN) não se aplicam: o Postgres sobe com o schema completo.
+  await runAsync(PG_DDL);
+  console.log('Tabelas PostgreSQL verificadas/criadas com sucesso.');
+  await seedCoreData();
+}
 
-    // Garantir que transcrições legado (admin-local) pertençam ao usuário principal (Pedro León)
-    const defaultUser = await getAsync(`SELECT id FROM users WHERE email = ?`, ['pedro.leon23@gmail.com']);
-    if (defaultUser) {
-      await runAsync(`UPDATE transcriptions SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
-      await runAsync(`UPDATE projects SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
-    }
+// Seeds compartilhados pelos dois drivers (idempotentes).
+async function seedCoreData() {
+  // Seed Admin Padrão
+  const adminUser = await getAsync(`SELECT * FROM users WHERE email = ?`, ['admin@turboscribe.local']);
+  if (!adminUser) {
+    const adminId = uuidv4();
+    const passHash = await bcrypt.hash('admin123', 10);
+    await runAsync(
+      `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [adminId, 'Administrador SaaS', 'admin@turboscribe.local', passHash, 'admin', 999999, 'active']
+    );
+    console.log('Usuário Admin criado: admin@turboscribe.local / admin123');
 
-    // Colunas de verificacao da chave (resultado do ultimo teste contra a OpenRouter)
+    // Seed Usuário Padrão de Demonstração
+    const userId = uuidv4();
+    const userPassHash = await bcrypt.hash('user123', 10);
+    await runAsync(
+      `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, 'Pedro León', 'pedro.leon23@gmail.com', userPassHash, 'user', 3, 'active']
+    );
+    console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
+  }
+
+  // Garantir que transcrições legado (admin-local) pertençam ao usuário principal (Pedro León)
+  const defaultUser = await getAsync(`SELECT id FROM users WHERE email = ?`, ['pedro.leon23@gmail.com']);
+  if (defaultUser) {
+    await runAsync(`UPDATE transcriptions SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
+    await runAsync(`UPDATE projects SET user_id = ? WHERE user_id = 'admin-local' OR user_id IS NULL`, [defaultUser.id]);
+  }
+
+  // Colunas de verificacao da chave (resultado do ultimo teste contra a OpenRouter)
+  if (!isPostgres) {
     const keyCols = await allAsync(`PRAGMA table_info(api_keys)`);
     for (const [col, type] of [['last_check_at', 'DATETIME'], ['last_check_ok', 'INTEGER'], ['last_check_info', 'TEXT']]) {
       if (!keyCols.some(c => c.name === col)) {
         await runAsync(`ALTER TABLE api_keys ADD COLUMN ${col} ${type}`);
       }
     }
+  }
 
-    // Migracao: chaves gravadas em texto puro passam a ser cifradas in-place.
-    const plainKeys = await allAsync(`SELECT id, key_value FROM api_keys WHERE key_value != '' AND key_value NOT LIKE 'enc:v1:%'`);
-    for (const k of plainKeys) {
-      await runAsync(`UPDATE api_keys SET key_value = ? WHERE id = ?`, [secrets.encrypt(k.key_value), k.id]);
+  // Migracao: chaves gravadas em texto puro passam a ser cifradas in-place.
+  const plainKeys = await allAsync(`SELECT id, key_value FROM api_keys WHERE key_value != '' AND key_value NOT LIKE 'enc:v1:%'`);
+  for (const k of plainKeys) {
+    await runAsync(`UPDATE api_keys SET key_value = ? WHERE id = ?`, [secrets.encrypt(k.key_value), k.id]);
+  }
+  if (plainKeys.length) console.log(`[secrets] ${plainKeys.length} chave(s) de API cifrada(s) em repouso.`);
+  await runAsync(`DELETE FROM api_keys WHERE key_value = ''`);
+
+  // Seed unico a partir do .env: so quando ainda nao ha chave no banco.
+  // Depois disso o banco (cifrado) e a fonte de verdade; o .env pode ficar sem a chave.
+  const openrouterKey = await getAsync(`SELECT id FROM api_keys WHERE provider = 'openrouter'`);
+  const envKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  if (!openrouterKey && envKey) {
+    await runAsync(
+      `INSERT INTO api_keys (id, provider, name, key_value, is_active) VALUES (?, ?, ?, ?, TRUE)`,
+      [uuidv4(), 'openrouter', 'Chave Principal OpenRouter', secrets.encrypt(envKey)]
+    );
+    console.log('Chave de API OpenRouter importada do .env e cifrada. O .env pode ficar sem OPENROUTER_API_KEY a partir de agora.');
+  }
+
+  // Seed Configurações Globais
+  const defaultSettings = [
+    { key: 'max_file_size_mb', value: '5120' },
+    { key: 'max_duration_hours', value: '10' },
+    { key: 'default_language', value: 'pt' },
+    { key: 'base_model', value: 'openai/whisper-1' },
+    { key: 'pro_model', value: 'openai/whisper-large-v3-turbo' },
+    { key: 'max_model', value: 'openai/whisper-large-v3' },
+    { key: 'base_enabled', value: 'true' },
+    { key: 'pro_enabled', value: 'true' },
+    { key: 'max_enabled', value: 'true' },
+    { key: 'analysis_model', value: 'openai/gpt-4o-mini' },
+    { key: 'analysis_prompt', value: '' }
+  ];
+
+  // T-16: migração idempotente — renomeia chaves antigas (chita/golfinho/baleia)
+  // preservando valores customizados pelo admin, e migra o modo das transcrições legadas.
+  const keyRenames = [
+    { old: 'chita_model', next: 'base_model' },
+    { old: 'golfinho_model', next: 'pro_model' },
+    { old: 'baleia_model', next: 'max_model' },
+    { old: 'chita_enabled', next: 'base_enabled' },
+    { old: 'golfinho_enabled', next: 'pro_enabled' },
+    { old: 'baleia_enabled', next: 'max_enabled' }
+  ];
+  for (const { old, next } of keyRenames) {
+    const legacy = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [old]);
+    const current = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [next]);
+    if (legacy && !current) {
+      await runAsync(`INSERT INTO system_settings (key, value) VALUES (?, ?)`, [next, legacy.value]);
     }
-    if (plainKeys.length) console.log(`[secrets] ${plainKeys.length} chave(s) de API cifrada(s) em repouso.`);
-    await runAsync(`DELETE FROM api_keys WHERE key_value = ''`);
-
-    // Seed unico a partir do .env: so quando ainda nao ha chave no banco.
-    // Depois disso o banco (cifrado) e a fonte de verdade; o .env pode ficar sem a chave.
-    const openrouterKey = await getAsync(`SELECT id FROM api_keys WHERE provider = 'openrouter'`);
-    const envKey = (process.env.OPENROUTER_API_KEY || '').trim();
-    if (!openrouterKey && envKey) {
-      await runAsync(
-        `INSERT INTO api_keys (id, provider, name, key_value, is_active) VALUES (?, ?, ?, ?, 1)`,
-        [uuidv4(), 'openrouter', 'Chave Principal OpenRouter', secrets.encrypt(envKey)]
-      );
-      console.log('Chave de API OpenRouter importada do .env e cifrada. O .env pode ficar sem OPENROUTER_API_KEY a partir de agora.');
+    if (legacy) {
+      await runAsync(`DELETE FROM system_settings WHERE key = ?`, [old]);
     }
+  }
+  const modeRenames = [
+    { old: 'chita', next: 'base' },
+    { old: 'golfinho', next: 'pro' },
+    { old: 'baleia', next: 'max' }
+  ];
+  for (const { old, next } of modeRenames) {
+    await runAsync(`UPDATE transcriptions SET mode = ? WHERE mode = ?`, [next, old]);
+  }
 
-    // Seed Configurações Globais
-    const defaultSettings = [
-      { key: 'max_file_size_mb', value: '5120' },
-      { key: 'max_duration_hours', value: '10' },
-      { key: 'default_language', value: 'pt' },
-      { key: 'base_model', value: 'openai/whisper-1' },
-      { key: 'pro_model', value: 'openai/whisper-large-v3-turbo' },
-      { key: 'max_model', value: 'openai/whisper-large-v3' },
-      { key: 'base_enabled', value: 'true' },
-      { key: 'pro_enabled', value: 'true' },
-      { key: 'max_enabled', value: 'true' },
-      { key: 'analysis_model', value: 'openai/gpt-4o-mini' },
-      { key: 'analysis_prompt', value: '' }
-    ];
-
-    // T-16: migração idempotente — renomeia chaves antigas (chita/golfinho/baleia)
-    // preservando valores customizados pelo admin, e migra o modo das transcrições legadas.
-    const keyRenames = [
-      { old: 'chita_model', next: 'base_model' },
-      { old: 'golfinho_model', next: 'pro_model' },
-      { old: 'baleia_model', next: 'max_model' },
-      { old: 'chita_enabled', next: 'base_enabled' },
-      { old: 'golfinho_enabled', next: 'pro_enabled' },
-      { old: 'baleia_enabled', next: 'max_enabled' }
-    ];
-    for (const { old, next } of keyRenames) {
-      const legacy = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [old]);
-      const current = await getAsync(`SELECT value FROM system_settings WHERE key = ?`, [next]);
-      if (legacy && !current) {
-        await runAsync(`INSERT INTO system_settings (key, value) VALUES (?, ?)`, [next, legacy.value]);
-      }
-      if (legacy) {
-        await runAsync(`DELETE FROM system_settings WHERE key = ?`, [old]);
-      }
-    }
-    const modeRenames = [
-      { old: 'chita', next: 'base' },
-      { old: 'golfinho', next: 'pro' },
-      { old: 'baleia', next: 'max' }
-    ];
-    for (const { old, next } of modeRenames) {
-      await runAsync(`UPDATE transcriptions SET mode = ? WHERE mode = ?`, [next, old]);
-    }
-
-    for (const setting of defaultSettings) {
-      const existing = await getAsync(`SELECT * FROM system_settings WHERE key = ?`, [setting.key]);
-      if (!existing) {
-        await runAsync(`INSERT INTO system_settings (key, value) VALUES (?, ?)`, [setting.key, setting.value]);
-      } else if (setting.key.endsWith('_model')) {
-        await runAsync(`UPDATE system_settings SET value = ? WHERE key = ?`, [setting.value, setting.key]);
-      }
+  for (const setting of defaultSettings) {
+    const existing = await getAsync(`SELECT * FROM system_settings WHERE key = ?`, [setting.key]);
+    if (!existing) {
+      await runAsync(`INSERT INTO system_settings (key, value) VALUES (?, ?)`, [setting.key, setting.value]);
+    } else if (setting.key.endsWith('_model')) {
+      await runAsync(`UPDATE system_settings SET value = ? WHERE key = ?`, [setting.value, setting.key]);
     }
   }
 }
@@ -405,7 +517,9 @@ async function logAction(userId, action, details, ipAddress = '127.0.0.1') {
 }
 
 module.exports = {
-  db,
+  db: isPostgres ? pool : db,
+  isPostgres,
+  pgPool: isPostgres ? pool : null,
   runAsync,
   getAsync,
   allAsync,

@@ -4,7 +4,9 @@ function positiveNumber(name, fallback, integer = true, max = Infinity) {
   if (!Number.isFinite(n) || n <= 0 || (integer && !Number.isInteger(n)) || n > max) throw new Error(name + ' deve ser positivo' + (integer ? ' e inteiro' : '') + '.');
   return n;
 }
-const queuePositionSql = "CASE WHEN t.status = 'pending' THEN (SELECT COUNT(*) FROM transcriptions q WHERE q.status = 'pending' AND (q.created_at < t.created_at OR (q.created_at = t.created_at AND q.rowid <= t.rowid))) ELSE NULL END";
+// T-08: sem rowid no Postgres — o desempate por `id` (uuid) é determinístico
+// nos dois dialetos e preserva a ordem FIFO por created_at.
+const queuePositionSql = "CASE WHEN t.status = 'pending' THEN (SELECT COUNT(*) FROM transcriptions q WHERE q.status = 'pending' AND (q.created_at < t.created_at OR (q.created_at = t.created_at AND q.id <= t.id))) ELSE NULL END";
 
 // Um supervisor por banco; slots locais + claim condicional impedem duplo processamento.
 function createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency = 2, timeoutMs = 30 * 60000, maxAttempts = 3, pollMs = 5000}) {
@@ -16,7 +18,7 @@ function createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrenc
     await runAsync("UPDATE transcriptions SET status = CASE WHEN worker_attempts >= ? THEN 'failed' ELSE 'pending' END, stage = NULL, worker_started_at = NULL, error_message = 'Execucao interrompida; recuperacao no boot' WHERE status = 'processing'", [maxAttempts]);
   }
   async function claimNext() {
-    const task = await getAsync("SELECT * FROM transcriptions WHERE status = 'pending' ORDER BY created_at, rowid LIMIT 1");
+    const task = await getAsync("SELECT * FROM transcriptions WHERE status = 'pending' ORDER BY created_at, id LIMIT 1");
     if (!task) return null;
     const result = await runAsync("UPDATE transcriptions SET status = 'processing', worker_started_at = CURRENT_TIMESTAMP, worker_attempts = worker_attempts + 1, error_message = NULL WHERE id = ? AND status = 'pending'", [task.id]);
     return result.changes === 1 ? {...task, worker_attempts: task.worker_attempts + 1} : null;

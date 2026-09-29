@@ -12,6 +12,17 @@ services:
       - JWT_SECRET=${JWT_SECRET:-transcreveai_docker_jwt_secret_secure_key_2026}
       - APP_SECRET_KEY=${APP_SECRET_KEY:-transcreveai_dev_app_secret_key_32chars_minimum_length!}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # T-08 fase 2: driver swap. sqlite (default) ou postgres (service `db`).
+      # Migrar: rode o ETL (scripts/migrate-sqlite-to-postgres.js) e depois
+      # DB_DRIVER=postgres no .env + `docker compose up -d transcreveai`.
+      # Rollback: remover DB_DRIVER do .env e subir de volta.
+      - DB_DRIVER=${DB_DRIVER:-sqlite}
+      - DATABASE_URL=${DATABASE_URL}
+      - PGHOST=${PGHOST:-db}
+      - PGPORT=${PGPORT:-5432}
+      - PGUSER=${PGUSER:-transcreveai}
+      - PGPASSWORD=${PGPASSWORD:-transcreveai_local_dev}
+      - PGDATABASE=${PGDATABASE:-transcreveai}
     volumes:
       - .:/app
       - /app/node_modules

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { runAsync, getAsync, allAsync, logAction } = require('../db');
+const { runAsync, getAsync, allAsync, logAction, isPostgres } = require('../db');
 const { createQueueWorker, positiveNumber, queuePositionSql } = require('./queue');
 const { jobSleep } = require('./job-context');
 const { transcribeAudioFile, generateChatCompletion } = require('./openrouter');
@@ -207,7 +207,8 @@ async function transcribeOneChunk(task, chunk) {
 
 async function updateProgress(task) {
   const row = await getAsync(
-    `SELECT COUNT(*) AS total, SUM(status = 'done') AS done FROM transcription_chunks WHERE transcription_id = ?`, [task.id]
+    // T-08: SUM(boolean) não existe no Postgres — CASE é portátil.
+    `SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done FROM transcription_chunks WHERE transcription_id = ?`, [task.id]
   );
   const pct = row.total ? 15 + Math.round((row.done / row.total) * 75) : 15;
   await runAsync(`UPDATE transcriptions SET progress = ? WHERE id = ?`, [pct, task.id]);
@@ -386,10 +387,13 @@ async function startQueueWorker() {
 // Estado detalhado para GET /api/transcriptions/:id/status
 async function getJobProgress(transcriptionId) {
   const queue = await getAsync('SELECT ' + queuePositionSql + ' AS queue_position, worker_attempts FROM transcriptions t WHERE t.id = ?', [transcriptionId]);
+  // T-08: SUM(boolean) e julianday() não existem no Postgres — CASE portátil
+  // para contagens e EXTRACT(EPOCH) para a média de duração dos blocos.
   const stats = await getAsync(
-    `SELECT COUNT(*) AS total, SUM(status = 'done') AS done, SUM(status = 'failed') AS failed,
-            AVG(CASE WHEN status = 'done' AND started_at IS NOT NULL
-                     THEN (julianday(finished_at) - julianday(started_at)) * 86400 END) AS avg_sec
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+            AVG(CASE WHEN status = 'done' AND started_at IS NOT NULL ${isPostgres ? 'AND finished_at IS NOT NULL THEN EXTRACT(EPOCH FROM (finished_at - started_at))' : "THEN (julianday(finished_at) - julianday(started_at)) * 86400"} END) AS avg_sec
      FROM transcription_chunks WHERE transcription_id = ?`, [transcriptionId]
   );
   if (!stats || !stats.total) return { ...queue, chunks_total: 0, chunks_done: 0, chunks_failed: 0, eta_seconds: null };
