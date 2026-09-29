@@ -99,7 +99,8 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | `OPENROUTER_API_KEY` | `.env`, sincronizada para `api_keys` no boot | não |
 | `WORKER_CONCURRENCY` | `.env` | não — default 2; jobs de transcrição processados em paralelo (T-06) |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `.env` / compose | ⚠️ senha tem default de dev — obrigatório trocar em produção (T-08, service `db`) |
-| `DATABASE_URL` | `.env` | usada pelo ETL de migração; sobrescreve as vars POSTGRES_* |
+| `DB_DRIVER` | `.env` / compose | não — `sqlite` (default, produção atual) ou `postgres`; cutover T-08 |
+| `DATABASE_URL` | `.env` | driver postgres (e ETL): sobrescreve as vars `PG*`; sem ela usa `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` (defaults apontam pro service `db`) |
 
 `.env`, `turboscribe.sqlite` e `uploads/` estão no `.gitignore`.
 
@@ -118,7 +119,7 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 
 **Journal mode = DELETE (desde 25/09; era WAL).** WAL faz mmap de `-wal`/`-shm`, e o bind-mount Windows do Docker Desktop (gRPC-FUSE) corrompe a imagem em shutdown abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Custo: um writer por vez (mitigado por `busy_timeout=5000`; o worker já é serial).
 
-**T-08 (28/09): migração para PostgreSQL em andamento.** O problema real não era o WAL — é o writer único do SQLite, que não escala aos 35 mil usuários mirados. Fase 1 entregue: service `db` (postgres:16-alpine, volume nomeado `pgdata`, healthcheck `pg_isready`) no compose e ETL `scripts/migrate-sqlite-to-postgres.js` (fonte READONLY, transação única, validação de contagens, `--dry-run`/`--force`). Fase 2 (driver swap, `DB_DRIVER=postgres`) pendente — o app continua no SQLite até lá. Rollback da migração = seguir apontando para o SQLite; o arquivo nunca é alterado pelo ETL.
+**T-08 (28–29/09): migração para PostgreSQL completa.** O problema real não era o WAL — é o writer único do SQLite, que não escala aos 35 mil usuários mirados. Fase 1 (28/09): service `db` (postgres:16-alpine, volume nomeado `pgdata`, healthcheck `pg_isready`) e ETL `scripts/migrate-sqlite-to-postgres.js` (fonte READONLY, transação única, validação de contagens, `--dry-run`/`--force`). Fase 2 (29/09): driver swap em `db.js` (`DB_DRIVER=sqlite|postgres`) — tradução de placeholders/booleanos, DDL compartilhado com o ETL, dialeto da fila/pipeline/quota/settings portabilizado, `transcript-editor.js` migrado (antes abria SQLite próprio). App verificado de ponta a ponta contra o Postgres (`tests/t08_driver_postgres.js`, 26/26) e sem regressão no SQLite (79/79). **A instância local ainda roda `sqlite`; o cutover é deliberado:** ETL → `DB_DRIVER=postgres` no `.env` → `docker compose up -d transcreveai`. Rollback = remover a variável.
 
 ## Limites técnicos conhecidos
 

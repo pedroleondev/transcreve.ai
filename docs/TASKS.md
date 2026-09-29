@@ -18,7 +18,7 @@
 | T-05 | Tema escuro | 🟠 P1 | DONE |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DONE |
 | T-07 | Cotas e limites de uso (`daily_limit`, max upload/duração), editáveis pelo admin | 🔴 P0 | DONE |
-| T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado, sem perda; troca do driver = fase 2) | 🔴 P0 | DOING |
+| T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado + driver swap; cutover por `DB_DRIVER`) | 🔴 P0 | DONE |
 | T-09 | Página de Conta (perfil, trocar senha, esqueci senha por e-mail, logs de uso) | 🟠 P1 | TODO |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
 | T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | TODO |
@@ -209,7 +209,7 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 ---
 
 ### T-08 — Migração SQLite → PostgreSQL
-**Estado:** DOING (fase 1, 28/09/2026) · **Prioridade:** 🔴 P0 · **Substitui** o escopo antigo "endurecer SQLite (WAL + índices)"
+**Estado:** DONE (fase 1 em 28/09/2026, fase 2 em 29/09/2026) · **Prioridade:** 🔴 P0 · **Substitui** o escopo antigo "endurecer SQLite (WAL + índices)"
 **Por quê:** o WAL corrompia o banco no bind-mount do Docker Desktop (incidente 25/09) e foi desligado; mas o problema real não é o WAL — é que o SQLite **serializa todas as escritas num writer único**. Com 35 mil usuários esperados (login, fila, billing, webhooks do Asaas escritos ao mesmo tempo), `SQLITE_BUSY` viria na primeira campanha. O banco precisa sair do app.
 **Contexto:** `db.js` (schema + helpers `runAsync`/`getAsync`/`allAsync`), `docker-compose.yml`, `docs/stack.md` §journal, `scripts/migrate-sqlite-to-postgres.js`, `tests/t08_migration.js`
 **Toca:** `docker-compose.yml` (service `db`), `scripts/` (novo), `tests/` (novo), `package.json` (`pg`), `.env.example`, `db.js` (fase 2)
@@ -226,7 +226,7 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 - [x] Conversão de tipos: `REAL` → `DOUBLE PRECISION`, `DATETIME` → `TIMESTAMP`, `0/1` → `BOOLEAN`
 - [x] `tests/t08_migration.js` verde dentro do container contra o service `db` (banco de teste criado e destruído pelo teste)
 - [x] `test_suite.js` sem regressão (app inalterado nesta fase)
-- [ ] Fase 2: app roda com `DB_DRIVER=postgres` e a suíte passa contra o Postgres
+- [x] Fase 2: app roda com `DB_DRIVER=postgres` e a suíte passa contra o Postgres
 
 **Evidência (fase 1, 28/09/2026):**
 - Service `db` adicionado ao `docker-compose.yml` (postgres:16-alpine, `pgdata` nomeado, healthcheck).
@@ -234,6 +234,14 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 - `tests/t08_migration.js`: fixture SQLite completo (10 tabelas) → migração contra banco de teste descartável no service `db` → contagens e conversões de tipo verificadas.
 - Dependência `pg` adicionada; docs (`stack.md`, `.env.example`) atualizados.
 - **Testes (28/09/2026):** `tests/t08_migration.js` → **25/25 PASS** dentro do container (conversões booleanas, `REAL`→double, acentos preservados, chave cifrada `enc:v1:` intacta, trava de destino não-vazio, dry-run não-destrutivo). `test_suite.js` → **79/79 PASS** sem regressão. Dry-run contra o banco real: 145 transcrições, 2.066 segmentos, 465 logs, 10 tabelas — plano íntegro, fonte inalterada.
+
+**Evidência (fase 2, 29/09/2026):**
+- `db.js`: driver swap completo (`DB_DRIVER=sqlite|postgres`, default sqlite). No Postgres: `pg.Pool` (env `DATABASE_URL` ou `PG*`, defaults apontam pro service `db`), tradução de placeholders `?` → `$n` (ignorando strings/identificadores), normalização de booleanos (JS boolean no pg; 1/0 no sqlite3), `runAsync` devolve `{changes: rowCount}` compatível com o `this.changes` do sqlite3. `initDatabase` tem dois caminhos: DDL SQLite legado (com migrações imperativas) vs `PG_DDL` compartilhado com o ETL (fonte única); seeds idempotentes compartilhados pelos dois drivers.
+- Dialeto varrido e corrigido: fila sem `rowid` (desempate por `id` — `services/queue.js`), `SUM(boolean)`/`julianday()` → `SUM(CASE...)`/`EXTRACT(EPOCH)` (`services/pipeline.js`), cota 24h sem `datetime()` (cutoff calculado em JS — `server.js`), `INSERT OR REPLACE` → `ON CONFLICT DO UPDATE` (settings admin), `is_active = 1/0` → `TRUE/FALSE` (server/openrouter/test_suite), escrita de booleanos como JS boolean (transcribe, api_keys, JEV).
+- **Achado crítico do driver swap:** `services/transcript-editor.js` (edição de segmentos T-04) abria conexão SQLite PRÓPRIA direto no arquivo — sob Postgres gravaria num SQLite fantasma. Reescrito: no pg a transação roda num client dedicado do pool (`pgPool.connect()`), mesma validação e atomicidade.
+- `docker-compose.yml`: app recebe `DB_DRIVER` (default `sqlite`) + variáveis `PG*`/`DATABASE_URL` — cutover = rodar o ETL e setar `DB_DRIVER=postgres` no `.env`; rollback = tirar a variável.
+- **Testes (29/09/2026):** `tests/t08_driver_postgres.js` → **26/26 PASS** (app inteiro contra o service `db` em banco descartável: seeds, auth, quota 429, upsert de settings, fila/chunks/segmentos, export, áudio, edição T-04, glossário, api_keys booleanos, métricas, logs `ORDER BY timestamp`, projetos — provider mock, custo zero). `tests/t08_migration.js` → 25/25. `test_suite.js` → **79/79** no SQLite sem regressão. **Instância local continua em SQLite** — o cutover de produção fica para validação manual: ETL (`node scripts/migrate-sqlite-to-postgres.js`) → `DB_DRIVER=postgres` no `.env`.
+
 
 ---
 
