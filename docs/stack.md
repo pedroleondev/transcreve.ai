@@ -77,9 +77,11 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET/PUT/DELETE | `/api/transcriptions/:id` | token | ✅ dono — alheio retorna 404 |
 | GET | `/api/transcriptions/:id/status` | token | ✅ dono — inclui `queue_position` (T-06) |
 | POST | `/api/transcriptions/:id/retry` | token | ✅ dono |
-| POST | `/api/transcribe` | token | grava `user_id`, mas não valida cota; valida com `ffprobe` por arquivo |
+| POST | `/api/transcribe` | token | T-07: `checkDailyQuota` (429 ao exceder `daily_limit` nas últimas 24 h); multer montado por request com `fileSize` de `system_settings.max_file_size_mb`; valida duração com `ffprobe` contra `max_duration_hours` |
 | GET | `/api/export/:id/:format` | token | ✅ dono |
-| GET | `/uploads/:file` | token (aceita `?token=` para `<audio>`) | ✅ valida dono via `file_path` no banco; fora de escopo → 404 |
+| GET | `/api/transcriptions/:id/audio` | token (aceita `?token=` para `<audio>`) | ✅ dono — T-13: áudio original com `Content-Disposition` do nome original; suporta `Range` (206 p/ seek) |
+| POST | `/api/export/bulk` | token | T-13: `{ids, format}` → um `.zip` em stream (`archiver`); item alheio/inexistente vai para `_erros.txt` sem abortar o lote; máx. 100 itens |
+| GET | `/uploads/:file` | token (aceita `?token=` para `<audio>`) | ✅ valida dono via `file_path` no banco; fora de escopo → 404 (T-13: player usa a rota autenticada acima; mantida p/ retrocompatibilidade) |
 | POST | `/api/chat`, `/api/translate` | token | ✅ valida `transcription_id` do body quando enviado |
 | POST | `/api/transcriptions/:id/enhance` | token | ✅ dono — T-18 aprimora o texto via LLM; **T-25: juiz (JEV) valida cada chunk antes da entregar** (1 retry com feedback se reprovar; `judge_model`/`judge_enabled` no admin); custo em tokens |
 | GET | `/api/transcriptions/:id/analyses` | token | ✅ dono — T-18: histórico de aprimoramentos |

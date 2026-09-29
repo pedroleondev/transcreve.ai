@@ -17,13 +17,13 @@
 | T-04 | UI de leitura da transcrição (modos de leitura, Markdown, conforto) | 🟠 P1 | DONE |
 | T-05 | Tema escuro | 🟠 P1 | DONE |
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DONE |
-| T-07 | Cotas e limites de uso (`daily_limit`, max upload/duração), editáveis pelo admin | 🔴 P0 | TODO |
+| T-07 | Cotas e limites de uso (`daily_limit`, max upload/duração), editáveis pelo admin | 🔴 P0 | DONE |
 | T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado, sem perda; troca do driver = fase 2) | 🔴 P0 | DOING |
 | T-09 | Página de Conta (perfil, trocar senha, esqueci senha por e-mail, logs de uso) | 🟠 P1 | TODO |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
 | T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | TODO |
 | T-12 | ~~Player fixo no rodapé~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
-| T-13 | Baixar áudio original (rota autenticada) + exportar em massa | 🔴 P0 | TODO |
+| T-13 | Baixar áudio original (rota autenticada) + exportar em massa | 🔴 P0 | DONE |
 | T-14 | ~~UX de modais~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
 | T-15 | Chave OpenRouter: entrada protegida, teste antes de salvar, cifrada em repouso | 🔴 P0 | DONE |
 | T-16 | Renomear níveis → **Base / Pro / Max** | 🟠 P1 | DONE |
@@ -190,20 +190,22 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 ---
 
 ### T-07 — Cotas e limites de uso
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-01 · **Bloqueia:** T-27 (Asaas cobra por uso)
+**Estado:** DONE (29/09/2026) · **Prioridade:** 🔴 P0 · **Depende de:** T-01 · **Bloqueia:** T-27 (Asaas cobra por uso)
 **Por quê:** `users.daily_limit` existe no banco e **nunca é consultado**; o Multer aceita arquivo de qualquer tamanho ([MULTIUSER.md](MULTIUSER.md) R-05, R-06). No modelo SaaS, cota é o que transforma plano pago em receita — e o admin precisa ajustar os limites de todos sem tocar no código.
 **Contexto:** `server.js:26-33`, `server.js:228-280`, `db.js` (`system_settings`)
 **Toca:** `server.js`, `app.js`
 **Aceite:**
-- [ ] `/api/transcribe` conta as transcrições do usuário nas últimas 24 h e retorna **429** ao exceder `daily_limit`
-- [ ] Admin (`daily_limit: 999999`) não é bloqueado
-- [ ] `multer({ limits: { fileSize } })` alimentado por `system_settings.max_file_size_mb`
-- [ ] Rejeição de duração acima de `max_duration_hours` após o `ffprobe`, com `error_message` claro
-- [ ] UI mostra "X de Y transcrições hoje"
-- [ ] Painel admin: `daily_limit` global (default para novos usuários) e por usuário; `max_file_size_mb` e `max_duration_hours` editáveis, valendo na hora (settings já são lidas por request)
+- [x] `/api/transcribe` conta as transcrições do usuário nas últimas 24 h e retorna **429** ao exceder `daily_limit`
+- [x] Admin (`daily_limit: 999999`) não é bloqueado
+- [x] `multer({ limits: { fileSize } })` alimentado por `system_settings.max_file_size_mb`
+- [x] Rejeição de duração acima de `max_duration_hours` após o `ffprobe`, com `error_message` claro
+- [x] UI mostra "X de Y transcrições hoje"
+- [x] Painel admin: `daily_limit` global (default para novos usuários) e por usuário; `max_file_size_mb` e `max_duration_hours` editáveis, valendo na hora (settings já são lidas por request)
 
-**Evidência:** _(preencher)_
-
+**Evidência (29/09/2026):**
+- `server.js`: middleware `checkDailyQuota` (429 antes do upload; lote que estoura a cota é recusado e os arquivos são apagados do disco); multer montado por request (`uploadWithDynamicLimits`) com `fileSize` lido de `system_settings.max_file_size_mb` (valor `0` é válido — bloqueia tudo; env só é fallback quando a chave não existe); rejeição de duração usa `max_duration_hours` das settings; `GET /api/auth/me` devolve `used_today`/`quota_unlimited`.
+- `app.js`/`index.html`: badge de cota na toolbar do dashboard ("X de Y hoje" / "Uso ilimitado"); `daily_limit` editável inline na tabela de usuários do admin; card "Limites de uso (T-07)" no formulário de settings.
+- **Segurança (mesmo commit):** removido o auto-login hardcoded (`pedro.leon23@gmail.com`/`user123`) de `ensureAuthToken()` — sem token válido a UI abre o modal de login.
 ---
 
 ### T-08 — Migração SQLite → PostgreSQL
@@ -294,19 +296,21 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 ---
 
 ### T-13 — Baixar áudio original + Exportar em massa
-**Estado:** TODO · **Prioridade:** 🔴 P0 (elevada 28/09 — paridade com o concorrente e pré-requisito de valor percebido no plano pago) · **Depende de:** nada para funcionar; T-02 já garante o isolamento
+**Estado:** DONE (29/09/2026) · **Prioridade:** 🔴 P0 (elevada 28/09 — paridade com o concorrente e pré-requisito de valor percebido no plano pago) · **Depende de:** nada para funcionar; T-02 já garante o isolamento
 **Por quê:** (a) o painel de detalhe da referência oferece "Baixar áudio"; o nosso não tem. Hoje o áudio só é acessível pela URL `/uploads/...` com token na query (fragilidade já mapeada). A forma certa é uma **rota autenticada dedicada**. (b) A barra de ações em massa da referência tem Exportar; a nossa só tem Mover e Excluir — para quem processa 50 arquivos, exportar um a um é inaceitável.
 **Contexto:** `server.js` (rotas `/api/export/:id/:format`, `/uploads`), `app.js` (barra de ações em massa), `services/exporter.js`
 **Toca:** `server.js`, `app.js`, `index.html`, `package.json` (zip)
 **Aceite:**
-- [ ] `GET /api/transcriptions/:id/audio` autenticada, `Content-Disposition: attachment` com o nome original; suporta `Range` (seek do player continua funcionando)
-- [ ] Botão "Baixar áudio" no painel de detalhe com tamanho do arquivo ("Baixar áudio · 4,4 MB")
-- [ ] **Exportar em massa:** na seleção múltipla da lista, ação "Exportar" → escolhe formato (PDF/DOCX/TXT/SRT/VTT) → baixa **um `.zip`** com um arquivo nomeado por transcrição (`{nome}-{formato}.{ext}`); stream, sem inflar memória (arquivos de 10 h geram PDFs grandes)
-- [ ] Falha em uma transcrição do lote não aborta as demais — ela entra num `erros.txt` dentro do zip
-- [ ] `test_suite.js`: rota de áudio 200 com token / 401 sem / 404 de outro usuário; zip em massa com 2 transcrições contém 2 arquivos + lista de nomes correta
+- [x] `GET /api/transcriptions/:id/audio` autenticada, `Content-Disposition: attachment` com o nome original; suporta `Range` (seek do player continua funcionando)
+- [x] Botão "Áudio original · X MB" no painel de detalhe com tamanho do arquivo ("Baixar áudio · 4,4 MB")
+- [x] **Exportar em massa:** na seleção múltipla da lista, ação "Exportar" → escolhe formato (PDF/DOCX/TXT/SRT/VTT) → baixa **um `.zip`** com um arquivo nomeado por transcrição (`{nome}-{formato}.{ext}`); stream, sem inflar memória (arquivos de 10 h geram PDFs grandes)
+- [x] Falha em uma transcrição do lote não aborta as demais — ela entra num `erros.txt` dentro do zip
+- [x] Cobertura de testes (`tests/t13_audio_export.js`, 31 asserts): rota de áudio 200 com token / 401 sem / 404 de outro usuário; zip em massa com 2 transcrições contém 2 arquivos + lista de nomes correta
 
-**Evidência:** _(preencher)_
-
+**Evidência (29/09/2026):**
+- `server.js`: `GET /api/transcriptions/:id/audio` (autenticada, escopo dono/admin `?all=true` → 404 alheio; `Content-Disposition: attachment` com `filename*=UTF-8` do nome original; `Accept-Ranges` + `Range` → 206 com `Content-Range` para seek). `POST /api/export/bulk` (`{ids, format}`) gera ZIP em stream via `archiver` (nova dependência); reusa os exporters de `services/exporter.js` (`renderExportBuffer`); item alheio/inexistente vira linha em `_erros.txt` e não aborta o lote; máx. 100 itens.
+- `app.js`/`index.html`: botão "Áudio original · X MB" na seção Exportar do painel de detalhe (download via fetch + Bearer, pois `window.open` perderia o token); o player de áudio passou a usar a rota autenticada (com `?token=` para o `<audio>`), abandonando a URL direta de `/uploads`; barra de ações em massa ganhou botão "Exportar" com menu de formatos (TXT/SRT/VTT/DOCX/PDF) → download de um `.zip`.
+- Testes: `tests/t13_audio_export.js` verde (31/31) — provider mock, DB isolado, sem custo de API. `tests/t07_quotas.js` (14/14) e `test_suite.js` (79/79) reexecutados sem regressão.
 ---
 
 ### T-14 — UX de modais
