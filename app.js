@@ -1117,6 +1117,9 @@ function renderCurrentTranscript() {
   const container = document.getElementById('transcript-content');
   if (!container || !state.activeTranscription) return;
 
+  // Toda re-renderização invalida os destaques de pesquisa.
+  clearSearchHits();
+
   applyReadingPreferences();
   const saveButton = document.getElementById('save-transcript-button');
   if (saveButton) {
@@ -1125,11 +1128,33 @@ function renderCurrentTranscript() {
   }
 
   const segments = state.activeTranscription.segments || [];
+  // HOTFIX 2026-09-28 (ampliado): o toggle controla tempos E locutores.
+  // Desmarcado → texto contínuo, só com quebras de linha (default: marcado).
+  const showMeta = document.getElementById('toggle-timestamps')?.checked ?? true;
 
-  // MODO RESUMO IA
+  // MODO RESUMO IA — apresenta o aprimoramento em largura de leitura confortável
   if (state.readingMode === 'summary') {
     container.contentEditable = "false";
-    container.innerHTML = renderMarkdown(state.activeTranscription.ai_summary);
+    const enh = state.latestEnhancement;
+    if (enh && enh.result_md) {
+      const meta = `${enh.model} • ${(enh.tokens_in || 0) + (enh.tokens_out || 0)} tokens${judgeMetaSuffix(enh)}`;
+      container.innerHTML = `
+        <div class="mb-5 pb-3 border-b border-brand-line/60 dark:border-brand-line/60 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <span class="text-xs font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Texto aprimorado</span>
+          <span class="text-[11px] text-brand-muted dark:text-brand-muted">${escapeHtml(meta)}</span>
+        </div>
+        ${renderMarkdown(enh.result_md)}
+      `;
+    } else if (state.activeTranscription.ai_summary) {
+      container.innerHTML = renderMarkdown(state.activeTranscription.ai_summary);
+    } else {
+      container.innerHTML = `
+        <div class="text-center py-10">
+          <i data-lucide="wand-2" class="w-8 h-8 mx-auto mb-3 text-violet-400 dark:text-violet-500"></i>
+          <p class="text-brand-muted dark:text-brand-muted text-sm leading-relaxed">Nenhum aprimoramento ainda.<br>Use <strong class="text-violet-700 dark:text-violet-300">Aprimorar com IA</strong> no painel lateral — o resultado corrigido e estruturado aparece aqui.</p>
+        </div>
+      `;
+    }
     if (window.lucide) lucide.createIcons();
     return;
   }
@@ -1150,6 +1175,7 @@ function renderCurrentTranscript() {
 
       return `
         <div class="mb-6 p-4 rounded-xl bg-brand-canvas/80 dark:bg-brand-canvas/80 border border-brand-line/60 dark:border-brand-line/60 hover:border-brand-line dark:hover:border-brand-line transition">
+          ${showMeta ? `
           <div class="flex items-center space-x-2 mb-2">
             <button onclick="seekAudio(${firstSeg.start_time})" class="text-xs font-bold text-blue-600 dark:text-blue-300 hover:underline bg-blue-100/80 dark:bg-blue-950/80 hover:bg-blue-200 px-2 py-0.5 rounded-md transition shrink-0">
               [${formatSRTTimeShort(firstSeg.start_time)}]
@@ -1160,6 +1186,7 @@ function renderCurrentTranscript() {
               </span>
             ` : ''}
           </div>
+          ` : ''}
           <p class="leading-relaxed text-brand-ink dark:text-brand-ink">${escapeHtml(combinedText)}</p>
         </div>
       `;
@@ -1172,6 +1199,21 @@ function renderCurrentTranscript() {
 
   if (segments.length === 0) {
     container.innerHTML = `<p data-transcript-text contenteditable="plaintext-only" class="leading-relaxed text-brand-ink dark:text-brand-ink whitespace-pre-wrap">${escapeHtml(state.activeTranscription.raw_text || '')}</p>`;
+    return;
+  }
+
+  // Toggle desmarcado: texto contínuo — parágrafos unidos por locutor, sem
+  // tempos nem chips. Quebra de linha a cada troca de locutor.
+  if (!showMeta) {
+    const groups = [];
+    for (const seg of segments) {
+      const last = groups[groups.length - 1];
+      if (seg.speaker && last && last.speaker === seg.speaker) last.texts.push(seg.text);
+      else groups.push({ speaker: seg.speaker || null, texts: [seg.text] });
+    }
+    container.innerHTML = groups.map(g =>
+      `<p class="mb-4 leading-relaxed text-brand-ink dark:text-brand-ink">${escapeHtml(g.texts.join(' ').trim())}</p>`
+    ).join('');
     return;
   }
 
@@ -1199,7 +1241,9 @@ function copyTranscriptAsMarkdown() {
   let md = `# ${t.file_name || 'Transcrição'}\n`;
   md += `**Data:** ${new Date(t.created_at).toLocaleString('pt-BR')} | **Duração:** ${Math.round(t.duration_seconds || 0)}s\n\n`;
 
-  if (state.readingMode === 'summary' && t.ai_summary) {
+  if (state.readingMode === 'summary' && state.latestEnhancement?.result_md) {
+    md += `## Texto Aprimorado (${state.latestEnhancement.model})\n\n${state.latestEnhancement.result_md}\n`;
+  } else if (state.readingMode === 'summary' && t.ai_summary) {
     md += `## Resumo IA\n\n${t.ai_summary}\n`;
   } else if (segments.length > 0) {
     md += `## Transcrição\n\n`;
@@ -1213,11 +1257,109 @@ function copyTranscriptAsMarkdown() {
   }
 
   navigator.clipboard.writeText(md).then(() => {
-    alert('Conteúdo copiado em formato Markdown com sucesso!');
+    const btn = document.getElementById('btn-copy-md');
+    if (!btn) return;
+    const original = btn.dataset.originalLabel || btn.innerText;
+    btn.dataset.originalLabel = original;
+    btn.innerText = 'Copiado!';
+    setTimeout(() => { btn.innerText = original; }, 2000);
   }).catch(err => {
     console.error('Erro ao copiar Markdown:', err);
   });
 }
+
+// ---------------------------------------------------
+// HOTFIX 2026-09-28: PESQUISA NO TEXTO (barra da toolbar central)
+// Destaca ocorrências com <mark>, conta e navega entre elas. Re-render
+// limpa os destaques (renderCurrentTranscript chama clearSearchHits).
+// ---------------------------------------------------
+let searchHits = [];
+let searchCursor = -1;
+
+function clearSearchHits() {
+  const container = document.getElementById('transcript-content');
+  if (container) {
+    container.querySelectorAll('mark.search-hit').forEach(mark => {
+      const parent = mark.parentNode;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    });
+  }
+  searchHits = [];
+  searchCursor = -1;
+  const count = document.getElementById('search-count');
+  if (count) count.innerText = '';
+}
+
+function onTranscriptSearch(rawQuery) {
+  const container = document.getElementById('transcript-content');
+  const count = document.getElementById('search-count');
+  if (!container) return;
+  clearSearchHits();
+  const query = (rawQuery || '').trim();
+  if (query.length < 2) { if (count) count.innerText = ''; return; }
+
+  const lower = query.toLowerCase();
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || node.nodeValue.trim() === '') return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent || parent.closest('mark.search-hit') || parent.closest('script,style')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  for (const node of textNodes) {
+    const value = node.nodeValue;
+    const lowerValue = value.toLowerCase();
+    let idx = lowerValue.indexOf(lower);
+    if (idx === -1) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    while (idx !== -1) {
+      frag.appendChild(document.createTextNode(value.slice(last, idx)));
+      const mark = document.createElement('mark');
+      mark.className = 'search-hit bg-amber-200 text-amber-900 rounded px-0.5 dark:bg-amber-500/40 dark:text-amber-100';
+      mark.textContent = value.slice(idx, idx + query.length);
+      frag.appendChild(mark);
+      searchHits.push(mark);
+      last = idx + query.length;
+      idx = lowerValue.indexOf(lower, last);
+    }
+    frag.appendChild(document.createTextNode(value.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  }
+
+  if (count) count.innerText = searchHits.length > 0 ? `${searchHits.length}` : '0';
+  if (searchHits.length > 0) stepSearchHit(1, true);
+}
+
+function stepSearchHit(dir, silent = false) {
+  if (searchHits.length === 0) return;
+  searchCursor = (searchCursor + dir + searchHits.length) % searchHits.length;
+  searchHits.forEach((h, i) => {
+    h.classList.toggle('ring-2', i === searchCursor);
+    h.classList.toggle('ring-blue-500', i === searchCursor);
+    h.classList.toggle('rounded-sm', i === searchCursor);
+  });
+  searchHits[searchCursor].scrollIntoView({ behavior: silent ? 'auto' : 'smooth', block: 'center' });
+  const count = document.getElementById('search-count');
+  if (count) count.innerText = `${searchCursor + 1}/${searchHits.length}`;
+}
+
+// Ao editar um segmento, remove os destaques daquele bloco (evita <mark> quebrado)
+document.addEventListener('input', (e) => {
+  const seg = e.target.closest?.('[data-segment-id]');
+  if (seg) seg.querySelectorAll('mark.search-hit').forEach(mark => {
+    const parent = mark.parentNode;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  });
+});
 
 function seekAudio(seconds) {
   const audio = document.getElementById('audio-player');
@@ -2192,11 +2334,10 @@ async function loadAdminSettingsForm() {
 async function enhanceTranscription() {
   if (!state.activeTranscription) return;
   const btn = document.getElementById('btn-enhance');
-  const box = document.getElementById('enhance-result');
-  const textEl = document.getElementById('enhance-text');
-  const metaEl = document.getElementById('enhance-meta');
+  const label = btn.querySelector('span span');
+  const original = label.innerText;
   btn.disabled = true;
-  btn.querySelector('span span').innerText = 'Aprimorando... (pode levar 1 min)';
+  label.innerText = 'Aprimorando... (pode levar 1 min)';
   try {
     const res = await fetch(`/api/transcriptions/${state.activeTranscription.id}/enhance`, {
       method: 'POST',
@@ -2204,15 +2345,18 @@ async function enhanceTranscription() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
-    box.classList.remove('hidden');
-    textEl.innerText = data.analysis.result_md;
-    metaEl.innerText = `${data.analysis.model} • ${data.analysis.tokens_in + data.analysis.tokens_out} tokens${judgeMetaSuffix(data.analysis)}`;
-    if (window.lucide) lucide.createIcons();
+    // Resultado vai para o miolo: aba "Resumo IA" em largura de leitura.
+    state.latestEnhancement = data.analysis;
+    setReadingMode('summary');
   } catch (e) {
-    alert('Falha ao aprimorar: ' + e.message);
+    console.error('Falha ao aprimorar:', e.message);
+    label.innerText = '❌ Falha — tente novamente';
+    setTimeout(() => { label.innerText = original; }, 4000);
   } finally {
     btn.disabled = false;
-    btn.querySelector('span span').innerText = 'Aprimorar com IA (corrigir & estruturar)';
+    if (label.innerText.startsWith('Aprimorando') || label.innerText === original) {
+      label.innerText = original;
+    }
   }
 }
 
@@ -2234,9 +2378,9 @@ function judgeMetaSuffix(a) {
 }
 
 async function loadLatestEnhancement(transcriptionId) {
-  const box = document.getElementById('enhance-result');
-  if (!box) return;
-  box.classList.add('hidden');
+  // Não troca de aba sozinho: apenas carrega o último resultado para a aba
+  // "Resumo IA" já estar pronta quando o usuário abrir (ou para o render
+  // atual, se ele já estiver nela).
   try {
     const res = await fetch(`/api/transcriptions/${transcriptionId}/analyses`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
@@ -2244,16 +2388,9 @@ async function loadLatestEnhancement(transcriptionId) {
     if (!res.ok) return;
     const rows = await res.json();
     if (!rows || rows.length === 0) return;
-    const latest = rows[0];
-    box.classList.remove('hidden');
-    document.getElementById('enhance-text').innerText = latest.result_md;
-    document.getElementById('enhance-meta').innerText = `${latest.model} • ${latest.tokens_in + latest.tokens_out} tokens${judgeMetaSuffix(latest)}`;
+    state.latestEnhancement = rows[0];
+    if (state.readingMode === 'summary') renderCurrentTranscript();
   } catch (e) { /* silencioso: resultado anterior é opcional */ }
-}
-
-function copyEnhancedText() {
-  const textEl = document.getElementById('enhance-text');
-  if (textEl) navigator.clipboard.writeText(textEl.innerText).then(() => alert('Texto aprimorado copiado!'));
 }
 
 // ---------------------------------------------------

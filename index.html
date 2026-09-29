@@ -380,6 +380,15 @@
               </button>
             </div>
 
+            <!-- Pesquisa no texto -->
+            <div class="flex items-center bg-brand-raised dark:bg-brand-raised p-1 rounded-lg flex-1 min-w-[150px] sm:max-w-xs">
+              <i data-lucide="search" class="w-3.5 h-3.5 ml-1.5 shrink-0 text-brand-muted dark:text-brand-muted"></i>
+              <input id="transcript-search" type="text" oninput="onTranscriptSearch(this.value)" placeholder="Buscar no texto" class="bg-transparent outline-none px-1.5 py-0.5 w-full text-xs text-brand-ink dark:text-brand-ink placeholder-brand-muted dark:placeholder-brand-muted">
+              <span id="search-count" class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1 whitespace-nowrap"></span>
+              <button onclick="stepSearchHit(-1)" title="Ocorrência anterior" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">‹</button>
+              <button onclick="stepSearchHit(1)" title="Próxima ocorrência" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">›</button>
+            </div>
+
             <!-- Controles de Conforto e Cópia -->
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
               <!-- Tamanho da Fonte -->
@@ -399,7 +408,7 @@
               </div>
 
               <!-- Botão Copiar como Markdown -->
-              <button onclick="copyTranscriptAsMarkdown()" class="flex items-center space-x-1.5 bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-3 py-1.5 rounded-lg transition" title="Copiar como Markdown">
+              <button id="btn-copy-md" onclick="copyTranscriptAsMarkdown()" class="flex items-center space-x-1.5 bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-3 py-1.5 rounded-lg transition" title="Copiar como Markdown">
                 <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                 <span>Copiar Markdown</span>
               </button>
@@ -479,7 +488,7 @@
             <div class="space-y-2">
               <label class="flex items-center space-x-2.5 px-3 py-2 bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-xl text-xs font-medium text-brand-copy dark:text-brand-copy cursor-pointer">
                 <input type="checkbox" id="toggle-timestamps" onchange="renderCurrentTranscript()" checked class="rounded text-blue-600 dark:text-blue-300 focus:ring-blue-500">
-                <span>Mostrar carimbos de data/hora</span>
+                <span>Mostrar tempos e locutores</span>
               </label>
 
               <!-- ChatGPT Modal Trigger -->
@@ -500,7 +509,7 @@
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
 
-              <!-- T-18: Aprimorar com IA -->
+              <!-- T-18: Aprimorar com IA — o resultado aparece na aba "Resumo IA" do miolo -->
               <button onclick="enhanceTranscription()" id="btn-enhance" class="w-full flex items-center justify-between px-3.5 py-2.5 bg-violet-50 dark:bg-violet-950 hover:bg-violet-100 dark:hover:bg-violet-950 border border-violet-200 dark:border-violet-800 rounded-xl text-xs font-bold text-violet-800 dark:text-violet-300 transition">
                 <span class="flex items-center space-x-2">
                   <i data-lucide="wand-2" class="w-4 h-4 text-violet-600 dark:text-violet-300"></i>
@@ -508,16 +517,6 @@
                 </span>
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
-              <div id="enhance-result" class="hidden bg-brand-surface dark:bg-brand-surface border border-violet-200 dark:border-violet-800 rounded-xl p-3">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Texto aprimorado</span>
-                  <div class="flex items-center gap-2">
-                    <span id="enhance-meta" class="text-[9px] text-brand-muted dark:text-brand-muted"></span>
-                    <button onclick="copyEnhancedText()" class="text-xs font-bold text-violet-700 dark:text-violet-300 hover:underline">Copiar</button>
-                  </div>
-                </div>
-                <p id="enhance-text" class="text-xs sm:text-sm text-brand-ink dark:text-brand-ink whitespace-pre-wrap sm:max-h-64 sm:overflow-y-auto sm:custom-scrollbar"></p>
-              </div>
             </div>
           </div>
         </div>
@@ -1261,6 +1260,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.9.0"></script>
+  <script src="app.js?v=3.11.0"></script>
 </body>
 </html>

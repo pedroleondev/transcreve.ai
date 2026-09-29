@@ -11,6 +11,7 @@ const context = {
   document: {
     addEventListener() {},
     getElementById: id => elements.get(id),
+    querySelectorAll: () => [],
     documentElement: { classList: { toggle: (name, enabled) => { dark = enabled; } } }
   },
   window: { matchMedia: () => ({ matches: true, addEventListener() {} }) },
