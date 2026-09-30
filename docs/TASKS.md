@@ -242,6 +242,14 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 - `docker-compose.yml`: app recebe `DB_DRIVER` (default `sqlite`) + variáveis `PG*`/`DATABASE_URL` — cutover = rodar o ETL e setar `DB_DRIVER=postgres` no `.env`; rollback = tirar a variável.
 - **Testes (29/09/2026):** `tests/t08_driver_postgres.js` → **26/26 PASS** (app inteiro contra o service `db` em banco descartável: seeds, auth, quota 429, upsert de settings, fila/chunks/segmentos, export, áudio, edição T-04, glossário, api_keys booleanos, métricas, logs `ORDER BY timestamp`, projetos — provider mock, custo zero). `tests/t08_migration.js` → 25/25. `test_suite.js` → **79/79** no SQLite sem regressão. **Instância local continua em SQLite** — o cutover de produção fica para validação manual: ETL (`node scripts/migrate-sqlite-to-postgres.js`) → `DB_DRIVER=postgres` no `.env`.
 
+**Cutover real (29/09/2026, ambiente local):**
+- ETL dos dados reais com o app parado: **3.518 linhas, 10 tabelas, contagens idênticas** (191 transcrições, 2.504 segmentos, 4 usuários, 22 chaves, 635 logs).
+- **Sanitização de FK (aprendizado):** o SQLite de origem não tinha FOREIGN KEY em `system_logs.user_id`/`transcriptions.user_id`/`projects.user_id` — 194 registros históricos apontavam para usuários inexistentes e violaram a FK do Postgres na primeira tentativa. O ETL agora converte dangling `user_id`/`project_id` → NULL (semântica `ON DELETE SET NULL`), com contagem impressa; FKs de `transcription_id` permanecem estritas.
+- App recriado com `DB_DRIVER=postgres` ("Driver PostgreSQL ativo" no boot). Validação com dados reais: login, 98 transcrições do Pedro, transcrição da Larissa intacta (completed, 20.573 chars, 359 segmentos), settings, escrita (projeto criado/apagado).
+- **`test_suite.js` → 79/79 PASS contra a instância em Postgres** (inclui transcrições reais nos 3 níveis + chat/tradução). A suíte agora lê a senha do admin de `ADMIN_PASSWORD` (fallback `admin123`) — necessário porque a senha da conta admin não é mais a seed.
+- Rollback disponível: SQLite original intacto em `turboscribe.sqlite` + backup em `backups/2026-09-29_22-57/`. Atenção: o que for escrito no Postgres DEPOIS do ETL não volta sozinho para o SQLite.
+
+
 
 ---
 
