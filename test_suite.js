@@ -79,7 +79,7 @@ async function runTestSuite() {
     const adminLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@turboscribe.local', password: 'admin123' })
+      body: JSON.stringify({ email: 'admin@turboscribe.local', password: process.env.ADMIN_PASSWORD || 'admin123' })
     });
     const adminLoginData = await adminLoginRes.json();
     if (adminLoginRes.ok && adminLoginData.token) {
@@ -180,7 +180,7 @@ async function runTestSuite() {
     const saveRes = await fetch(`${BASE_URL}/api/admin/apikeys`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key_value: secrets.decrypt(activeRow.key_value), admin_password: 'admin123' })
+      body: JSON.stringify({ key_value: secrets.decrypt(activeRow.key_value), admin_password: process.env.ADMIN_PASSWORD || 'admin123' })
     });
     const saveData = await saveRes.json();
     assert(saveRes.status === 200 && saveData.success, `Salvar chave com senha de admin correta retornou 200 (status: ${saveRes.status}).`);

@@ -216,6 +216,28 @@ async function migrate({ sqlitePath, pgConfig: cfg, force = false, dryRun = fals
       plan.push({ table, columns: cols, rows });
     }
 
+    // 1b. Sanitização de FKs: o SQLite não tinha FOREIGN KEY em
+    // system_logs.user_id / transcriptions.user_id / projects.user_id, então
+    // há registros históricos apontando para usuários que não existem mais.
+    // O DDL Postgres tem FK (ON DELETE SET NULL) — dangling vira NULL, o que
+    // é fiel à semântica. FKs de transcription_id/segments permanecem
+    // estritas: se faltarem, a cópia falha em voz alta (nada de perda silenciosa).
+    const validUserIds = new Set(plan.find(p => p.table === 'users').rows.map(r => r.id));
+    const validProjectIds = new Set(plan.find(p => p.table === 'projects').rows.map(r => r.id));
+    let sanitized = 0;
+    for (const p of plan) {
+      if (p.table === 'system_logs') {
+        for (const r of p.rows) if (r.user_id != null && !validUserIds.has(r.user_id)) { r.user_id = null; sanitized++; }
+      }
+      if (p.table === 'projects' || p.table === 'transcriptions') {
+        for (const r of p.rows) if (r.user_id != null && !validUserIds.has(r.user_id)) { r.user_id = null; sanitized++; }
+      }
+      if (p.table === 'transcriptions') {
+        for (const r of p.rows) if (r.project_id != null && !validProjectIds.has(r.project_id)) { r.project_id = null; sanitized++; }
+      }
+    }
+    if (sanitized) logger(`Sanitização FK: ${sanitized} registro(s) histórico(s) com user_id/project_id órfão → NULL (sem FK no SQLite de origem).`);
+
     if (dryRun) {
       logger('--- DRY RUN ---');
       logger('DDL que seria aplicado no Postgres:');
