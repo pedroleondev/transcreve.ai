@@ -2,7 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache ffmpeg
+# T-11: ffmpeg extrai áudio de vídeo; yt-dlp baixa YouTube/Vimeo para transcrição por link.
+RUN apk add --no-cache ffmpeg yt-dlp
 
 COPY package*.json ./
 

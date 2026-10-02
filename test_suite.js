@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const { getAsync, allAsync, runAsync } = require('./db');
 const secrets = require('./services/secrets');
@@ -336,6 +337,83 @@ async function runTestSuite() {
     assert(saw429, 'Rate limit do resend disparou 429 após repetidas chamadas');
   } catch (e) {
     assert(false, `Falha ao testar rate limit do resend: ${e.message}`);
+  }
+
+  // ---------------------------------------------------------------
+  // TESTES T-11: TRANSCRIÇÃO POR LINK (mock HTTP local — sem YouTube real)
+  // ---------------------------------------------------------------
+  // Mock serve o sample.ogg versionado em /audio.ogg; /missing.mp3 dá 404.
+  const mockServer = http.createServer((req, res) => {
+    if (req.url === '/audio.ogg') {
+      const buf = fs.readFileSync(SAMPLE_AUDIO_PATH);
+      res.writeHead(200, { 'Content-Type': 'audio/ogg', 'Content-Length': buf.length });
+      res.end(buf);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+    }
+  });
+  await new Promise(r => mockServer.listen(8471, '127.0.0.1', r));
+
+  try {
+    // 15. URL direta de arquivo -> baixa, enfileira e conclui
+    const okRes = await fetch(`${BASE_URL}/api/transcribe/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ url: 'http://127.0.0.1:8471/audio.ogg', mode: 'base', language: 'auto' })
+    });
+    const okData = await okRes.json().catch(() => ({}));
+    assert(okRes.status === 202 && okData.data && okData.data[0] && okData.data[0].status === 'pending',
+      `POST /api/transcribe/url enfileirou o link (status: ${okRes.status})`);
+    if (okData.data && okData.data[0]) {
+      const finalStatus = await waitForCompletion(okData.data[0].id, 120000);
+      assert(finalStatus === 'completed', `Transcrição por URL concluiu (status: ${finalStatus})`);
+      const row = await getAsync(`SELECT file_name, raw_text FROM transcriptions WHERE id = ?`, [okData.data[0].id]);
+      assert(row && row.file_name === 'audio.ogg' && row.raw_text && row.raw_text.length > 0,
+        'Nome do arquivo veio da URL e texto foi transcrito');
+    }
+
+    // 16. Download com falha (HTTP 404) -> 202 com linha 'failed' e error_message específico
+    const failRes = await fetch(`${BASE_URL}/api/transcribe/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ url: 'http://127.0.0.1:8471/missing.mp3' })
+    });
+    const failData = await failRes.json().catch(() => ({}));
+    assert(failRes.status === 202 && failData.data && failData.data[0] && failData.data[0].status === 'failed' && failData.data[0].error_message,
+      `Falha de download virou linha 'failed' com error_message (status: ${failRes.status})`);
+    if (failData.data && failData.data[0]) {
+      const frow = await getAsync(`SELECT status, error_message FROM transcriptions WHERE id = ?`, [failData.data[0].id]);
+      assert(frow && frow.status === 'failed' && /404/.test(frow.error_message || ''),
+        `error_message persiste no banco com a causa (${frow && frow.error_message})`);
+    }
+
+    // 17. URL inválida e domínio não suportado -> 400 com erro claro
+    const badUrl = await fetch(`${BASE_URL}/api/transcribe/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ url: 'isso-nao-e-url' })
+    });
+    assert(badUrl.status === 400, `URL inválida retornou 400 (status: ${badUrl.status})`);
+    const badDom = await fetch(`${BASE_URL}/api/transcribe/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ url: 'http://127.0.0.1:8471/pagina-sem-extensao' })
+    });
+    const badDomData = await badDom.json().catch(() => ({}));
+    assert(badDom.status === 400 && /não suportado|n&atilde;o suportado|suportado/i.test(badDomData.error || ''),
+      `Domínio não suportado retornou 400 com mensagem clara (${badDomData.error})`);
+
+    // 18. Sem token -> 401
+    const noTok = await fetch(`${BASE_URL}/api/transcribe/url`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'http://127.0.0.1:8471/audio.ogg' })
+    });
+    assert(noTok.status === 401, `POST /api/transcribe/url sem token retornou 401 (status: ${noTok.status})`);
+  } catch (e) {
+    assert(false, `Falha nos testes de transcrição por URL: ${e.message}`);
+  } finally {
+    mockServer.close();
   }
 
   // TEST 1 (T-15): Chave OpenRouter CIFRADA em repouso e NUNCA exposta pela API.

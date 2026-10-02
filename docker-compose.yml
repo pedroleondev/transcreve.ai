@@ -22,6 +22,9 @@ services:
       # REGISTRATION_REQUIRES_SMTP=false no .env: o link de confirmação vai
       # para o log do servidor até você configurar SMTP_*.
       - REGISTRATION_REQUIRES_SMTP=${REGISTRATION_REQUIRES_SMTP:-true}
+      # T-11: baixar de hosts privados/LAN (anti-SSRF ligado por padrao em
+      # producao). No self-host local, true permite baixar de 192.168.x.x etc.
+      - ALLOW_PRIVATE_DOWNLOADS=${ALLOW_PRIVATE_DOWNLOADS:-false}
       - DATABASE_URL=${DATABASE_URL}
       - PGHOST=${PGHOST:-db}
       - PGPORT=${PGPORT:-5432}

@@ -1734,6 +1734,15 @@ function handleFileSelect(e) {
 }
 
 async function submitTranscription() {
+  const urlInput = document.getElementById('transcribe-url');
+  const linkValue = urlInput ? urlInput.value.trim() : '';
+
+  // T-11: link preenchido tem prioridade — vai para /api/transcribe/url (JSON).
+  if (linkValue) {
+    await submitUrlTranscription(linkValue);
+    return;
+  }
+
   if (state.selectedFiles.length === 0) {
     alert('Por favor, selecione ao menos um arquivo de áudio ou vídeo.');
     return;
@@ -1785,6 +1794,62 @@ async function submitTranscription() {
     }
   } catch (e) {
     alert('Erro ao enviar áudio: ' + e.message);
+    btn.disabled = false;
+    btn.innerText = 'TRANSCREVER';
+  }
+}
+
+// T-11: envia um link (YouTube/Vimeo/URL direta) para /api/transcribe/url.
+// Falha de download volta como linha 'failed' com error_message específico —
+// mostramos o erro e atualizamos a lista em vez de abrir o painel de progresso.
+async function submitUrlTranscription(linkValue) {
+  const btn = document.getElementById('btn-submit-transcribe');
+  btn.disabled = true;
+  btn.innerText = 'BAIXANDO E ENVIANDO...';
+
+  const select = document.getElementById('openrouter-model-select');
+  const payload = {
+    url: linkValue,
+    language: document.getElementById('transcribe-language').value,
+    mode: state.selectedMode,
+    model_id: select ? select.value : state.selectedModelId
+  };
+  const projectSelect = document.getElementById('transcribe-project-select');
+  if (projectSelect && projectSelect.value) payload.project_id = projectSelect.value;
+  if (document.getElementById('diarization-check').checked) payload.speaker_diarization = true;
+  const aiFocusInput = document.getElementById('ai-focus-input');
+  if (aiFocusInput && aiFocusInput.value.trim()) payload.ai_focus = aiFocusInput.value.trim();
+
+  try {
+    const res = await fetch('/api/transcribe/url', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    const item = data.data && data.data[0];
+
+    if (res.status === 429) {
+      alert(data.error || 'Limite diário atingido.');
+      closeTranscribeModal();
+      return;
+    }
+    if (item && item.status === 'failed') {
+      alert('Não foi possível transcrever o link: ' + (item.error_message || 'erro desconhecido'));
+      closeTranscribeModal();
+      await fetchTranscriptions();
+      return;
+    }
+    if (data.success && item) {
+      showTranscriptionProgressPanel(item.id, item.file_name || linkValue);
+      await fetchTranscriptions();
+    } else {
+      alert('Erro ao enviar o link: ' + (data.error || 'Desconhecido'));
+      btn.disabled = false;
+      btn.innerText = 'TRANSCREVER';
+    }
+  } catch (e) {
+    alert('Erro ao enviar o link: ' + e.message);
     btn.disabled = false;
     btn.innerText = 'TRANSCREVER';
   }

@@ -20,6 +20,7 @@ const { saveTranscriptSegments } = require('./services/transcript-editor');
 const { generateTXT, generateSRT, generateVTT, generateDOCX, generatePDF } = require('./services/exporter');
 const archiver = require('archiver');
 const { probeMedia } = require('./services/audio');
+const { downloadFromUrl } = require('./services/urlfetch');
 const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./services/pipeline');
 
 const app = express();
@@ -786,6 +787,86 @@ app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynami
   }
 
   res.status(202).json({ success: true, count: results.length, data: results, errors });
+});
+
+// T-11: transcrever a partir de um link (YouTube/Vimeo ou URL direta de
+// arquivo de áudio/vídeo). Baixa para uploads/, passa pelo mesmo ffprobe e
+// segue o fluxo normal da fila — mesmos limites de tamanho/duração da T-07.
+// Falha de download NÃO gera texto fictício: vira linha 'failed' com
+// error_message específico (visível na lista do usuário).
+app.post('/api/transcribe/url', authenticateToken, checkDailyQuota, async (req, res) => {
+  const { url, mode: rawMode = 'max', model_id = null, project_id = null, speaker_diarization = false, ai_focus = null } = req.body || {};
+  const rawUrl = String(url || '').trim();
+  if (!rawUrl) return res.status(400).json({ success: false, error: 'Informe o link para transcrever.' });
+
+  const rawLanguage = String(req.body.language || 'auto').toLowerCase();
+  const language = rawLanguage === 'auto' ? 'auto' : rawLanguage;
+  if (language !== 'auto' && !isValidLanguage(language)) {
+    return res.status(400).json({ error: `Idioma inválido: '${req.body.language}'. Use 'auto' ou um código ISO-639-1 da lista (ex.: pt, en, es, ja).` });
+  }
+  const LEGACY_MODE_ALIASES = { chita: 'base', golfinho: 'pro', baleia: 'max' };
+  let mode = rawMode;
+  if (LEGACY_MODE_ALIASES[rawMode]) mode = LEGACY_MODE_ALIASES[rawMode];
+  const effectiveModel = model_id || mode;
+
+  // T-07: 1 link = 1 transcrição; respeita a cota restante.
+  const quota = await getQuotaState(req.user.id);
+  if (quota && !quota.exempt && quota.used + 1 > quota.limit) {
+    return res.status(429).json({ success: false, error: `Limite diário atingido: ${quota.used} de ${quota.limit} transcrições nas últimas 24 h.` });
+  }
+
+  const { maxFileSizeMb, maxDurationHours } = await getLimitSettings();
+  const displayName = rawUrl; // fallback; troca pelo título/nome real quando baixa
+  const transcriptionId = uuidv4();
+
+  let downloaded;
+  try {
+    downloaded = await downloadFromUrl(rawUrl, uploadsDir, maxFileSizeMb * 1024 * 1024);
+  } catch (e) {
+    // Erro de VALIDAÇÃO da URL (domínio não suportado, URL inválida, host
+    // bloqueado) é 400 direto, sem criar linha — nada foi tentado.
+    if (e.statusHint === 400) {
+      return res.status(400).json({ success: false, error: e.message, errors: [{ file_name: rawUrl, error: e.message }] });
+    }
+    // Aceite T-11: falha de download/link privado -> linha 'failed' com causa.
+    await runAsync(
+      `INSERT INTO transcriptions (id, user_id, project_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, speaker_diarization, progress, ai_summary, error_message)
+       VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, 'failed', '', ?, 0, ?, ?)`,
+      [transcriptionId, req.user.id || 'admin-local', project_id || null, displayName, '', language, effectiveModel, speaker_diarization === true || speaker_diarization === 'true', ai_focus || null, e.message]
+    );
+    await logAction(req.user.id, 'URL_DOWNLOAD_FAILED', { url: rawUrl, error: e.message }, req.ip);
+    return res.status(202).json({
+      success: true, count: 1,
+      data: [{ id: transcriptionId, file_name: displayName, status: 'failed', progress: 0, duration_seconds: 0, error_message: e.message }],
+      errors: [{ file_name: displayName, error: e.message }]
+    });
+  }
+
+  // Mesma validação de mídia do upload: ffprobe antes de enfileirar.
+  let probe;
+  try {
+    probe = await probeMedia(downloaded.filePath);
+  } catch (_) {
+    await fs.promises.unlink(downloaded.filePath).catch(() => {});
+    return res.status(400).json({ success: false, error: 'O conteúdo do link não foi reconhecido como áudio/vídeo (ffprobe falhou).', errors: [{ file_name: rawUrl }] });
+  }
+  if (!probe.hasAudio) {
+    await fs.promises.unlink(downloaded.filePath).catch(() => {});
+    return res.status(400).json({ success: false, error: 'O conteúdo do link não contém trilha de áudio.', errors: [{ file_name: rawUrl }] });
+  }
+  if (probe.duration > maxDurationHours * 3600) {
+    await fs.promises.unlink(downloaded.filePath).catch(() => {});
+    return res.status(400).json({ success: false, error: `Duração de ${(probe.duration / 3600).toFixed(1)} h excede o limite de ${maxDurationHours} h.`, errors: [{ file_name: rawUrl }] });
+  }
+
+  const relativePath = '/uploads/' + path.basename(downloaded.filePath);
+  await runAsync(
+    `INSERT INTO transcriptions (id, user_id, project_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, speaker_diarization, progress, ai_summary)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, 0, ?)`,
+    [transcriptionId, req.user.id || 'admin-local', project_id || null, downloaded.fileName, relativePath, downloaded.size, probe.duration, language, effectiveModel, speaker_diarization === true || speaker_diarization === 'true', ai_focus || null]
+  );
+  await logAction(req.user.id, 'URL_QUEUED', { url: rawUrl, file: downloaded.fileName }, req.ip);
+  res.status(202).json({ success: true, count: 1, data: [{ id: transcriptionId, file_name: downloaded.fileName, status: 'pending', progress: 0, duration_seconds: probe.duration }], errors: [] });
 });
 
 // Reprocessa so os blocos que falharam (job em completed_with_errors ou failed)

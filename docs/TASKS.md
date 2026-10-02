@@ -21,7 +21,7 @@
 | T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado + driver swap; cutover por `DB_DRIVER`) | 🔴 P0 | DONE |
 | T-09 | Página de Conta (perfil, trocar senha logado, assinatura, logs de uso) | 🟠 P1 | DONE |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
-| T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | TODO |
+| T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | DONE |
 | T-12 | ~~Player fixo no rodapé~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
 | T-13 | Baixar áudio original (rota autenticada) + exportar em massa | 🔴 P0 | DONE |
 | T-14 | ~~UX de modais~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
@@ -292,16 +292,16 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 **Contexto:** `server.js:228-280` (`/api/transcribe`), `services/audio.js` (`preprocessAudio` — já extrai áudio de vídeo via ffmpeg), `app.js` (modal de upload)
 **Toca:** `server.js`, `services/audio.js` (novo `downloadFromUrl`), `app.js`, `index.html`, `package.json`
 **Aceite:**
-- [ ] Campo "Cole um link" no modal de upload (YouTube/Vimeo suportados; validação de URL explícita — domínio não suportado → erro claro, sem dados inventados)
-- [ ] Backend baixa o áudio/vídeo (yt-dlp em container, ou fetch direto para arquivos `.mp3/.mp4/.wav` com URL direta), converte via ffmpeg (reaproveita o pipeline atual) e segue o fluxo normal da fila
-- [ ] Arquivos de vídeo (`.mp4`, `.mkv`, `.mov`…) aceitos direto no upload — o `preprocessAudio` já isola o áudio
-- [ ] Falha de download/link privado/removido → `failed` com `error_message` específico
-- [ ] Mesmos limites de T-07 (tamanho/duração) valem para links
-- [ ] Teste com URL direta de arquivo (mock/http local) — sem chamar YouTube de verdade na suíte
+- [x] Campo "Cole um link" no modal de upload (YouTube/Vimeo/URL direta; domínio não suportado ou URL inválida → 400 com erro claro, sem dados inventados)
+- [x] Backend baixa o áudio/vídeo — `services/urlfetch.js`: yt-dlp no container para YouTube/Vimeo (`bestaudio/best`, `--no-playlist`, título do vídeo vira o nome da transcrição) e fetch HTTP com redirects para URLs diretas; depois o mesmo `probeMedia` + fila de sempre
+- [x] Arquivos de vídeo (`.mp4`, `.mkv`, `.mov`…) aceitos direto no upload — o `preprocessAudio` já isola o áudio (aceite já estava parcialmente cumprido; confirmado)
+- [x] Falha de download/link privado/removido → linha `failed` com `error_message` específico (ex.: "o servidor respondeu HTTP 404"); validação da URL (400) não cria linha
+- [x] Mesmos limites de T-07: tamanho (`max_file_size_mb`, aborta o download) e duração (`ffprobe` contra `max_duration_hours`) valem para links; cota diária também
+- [x] Teste com URL direta de arquivo via mock HTTP local em 127.0.0.1 — zero chamadas ao YouTube na suíte
 
 **Fora de escopo:** bypass de paywall/conteúdo restrito, playlists inteiras (uma URL = uma transcrição).
 
-**Evidência:** _(preencher)_
+**Evidência (02/10/2026):** suíte completa **115/115** (8 testes novos: URL direta baixa→enfileira→conclui com nome vindo da URL e texto transcrito; download 404 → linha `failed` com error_message persistido; URL inválida → 400; domínio não suportado → 400 com mensagem clara; sem token → 401). Detalhes: anti-SSRF (hosts privados recusados em produção) com escape `ALLOW_PRIVATE_DOWNLOADS=true` para self-host local/LAN — e é o que permite o mock de teste em 127.0.0.1; validação da URL ocorre antes de criar qualquer linha; `yt-dlp 2026.03.17` adicionado ao Dockerfile (rebuild obrigatório — binário). Teste manual: `facebook.com` → 400 "Domínio não suportado…". O fluxo YouTube real (yt-dlp em vídeo público) fica para validação humana com link de sua escolha.
 
 ---
 
