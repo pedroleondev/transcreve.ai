@@ -306,12 +306,13 @@ function updatePriceAndPrecisionEstimate() {
   if (modelDescEl) modelDescEl.innerText = model.description;
 }
 
-// Alternar Views da SPA (dashboard, details, admin)
+// Alternar Views da SPA (dashboard, details, admin, account)
 function showView(viewName) {
   state.currentView = viewName;
   document.getElementById('view-dashboard').classList.add('hidden');
   document.getElementById('view-details').classList.add('hidden');
   document.getElementById('view-admin').classList.add('hidden');
+  document.getElementById('view-account').classList.add('hidden');
   closeSidebar(); // T-17: drawer fecha ao navegar (mobile)
 
   if (viewName === 'dashboard') {
@@ -322,7 +323,199 @@ function showView(viewName) {
   } else if (viewName === 'admin') {
     document.getElementById('view-admin').classList.remove('hidden');
     loadAdminMetrics();
+  } else if (viewName === 'account') {
+    document.getElementById('view-account').classList.remove('hidden');
+    loadAccountData();
   }
+}
+
+// ---------------------------------------------------
+// T-09: MINHA CONTA (perfil, senha, assinatura, logs de uso)
+// ---------------------------------------------------
+async function loadAccountData() {
+  // Perfil e sessão (já vem em /api/auth/me)
+  try {
+    const res = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.user) {
+        state.currentUser = { ...state.currentUser, ...data.user };
+        const nameEl = document.getElementById('account-name');
+        const emailEl = document.getElementById('account-email');
+        const roleEl = document.getElementById('account-role');
+        const sinceEl = document.getElementById('account-since');
+        if (nameEl) nameEl.value = data.user.name || '';
+        if (emailEl) emailEl.value = data.user.email || '';
+        if (roleEl) roleEl.value = data.user.role === 'admin' ? 'Administrador' : 'Usuário';
+        if (sinceEl && data.user.created_at) sinceEl.textContent = new Date(data.user.created_at).toLocaleDateString('pt-BR');
+      }
+    }
+  } catch (_) { /* silencioso: seções abaixo carregam independentemente */ }
+
+  // Assinatura (plano + quota)
+  try {
+    const res = await fetch('/api/account/subscription', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    if (res.ok) {
+      const sub = await res.json();
+      const badge = document.getElementById('account-plan-badge');
+      const quota = document.getElementById('account-quota');
+      if (badge) {
+        const label = sub.plan === 'gratuito' ? 'Gratuito' : sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
+        badge.textContent = `${label}${sub.status === 'suspended' ? ' (suspenso)' : ''}`;
+      }
+      if (quota) {
+        quota.innerHTML = sub.quota.unlimited
+          ? '📊 Consumo hoje: <b>ilimitado</b> (administrador)'
+          : `📊 Consumo hoje: <b>${sub.quota.used_today} de ${sub.quota.limit}</b> transcrições nas últimas 24 h`;
+      }
+    }
+  } catch (_) { /* silencioso */ }
+
+  loadAccountUsage();
+}
+
+async function loadAccountUsage() {
+  const tbody = document.getElementById('account-usage-tbody');
+  if (!tbody) return;
+  try {
+    const res = await fetch('/api/account/usage?limit=20', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    if (!res.ok) { tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-brand-muted dark:text-brand-muted">Erro ao carregar.</td></tr>'; return; }
+    const data = await res.json();
+
+    const totalsEl = document.getElementById('account-usage-totals');
+    if (totalsEl) {
+      const t = data.totals || {};
+      const cards = [
+        ['Transcrições', t.total_transcriptions || 0],
+        ['Áudio total', formatDuration(t.total_seconds || 0)],
+        ['Tokens IA (entrada)', (t.ai_tokens_in || 0).toLocaleString('pt-BR')],
+        ['Tokens IA (saída)', (t.ai_tokens_out || 0).toLocaleString('pt-BR')]
+      ];
+      totalsEl.innerHTML = cards.map(([label, value]) => `
+        <div class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-xl p-3 text-center">
+          <p class="text-base font-black text-brand-ink dark:text-brand-ink">${value}</p>
+          <p class="text-[10px] text-brand-muted dark:text-brand-muted uppercase font-bold mt-0.5">${label}</p>
+        </div>`).join('');
+    }
+
+    if (!data.recent || !data.recent.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-brand-muted dark:text-brand-muted">Nenhuma transcrição ainda.</td></tr>';
+      return;
+    }
+    const statusLabel = { completed: 'Concluída', pending: 'Na fila', processing: 'Processando', failed: 'Falhou' };
+    const statusClass = { completed: 'text-emerald-600 dark:text-emerald-300', pending: 'text-amber-600 dark:text-amber-300', processing: 'text-blue-600 dark:text-blue-300', failed: 'text-red-600 dark:text-red-300' };
+    tbody.innerHTML = data.recent.map(t => `
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
+        <td class="p-3 whitespace-nowrap text-brand-copy dark:text-brand-copy">${new Date(t.created_at).toLocaleString('pt-BR')}</td>
+        <td class="p-3 text-brand-ink dark:text-brand-ink font-semibold max-w-[180px] truncate" title="${t.file_name}">${t.file_name}</td>
+        <td class="p-3 text-brand-copy dark:text-brand-copy">${formatDuration(t.duration_seconds || 0)}</td>
+        <td class="p-3 text-brand-copy dark:text-brand-copy uppercase">${t.mode || '—'}</td>
+        <td class="p-3 font-bold ${statusClass[t.status] || 'text-brand-copy dark:text-brand-copy'}">${statusLabel[t.status] || t.status}</td>
+        <td class="p-3 text-brand-copy dark:text-brand-copy">${t.ai_tokens ? t.ai_tokens.toLocaleString('pt-BR') : '—'}</td>
+      </tr>`).join('');
+  } catch (_) {
+    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-brand-muted dark:text-brand-muted">Erro ao carregar.</td></tr>';
+  }
+}
+
+async function saveAccountProfile(e) {
+  e.preventDefault();
+  const msg = document.getElementById('account-profile-msg');
+  const name = document.getElementById('account-name').value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/account', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Erro ao salvar.');
+    state.currentUser.name = data.name || name;
+    const nameSpan = document.getElementById('user-dropdown-name');
+    if (nameSpan) nameSpan.textContent = state.currentUser.name;
+    if (msg) { msg.textContent = 'Nome salvo.'; msg.className = 'text-xs font-semibold text-emerald-600 dark:text-emerald-300'; msg.classList.remove('hidden'); }
+  } catch (err) {
+    if (msg) { msg.textContent = err.message; msg.className = 'text-xs font-semibold text-red-600 dark:text-red-300'; msg.classList.remove('hidden'); }
+  }
+}
+
+async function changeAccountPassword(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('account-password-error');
+  const okEl = document.getElementById('account-password-ok');
+  errEl.classList.add('hidden'); okEl.classList.add('hidden');
+  const current = document.getElementById('account-current-password').value;
+  const next = document.getElementById('account-new-password').value;
+  const next2 = document.getElementById('account-new-password-2').value;
+  if (next !== next2) {
+    errEl.textContent = 'As novas senhas não coincidem.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth/password', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: current, new_password: next })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Erro ao trocar a senha.');
+    document.getElementById('account-current-password').value = '';
+    document.getElementById('account-new-password').value = '';
+    document.getElementById('account-new-password-2').value = '';
+    okEl.classList.remove('hidden');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+// Upgrade de plano (T-09): preços opcionais via system_settings — sem valor
+// configurado o plano exibe "Em breve" (nada de dado fictício).
+let upgradeCycle = 'monthly';
+async function openUpgradeModal() {
+  document.getElementById('upgrade-modal').classList.remove('hidden');
+  applyUpgradeCycleUI();
+  try {
+    const res = await fetch('/api/settings');
+    const settings = res.ok ? await res.json() : {};
+    for (const [planKey, label] of [['pro', 'upgrade-price-pro'], ['max', 'upgrade-price-max']]) {
+      const price = settings[`plan_${planKey}_${upgradeCycle}`];
+      const note = settings[`plan_${planKey}_${upgradeCycle}_note`] || '';
+      const priceEl = document.getElementById(label);
+      const noteEl = document.getElementById(`${label}-note`);
+      if (priceEl) priceEl.innerHTML = price ? `R$ ${price} <span class="text-xs font-normal text-brand-muted dark:text-brand-muted">/${upgradeCycle === 'monthly' ? 'mês' : 'ano'}</span>` : 'Em breve';
+      if (noteEl) noteEl.textContent = note;
+    }
+  } catch (_) { /* mantém "Em breve" */ }
+}
+function closeUpgradeModal() { document.getElementById('upgrade-modal').classList.add('hidden'); }
+function setUpgradeCycle(cycle) {
+  upgradeCycle = cycle;
+  applyUpgradeCycleUI();
+  // Recarrega os preços já abrindo de novo (idempotente)
+  openUpgradeModal();
+}
+function applyUpgradeCycleUI() {
+  const active = 'bg-blue-600 text-white';
+  const idle = 'text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink';
+  const m = document.getElementById('upgrade-cycle-monthly');
+  const a = document.getElementById('upgrade-cycle-annual');
+  if (m) m.className = `px-4 py-1.5 rounded-full transition ${upgradeCycle === 'monthly' ? active : idle}`;
+  if (a) a.className = `px-4 py-1.5 rounded-full transition ${upgradeCycle === 'annual' ? active : idle}`;
+}
+
+// Logout: limpa o token e volta ao modal de login (aceite T-09).
+function logoutUser() {
+  localStorage.removeItem('turboscribe_token');
+  state.token = '';
+  state.currentUser = null;
+  ['view-dashboard', 'view-details', 'view-admin', 'view-account'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  openLoginModal();
 }
 
 // ---------------------------------------------------

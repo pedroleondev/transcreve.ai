@@ -38,7 +38,7 @@ Sem framework de front, sem bundler, sem TypeScript, sem ORM, sem Redis, sem fil
 ## Modelo de dados (SQLite)
 
 ```
-users(id, name, email UNIQUE, password_hash, role, daily_limit, status, created_at)
+users(id, name, email UNIQUE, password_hash, role, daily_limit, status, plan, created_at)  -- plan: T-09 (default 'gratuito'; T-27/Asaas assume)
 api_keys(id, provider, name, key_value, is_active, created_at)
 system_settings(key PK, value)  -- níveis: base_model/enabled, pro_model/enabled, max_model/enabled; análise: analysis_model, analysis_prompt
 glossary(id, wrong, correct, created_at)  -- T-18: dicionário de correções aplicado no aprimoramento
@@ -72,6 +72,10 @@ Todas as rotas em `server.js`, prefixo `/api`.
 |---|---|---|---|
 | POST | `/api/auth/login` | pública | — |
 | GET | `/api/auth/me` | token | — |
+| PUT | `/api/account` | token | ✅ dono — T-09: atualiza o próprio nome |
+| PUT | `/api/auth/password` | token | ✅ dono — T-09: troca de senha exigindo a senha atual |
+| GET | `/api/account/subscription` | token | ✅ dono — T-09: plano (`users.plan`), quota do dia; `billing='local'` até a T-27 (Asaas) |
+| GET | `/api/account/usage` | token | ✅ dono — T-09: transcrições recentes com tokens de IA + totais |
 | GET/POST/DELETE | `/api/projects[/:id]` | token | ✅ dono (admin: `?all=true`) |
 | GET | `/api/transcriptions` | token | ✅ dono (admin: `?all=true`) |
 | GET/PUT/DELETE | `/api/transcriptions/:id` | token | ✅ dono — alheio retorna 404 |
@@ -120,6 +124,8 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 **Journal mode = DELETE (desde 25/09; era WAL).** WAL faz mmap de `-wal`/`-shm`, e o bind-mount Windows do Docker Desktop (gRPC-FUSE) corrompe a imagem em shutdown abrupto — causou o incidente SQLITE_CORRUPT de 25/09. Custo: um writer por vez (mitigado por `busy_timeout=5000`; o worker já é serial).
 
 **T-08 (28–29/09): migração para PostgreSQL completa.** O problema real não era o WAL — é o writer único do SQLite, que não escala aos 35 mil usuários mirados. Fase 1 (28/09): service `db` (postgres:16-alpine, volume nomeado `pgdata`, healthcheck `pg_isready`) e ETL `scripts/migrate-sqlite-to-postgres.js` (fonte READONLY, transação única, validação de contagens, `--dry-run`/`--force`). Fase 2 (29/09): driver swap em `db.js` (`DB_DRIVER=sqlite|postgres`) — tradução de placeholders/booleanos, DDL compartilhado com o ETL, dialeto da fila/pipeline/quota/settings portabilizado, `transcript-editor.js` migrado (antes abria SQLite próprio). App verificado de ponta a ponta contra o Postgres (`tests/t08_driver_postgres.js`, 26/26) e sem regressão no SQLite (79/79). **Cutover realizado em 29/09:** app local agora roda 100% no Postgres. O ETL foi reforçado com sanitização de FK (o SQLite nunca teve FK ativa: 194 registros órfãos em `system_logs` tiveram `user_id`/`project_id` → NULL, com contagem impressa; FKs de `transcription_id` permanecem estritas). Resultado: **3.518 linhas, 10 tabelas, contagens idênticas**; `.env` com `DB_DRIVER=postgres`; suíte completa **79/79 contra o Postgres**. Rollback = comentar `DB_DRIVER` (ressalva: dados gravados no Postgres após o ETL não voltam sozinhos pro SQLite — o arquivo `turboscribe.sqlite` ficou intacto como snapshot).
+
+**T-09 (01/10): Página de Conta.** View `#view-account` (perfil com nome editável, segurança, assinatura, logs de uso, sessão), rotas `PUT /api/account`, `PUT /api/auth/password` (exige senha atual), `GET /api/account/subscription`, `GET /api/account/usage` (tokens somados de `ai_analyses`). Coluna `users.plan` migrada nos dois drivers (SQLite DDL + `PRAGMA table_info`; Postgres via `information_schema` + `ALTER`, pois `PG_DDL` é `CREATE IF NOT EXISTS` e não altera tabela existente). Decisão de produto: sem fluxo "esqueci a senha" por e-mail — vai junto da T-28 (SMTP). Modal de upgrade com toggle mensal/anual; preços opcionais em `system_settings` (`plan_pro_monthly` etc.), "Em breve" quando não configurado. `getQuotaState` passou a converter `COUNT(*)` com `Number()` (Postgres devolve bigint como string). Suíte 95/95. Bônus: credenciais falsas removidas do modal de login.
 
 ## Limites técnicos conhecidos
 

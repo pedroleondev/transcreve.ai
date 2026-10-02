@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT DEFAULT 'user',
   daily_limit INTEGER DEFAULT 3,
   status TEXT DEFAULT 'active',
+  plan TEXT DEFAULT 'gratuito',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS projects (

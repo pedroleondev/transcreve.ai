@@ -19,7 +19,7 @@
 | T-06 | Concorrência da fila configurável + posição na fila na UI | 🟠 P1 | DONE |
 | T-07 | Cotas e limites de uso (`daily_limit`, max upload/duração), editáveis pelo admin | 🔴 P0 | DONE |
 | T-08 | Migração SQLite → PostgreSQL (container `db` + ETL validado + driver swap; cutover por `DB_DRIVER`) | 🔴 P0 | DONE |
-| T-09 | Página de Conta (perfil, trocar senha, esqueci senha por e-mail, logs de uso) | 🟠 P1 | TODO |
+| T-09 | Página de Conta (perfil, trocar senha logado, assinatura, logs de uso) | 🟠 P1 | DONE |
 | T-10 | Corrigir `README.md` da raiz (descreve outro projeto) | 🟢 P3 | DONE |
 | T-11 | Entrada por link (YouTube/Vimeo) + arquivos de vídeo | 🟠 P1 | TODO |
 | T-12 | ~~Player fixo no rodapé~~ — **absorvida pela T-29** (reformulação UX/UI) | — | ABSORVIDA |
@@ -254,20 +254,22 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 ---
 
 ### T-09 — Página de Conta do usuário
-**Estado:** TODO · **Prioridade:** 🟠 P1 · **Depende de:** T-01 · **Contexto SaaS (28/09):** a Conta é onde o usuário se vira sozinho — sem ela, cada troca de senha vira suporte manual e não há porta de entrada para cobrança.
-**Por quê:** não existe tela de perfil; trocar senha exige o admin ([PRODUCT.md](PRODUCT.md) P-03).
-**Contexto:** `index.html` (views), `app.js:240-257` (`showView`), `server.js:84-137`
-**Toca:** `server.js`, `index.html`, `app.js`
+**Estado:** DONE (01/10/2026) · **Prioridade:** 🟠 P1 · **Depende de:** T-01 · **Contexto SaaS (28/09):** a Conta é onde o usuário se vira sozinho — sem ela, cada troca de senha vira suporte manual e não há porta de entrada para cobrança.
+**Por quê:** não existia tela de perfil; trocar senha exigia o admin ([PRODUCT.md](PRODUCT.md) P-03).
+**Contexto:** `index.html` (views), `app.js` (`showView`), `server.js` (rotas `/api/account`, `/api/auth/password`)
+**Toca:** `server.js`, `index.html`, `app.js`, `db.js`, `scripts/migrate-sqlite-to-postgres.js` (PG_DDL), `test_suite.js`
 **Aceite:**
-- [ ] View `#view-account` com nome, e-mail, papel, consumo do dia e preferências (tema, modo de leitura)
-- [ ] `PUT /api/auth/password` exigindo a senha atual
-- [ ] **Esqueci a senha:** fluxo por e-mail (token único, expiração 30 min, link da landing) — `POST /api/auth/forgot` + `POST /api/auth/reset`; e-mail via provider configurável em `.env` (SMTP ou API)
-- [ ] **Assinatura e pagamentos:** seção que espelha o status da assinatura Asaas (T-27) com botão "Gerenciar" que leva ao portal do Asaas
-- [ ] **Logs de uso:** lista das próprias transcrições recentes com data, duração e custo estimado em tokens
-- [ ] Logout que limpa o `localStorage` e volta ao modal de login
-- [ ] Sem token válido, a SPA mostra o login em vez do dashboard (hoje ela assume um usuário padrão em `app.js:3`)
+- [x] View `#view-account` com nome (editável), e-mail, papel, membro desde e consumo do dia
+- [x] `PUT /api/account` atualiza o próprio nome (e-mail e papel seguem imutáveis para o usuário)
+- [x] `PUT /api/auth/password` exigindo a senha atual (mín. 6 caracteres, falha 401 genérica)
+- [x] **Esqueci a senha:** decisão de 01/10 — **sem fluxo por e-mail** (SMTP gera custo e desenvolvimento; decisão do CEO). Logado, o usuário troca em Minha Conta → Segurança; deslogado, o admin redefine. O fluxo por e-mail fica naturalmente absorvido pela **T-28** (auto-cadastro + confirmação de e-mail), que já prevê SMTP
+- [x] **Assinatura:** coluna `users.plan` (default `gratuito`, migrada nos dois drivers) + `GET /api/account/subscription` — espelho honesto do plano local com `billing: 'local'`; botão "Fazer upgrade" abre o modal de planos com toggle **mensal/anual** e preços lidos de `system_settings` (`plan_pro_monthly` etc. — configuráveis pelo admin; sem preço configurado exibe "Em breve", sem dado fictício). A integração real com Asaas é a T-27
+- [x] **Logs de uso:** `GET /api/account/usage` — últimas 20 transcrições próprias com data, duração, nível, status e tokens de IA (soma de `ai_analyses`), mais totais (transcrições, áudio, tokens entrada/saída)
+- [x] Logout que limpa o `localStorage` e volta ao modal de login (menu do usuário no header e seção Sessão na Conta)
+- [x] Sem token válido, a SPA mostra o login em vez do dashboard (garantido desde o hotfix 28/09 em `ensureAuthToken`; revalidado)
+- [x] Bônus de segurança: removidas as credenciais velhas (`admin123`/`user123`) pré-preenchidas/exibidas no modal de login — eram falsas desde a troca de senhas de 29/09
 
-**Evidência:** _(preencher)_
+**Evidência (01/10/2026):** suíte completa **95/95** (10 testes novos: 401 nas 4 rotas sem token, `plan` em `/api/auth/me`, PUT perfil + 400 nome vazio, troca de senha 401/400/200 + relogin + revert, shape de subscription e usage com isolamento por usuário). Correção no caminho: `getQuotaState` agora converte `COUNT(*)` com `Number()` (no Postgres COUNT retorna bigint como string — quebrava `typeof quota.used_today === 'number'`). Migração `users.plan` aplicada nos dois drivers (log de boot: "Adicionando coluna plan (PostgreSQL)"). Validado manualmente com o usuário real (Pedro): subscription `{"plan":"gratuito","billing":"local",...}` e usage com 98 transcrições / 13.111 tokens.
 
 ---
 

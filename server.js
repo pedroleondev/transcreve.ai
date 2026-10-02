@@ -95,7 +95,7 @@ async function getQuotaState(userId) {
     `SELECT COUNT(*) AS n FROM transcriptions WHERE user_id = ? AND created_at >= ?`,
     [userId, cutoff]
   );
-  return { exempt: false, used: row ? row.n : 0, limit };
+  return { exempt: false, used: row ? Number(row.n) : 0, limit };
 }
 
 // Middleware: recusa 429 antes mesmo de aceitar os bytes do upload.
@@ -264,7 +264,8 @@ app.post('/api/auth/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        daily_limit: user.daily_limit
+        daily_limit: user.daily_limit,
+        plan: user.plan || 'gratuito'
       }
     });
   } catch (e) {
@@ -274,7 +275,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const user = await getAsync(`SELECT id, name, email, role, daily_limit, status FROM users WHERE email = ? OR id = ?`, [req.user.email, req.user.id]);
+    const user = await getAsync(`SELECT id, name, email, role, daily_limit, status, plan, created_at FROM users WHERE email = ? OR id = ?`, [req.user.email, req.user.id]);
     if (!user) {
       return res.json({ user: req.user });
     }
@@ -289,6 +290,127 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     });
   } catch (e) {
     res.json({ user: req.user });
+  }
+});
+
+// ----------------------------------------------------
+// ROTAS DA PÁGINA DE CONTA (T-09)
+// ----------------------------------------------------
+
+// Perfil: o usuário edita o próprio nome (e-mail e papel são imutáveis aqui).
+app.put('/api/account', authenticateToken, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ error: 'Nome é obrigatório.' });
+  }
+  const clean = String(name).trim().slice(0, 120);
+  try {
+    await runAsync(`UPDATE users SET name = ? WHERE id = ?`, [clean, req.user.id]);
+    await logAction(req.user.id, 'PROFILE_UPDATED', { name: clean }, req.ip);
+    res.json({ ok: true, name: clean });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Troca de senha exigindo a senha atual — também é o "esqueci a senha" do
+// usuário logado (decisão de 01/10: fluxo por e-mail fica para a T-28, que
+// trará SMTP/confirmação de e-mail; enquanto isso, logado, ele se resolve sozinho).
+app.put('/api/auth/password', authenticateToken, async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
+  }
+  if (String(new_password).length < 6) {
+    return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+  }
+  try {
+    const user = await getAsync(`SELECT id, password_hash FROM users WHERE id = ?`, [req.user.id]);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const match = await bcrypt.compare(String(current_password), user.password_hash);
+    if (!match) {
+      await logAction(req.user.id, 'PASSWORD_CHANGE_FAILED', null, req.ip);
+      return res.status(401).json({ error: 'Senha atual incorreta.' });
+    }
+    const hash = await bcrypt.hash(String(new_password), 10);
+    await runAsync(`UPDATE users SET password_hash = ? WHERE id = ?`, [hash, req.user.id]);
+    await logAction(req.user.id, 'PASSWORD_CHANGED', null, req.ip);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Assinatura: espelho honesto do plano local. A cobrança real (Asaas, portal
+// de pagamento) chega na T-27 — até lá, "source" deixa claro que é local.
+app.get('/api/account/subscription', authenticateToken, async (req, res) => {
+  try {
+    const user = await getAsync(`SELECT plan, status, daily_limit, role, created_at FROM users WHERE id = ?`, [req.user.id]);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const quota = await getQuotaState(req.user.id);
+    res.json({
+      plan: user.plan || 'gratuito',
+      status: user.status,
+      billing: 'local',           // T-27 troca para 'asaas' quando o billing existir
+      renews_at: null,            // sem cobrança ativa, não há renovação
+      quota: {
+        used_today: quota ? quota.used : 0,
+        limit: quota ? quota.limit : null,
+        unlimited: quota ? quota.exempt : false
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Logs de uso: transcrições recentes do próprio usuário com data, duração,
+// modo e tokens consumidos pelas análises de IA (soma de ai_analyses).
+app.get('/api/account/usage', authenticateToken, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const items = await allAsync(
+      `SELECT id, file_name, status, mode, language, duration_seconds, file_size, created_at
+         FROM transcriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
+      [req.user.id, limit]
+    );
+    const tokens = await allAsync(
+      `SELECT transcription_id,
+              COALESCE(SUM(tokens_in), 0) AS tokens_in,
+              COALESCE(SUM(tokens_out), 0) AS tokens_out
+         FROM ai_analyses WHERE transcription_id IN (SELECT id FROM transcriptions WHERE user_id = ?)
+        GROUP BY transcription_id`,
+      [req.user.id]
+    );
+    const tokenById = {};
+    for (const t of tokens) tokenById[t.transcription_id] = Number(t.tokens_in) + Number(t.tokens_out);
+    const recent = items.map(t => ({ ...t, ai_tokens: tokenById[t.id] || 0 }));
+    const totals = await getAsync(
+      `SELECT COUNT(*) AS total_transcriptions,
+              COALESCE(SUM(duration_seconds), 0) AS total_seconds,
+              COALESCE(SUM(file_size), 0) AS total_bytes
+         FROM transcriptions WHERE user_id = ?`,
+      [req.user.id]
+    );
+    const aiTotals = await getAsync(
+      `SELECT COALESCE(SUM(a.tokens_in), 0) AS tokens_in, COALESCE(SUM(a.tokens_out), 0) AS tokens_out
+         FROM ai_analyses a
+         JOIN transcriptions t ON t.id = a.transcription_id
+        WHERE t.user_id = ?`,
+      [req.user.id]
+    );
+    res.json({
+      recent,
+      totals: {
+        total_transcriptions: Number(totals.total_transcriptions),
+        total_seconds: Number(totals.total_seconds),
+        total_bytes: Number(totals.total_bytes),
+        ai_tokens_in: Number(aiTotals.tokens_in),
+        ai_tokens_out: Number(aiTotals.tokens_out)
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

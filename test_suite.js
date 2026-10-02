@@ -119,6 +119,113 @@ async function runTestSuite() {
     assert(false, `Falha ao testar GET /api/admin/users com token de usuário comum: ${e.message}`);
   }
 
+  // ---------------------------------------------------------------
+  // TESTES T-09: PÁGINA DE CONTA (perfil, senha, assinatura, uso)
+  // ---------------------------------------------------------------
+  // 5. Rotas da conta sem token -> 401
+  for (const [method, route] of [['GET', '/api/account/usage'], ['GET', '/api/account/subscription'], ['PUT', '/api/account'], ['PUT', '/api/auth/password']]) {
+    try {
+      const res = await fetch(`${BASE_URL}${route}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: ['PUT'].includes(method) ? JSON.stringify({}) : undefined
+      });
+      assert(res.status === 401, `${method} ${route} sem token retornou 401 (status: ${res.status})`);
+    } catch (e) {
+      assert(false, `Falha ao testar ${method} ${route} sem token: ${e.message}`);
+    }
+  }
+
+  // 6. /api/auth/me agora expõe o plano (T-09)
+  try {
+    const res = await fetch(`${BASE_URL}/api/auth/me`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+    const data = await res.json();
+    assert(res.ok && data.user && typeof data.user.plan === 'string', `GET /api/auth/me retorna user.plan (recebido: ${data.user && data.user.plan})`);
+  } catch (e) {
+    assert(false, `Falha ao testar /api/auth/me com plan: ${e.message}`);
+  }
+
+  // 7. PUT /api/account troca o nome do próprio usuário
+  try {
+    const res = await fetch(`${BASE_URL}/api/account`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ name: 'Suite User' })
+    });
+    const data = await res.json();
+    assert(res.ok && data.ok && data.name === 'Suite User', `PUT /api/account atualizou o nome (status: ${res.status})`);
+    const bad = await fetch(`${BASE_URL}/api/account`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ name: '   ' })
+    });
+    assert(bad.status === 400, `PUT /api/account com nome vazio retornou 400 (status: ${bad.status})`);
+  } catch (e) {
+    assert(false, `Falha ao testar PUT /api/account: ${e.message}`);
+  }
+
+  // 8. PUT /api/auth/password: senha atual errada -> 401; fluxo completo -> ok
+  const SUITE_NEW_PASSWORD = 'suite456';
+  try {
+    const wrong = await fetch(`${BASE_URL}/api/auth/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ current_password: 'senha_errada_999', new_password: SUITE_NEW_PASSWORD })
+    });
+    assert(wrong.status === 401, `PUT /api/auth/password com senha atual errada retornou 401 (status: ${wrong.status})`);
+
+    const short = await fetch(`${BASE_URL}/api/auth/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ current_password: 'suite123', new_password: '123' })
+    });
+    assert(short.status === 400, `PUT /api/auth/password com nova senha curta retornou 400 (status: ${short.status})`);
+
+    const ok = await fetch(`${BASE_URL}/api/auth/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ current_password: 'suite123', new_password: SUITE_NEW_PASSWORD })
+    });
+    assert(ok.status === 200, `PUT /api/auth/password com dados válidos retornou 200 (status: ${ok.status})`);
+
+    // Login com a nova senha funciona; reverte para a senha original.
+    const relogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'suite-user@test.local', password: SUITE_NEW_PASSWORD })
+    });
+    assert(relogin.ok, 'Login funciona com a nova senha definida via /api/auth/password');
+    const revert = await fetch(`${BASE_URL}/api/auth/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+      body: JSON.stringify({ current_password: SUITE_NEW_PASSWORD, new_password: 'suite123' })
+    });
+    assert(revert.ok, 'Senha revertida para o valor original da suíte');
+  } catch (e) {
+    assert(false, `Falha ao testar PUT /api/auth/password: ${e.message}`);
+  }
+
+  // 9. /api/account/subscription: espelho honesto do plano (billing local até a T-27)
+  try {
+    const res = await fetch(`${BASE_URL}/api/account/subscription`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+    const data = await res.json();
+    assert(res.ok && typeof data.plan === 'string' && data.billing === 'local', `GET /api/account/subscription retorna plan + billing='local' (plano: ${data.plan})`);
+    assert(data.quota && typeof data.quota.used_today === 'number', 'GET /api/account/subscription retorna quota.used_today numérico');
+  } catch (e) {
+    assert(false, `Falha ao testar /api/account/subscription: ${e.message}`);
+  }
+
+  // 10. /api/account/usage: só transcrições do próprio usuário, com totais
+  try {
+    const res = await fetch(`${BASE_URL}/api/account/usage?limit=10`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+    const data = await res.json();
+    assert(res.ok && Array.isArray(data.recent) && data.totals, 'GET /api/account/usage retorna recent[] e totals');
+    const mine = await getAsync(`SELECT COUNT(*) AS n FROM transcriptions WHERE user_id = (SELECT id FROM users WHERE email = 'suite-user@test.local')`);
+    assert(Number(data.totals.total_transcriptions) === Number(mine.n), `Uso reflete apenas as transcrições do próprio usuário (${data.totals.total_transcriptions} == ${mine.n})`);
+  } catch (e) {
+    assert(false, `Falha ao testar /api/account/usage: ${e.message}`);
+  }
+
   // TEST 1 (T-15): Chave OpenRouter CIFRADA em repouso e NUNCA exposta pela API.
   const UNMASKED_KEY_RE = /sk-or-v1-[A-Za-z0-9_-]{15,}/;
   try {

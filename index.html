@@ -194,6 +194,10 @@
             <span id="user-dropdown-role" class="inline-block mt-1 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">Admin SaaS</span>
           </div>
 
+          <a href="#" onclick="showView('account')" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-brand-copy dark:text-brand-copy border-b border-brand-line dark:border-brand-line">
+            <i data-lucide="user-round" class="w-4 h-4"></i>
+            <span>Minha Conta</span>
+          </a>
           <a href="#" onclick="showView('admin')" id="admin-menu-link" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-blue-600 dark:text-blue-300 font-semibold border-b border-brand-line dark:border-brand-line">
             <i data-lucide="settings" class="w-4 h-4"></i>
             <span>Painel SaaS Admin</span>
@@ -201,6 +205,10 @@
           <a href="#" onclick="openLoginModal()" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-brand-copy dark:text-brand-copy">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
             <span>Alternar Conta / Login</span>
+          </a>
+          <a href="#" onclick="logoutUser()" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-red-600 dark:text-red-300 font-semibold">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>Sair</span>
           </a>
         </div>
       </div>
@@ -800,6 +808,121 @@
         </div>
       </section>
 
+      <!-- VIEW: MINHA CONTA (T-09) -->
+      <section id="view-account" class="hidden flex-1 flex flex-col p-4 lg:p-8 overflow-y-auto bg-brand-canvas dark:bg-brand-canvas">
+        <div class="max-w-3xl mx-auto w-full space-y-6">
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink">Minha Conta</h2>
+              <p class="text-xs text-brand-muted dark:text-brand-muted mt-0.5">Gerencie seu perfil, segurança, assinatura e acompanhe seu uso.</p>
+            </div>
+            <button onclick="showView('dashboard')" class="shrink-0 flex items-center gap-1.5 text-xs font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line px-3 py-2 rounded-lg transition">
+              <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar
+            </button>
+          </div>
+
+          <!-- PERFIL -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2 mb-4"><i data-lucide="user-round" class="w-4 h-4 text-blue-600 dark:text-blue-300"></i> Perfil</h3>
+            <form onsubmit="saveAccountProfile(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Nome</label>
+                <input id="account-name" type="text" maxlength="120" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">E-mail</label>
+                  <input id="account-email" type="email" disabled class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-muted dark:text-brand-muted rounded-xl px-3 py-2 text-xs cursor-not-allowed">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Papel</label>
+                  <input id="account-role" type="text" disabled class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-muted dark:text-brand-muted rounded-xl px-3 py-2 text-xs cursor-not-allowed">
+                </div>
+              </div>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted">E-mail e papel só podem ser alterados pelo administrador. Membro desde <span id="account-since" class="font-semibold">—</span>.</p>
+              <div class="flex items-center gap-3">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-lg">Salvar nome</button>
+                <span id="account-profile-msg" class="text-xs font-semibold hidden"></span>
+              </div>
+            </form>
+          </div>
+
+          <!-- SEGURANÇA -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2 mb-1"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-600 dark:text-emerald-300"></i> Segurança</h3>
+            <p class="text-[11px] text-brand-muted dark:text-brand-muted mb-4">Troque sua senha informando a senha atual. Esqueceu a senha estando deslogado? Peça ao administrador para redefini-la.</p>
+            <form onsubmit="changeAccountPassword(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Senha atual</label>
+                <input id="account-current-password" type="password" autocomplete="current-password" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Nova senha</label>
+                  <input id="account-new-password" type="password" autocomplete="new-password" minlength="6" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Confirmar nova senha</label>
+                  <input id="account-new-password-2" type="password" autocomplete="new-password" minlength="6" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+              </div>
+              <p id="account-password-error" class="text-xs text-red-600 dark:text-red-300 hidden"></p>
+              <p id="account-password-ok" class="text-xs text-emerald-600 dark:text-emerald-300 hidden">Senha alterada com sucesso.</p>
+              <button type="submit" class="bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold text-xs px-4 py-2 rounded-lg">Trocar senha</button>
+            </form>
+          </div>
+
+          <!-- ASSINATURA -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2"><i data-lucide="credit-card" class="w-4 h-4 text-violet-600 dark:text-violet-300"></i> Assinatura</h3>
+                <p class="text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">Seu plano atual e consumo de hoje.</p>
+              </div>
+              <span id="account-plan-badge" class="bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[11px] font-bold px-3 py-1 rounded-full border border-blue-200 dark:border-blue-800">—</span>
+            </div>
+            <div id="account-quota" class="text-xs text-brand-copy dark:text-brand-copy mb-4">—</div>
+            <div class="flex flex-wrap items-center gap-3">
+              <button onclick="openUpgradeModal()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition">
+                <i data-lucide="sparkles" class="w-4 h-4"></i> Fazer upgrade
+              </button>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted">A cobrança online (cartão, boleto, Pix) será ativada em breve.</p>
+            </div>
+          </div>
+
+          <!-- LOGS DE USO -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2 mb-4"><i data-lucide="history" class="w-4 h-4 text-amber-600 dark:text-amber-300"></i> Logs de uso</h3>
+            <div id="account-usage-totals" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4"></div>
+            <div class="border border-brand-line dark:border-brand-line rounded-xl overflow-hidden overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-brand-canvas dark:bg-brand-canvas text-brand-muted dark:text-brand-muted font-bold uppercase border-b border-brand-line dark:border-brand-line">
+                  <tr>
+                    <th class="p-3">Data</th>
+                    <th class="p-3">Arquivo</th>
+                    <th class="p-3">Duração</th>
+                    <th class="p-3">Nível</th>
+                    <th class="p-3">Status</th>
+                    <th class="p-3">Tokens IA</th>
+                  </tr>
+                </thead>
+                <tbody id="account-usage-tbody" class="divide-y divide-brand-line dark:divide-brand-line">
+                  <tr><td colspan="6" class="p-4 text-center text-brand-muted dark:text-brand-muted">Carregando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SESSÃO -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2 mb-3"><i data-lucide="log-out" class="w-4 h-4 text-red-500 dark:text-red-300"></i> Sessão</h3>
+            <button onclick="logoutUser()" class="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">Sair da conta</button>
+          </div>
+
+        </div>
+      </section>
+
     </main>
 
     <!-- BOTTOM NAV (mobile) — navegação principal ao alcance do polegar.
@@ -1129,6 +1252,64 @@
     </div>
   </div>
 
+  <!-- MODAL: UPGRADE DE PLANO (T-09) — preços lidos de system_settings
+       (plan_pro_monthly, plan_pro_annual, plan_max_monthly, plan_max_annual);
+       sem preço configurado o plano aparece como "Em breve", sem dado fictício. -->
+  <div id="upgrade-modal" class="modal-root hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-brand-line dark:border-brand-line p-6 sm:p-8 text-brand-ink dark:text-brand-ink">
+      <div class="flex justify-between items-start mb-2">
+        <div>
+          <h3 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink">Upgrade de plano</h3>
+          <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Escolha entre cobrança mensal ou anual. O pagamento online será ativado em breve.</p>
+        </div>
+        <button onclick="closeUpgradeModal()" class="text-brand-muted dark:text-brand-muted hover:text-brand-copy dark:hover:text-brand-copy shrink-0">
+          <i data-lucide="x" class="w-6 h-6"></i>
+        </button>
+      </div>
+
+      <!-- Toggle mensal/anual -->
+      <div class="flex justify-center my-5">
+        <div class="inline-flex bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-full p-1 text-xs font-bold" role="group" aria-label="Periodicidade">
+          <button id="upgrade-cycle-monthly" onclick="setUpgradeCycle('monthly')" class="px-4 py-1.5 rounded-full transition">Mensal</button>
+          <button id="upgrade-cycle-annual" onclick="setUpgradeCycle('annual')" class="px-4 py-1.5 rounded-full transition">Anual</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5 my-4">
+        <!-- Pro -->
+        <div class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-2xl p-6">
+          <h4 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-1.5"><i data-lucide="gauge" class="w-4 h-4 text-teal-600 dark:text-teal-300"></i> Pro</h4>
+          <p id="upgrade-price-pro" class="text-2xl font-black text-brand-ink dark:text-brand-ink mt-2">Em breve</p>
+          <p id="upgrade-price-pro-note" class="text-[10px] text-brand-muted dark:text-brand-muted"></p>
+          <ul class="text-xs text-brand-copy dark:text-brand-copy space-y-2 mt-4">
+            <li>✓ Mais transcrições por dia</li>
+            <li>✓ Todos os níveis de precisão (Base, Pro e Max)</li>
+            <li>✓ Aprimoramento por IA com juiz de validação (JEV)</li>
+            <li>✓ Exportação em todos os formatos</li>
+          </ul>
+          <button disabled onclick="alert('A cobrança online será ativada em breve.')" class="w-full mt-5 bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed">Assinar Pro</button>
+        </div>
+
+        <!-- Max -->
+        <div class="bg-indigo-50/90 dark:bg-indigo-950/90 border-2 border-indigo-600 rounded-2xl p-6 relative shadow-md">
+          <span class="absolute top-3 right-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">MAIS COMPLETO</span>
+          <h4 class="font-bold text-indigo-950 dark:text-indigo-300 flex items-center gap-1.5"><i data-lucide="award" class="w-4 h-4 text-indigo-600 dark:text-indigo-300"></i> Max</h4>
+          <p id="upgrade-price-max" class="text-2xl font-black text-indigo-950 dark:text-indigo-300 mt-2">Em breve</p>
+          <p id="upgrade-price-max-note" class="text-[10px] text-indigo-800/70 dark:text-indigo-300/70"></p>
+          <ul class="text-xs text-indigo-900 dark:text-indigo-300 space-y-2 mt-4 font-medium">
+            <li>✓ Tudo do Pro</li>
+            <li>✓ Transcrições ilimitadas</li>
+            <li>✓ Prioridade na fila de processamento</li>
+            <li>✓ Suporte prioritário</li>
+          </ul>
+          <button disabled onclick="alert('A cobrança online será ativada em breve.')" class="w-full mt-5 bg-indigo-300 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed">Assinar Max</button>
+        </div>
+      </div>
+
+      <p class="text-[11px] text-brand-muted dark:text-brand-muted text-center">A definição dos preços e a cobrança (cartão, boleto, Pix) chegam com a integração Asaas. Administradores podem pré-configurar os preços em Configurações.</p>
+    </div>
+  </div>
+
   <!-- MODAL: FAQS -->
   <div id="faqs-modal" class="modal-root hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-3xl max-w-xl w-full shadow-2xl overflow-hidden border border-brand-line dark:border-brand-line p-6 text-brand-ink dark:text-brand-ink">
@@ -1197,17 +1378,14 @@
       <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
         <div>
           <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">E-mail</label>
-          <input type="email" id="login-email" value="admin@turboscribe.local" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500">
+          <input type="email" id="login-email" required autocomplete="username" class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500">
         </div>
         <div>
           <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">Senha</label>
-          <input type="password" id="login-password" value="admin123" required class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500">
+          <input type="password" id="login-password" required autocomplete="current-password" class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500">
         </div>
 
-        <div class="text-[11px] text-brand-muted dark:text-brand-muted space-y-1 bg-brand-canvas dark:bg-brand-canvas p-2.5 rounded-xl border border-brand-line dark:border-brand-line">
-          <p><b>Admin:</b> admin@turboscribe.local / admin123</p>
-          <p><b>Usuário Demo:</b> pedro.leon23@gmail.com / user123</p>
-        </div>
+        <p class="text-[11px] text-brand-muted dark:text-brand-muted bg-brand-canvas dark:bg-brand-canvas p-2.5 rounded-xl border border-brand-line dark:border-brand-line">Esqueceu a senha? Fale com o administrador do sistema ou, se estiver logado em outro dispositivo, troque em <b>Minha Conta → Segurança</b>.</p>
 
         <button type="submit" class="w-full bg-[#0066FF] hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition">
           ENTRAR

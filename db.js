@@ -215,9 +215,17 @@ async function initDatabaseSqlite() {
         role TEXT DEFAULT 'user',
         daily_limit INTEGER DEFAULT 3,
         status TEXT DEFAULT 'active',
+        plan TEXT DEFAULT 'gratuito',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // T-09: coluna de plano/assinatura em bancos legados (SQLite).
+    const userColumns = await allAsync(`PRAGMA table_info(users)`);
+    if (!userColumns.some(col => col.name === 'plan')) {
+      console.log('Adicionando coluna "plan" na tabela "users"...');
+      await runAsync(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'gratuito'`);
+    }
 
     // 2. Tabela de Chaves de API
     await runAsync(`
@@ -386,6 +394,15 @@ async function initDatabasePostgres() {
   // da fase 1). As migrações imperativas do SQLite (PRAGMA, sqlite_master,
   // ALTER ADD COLUMN) não se aplicam: o Postgres sobe com o schema completo.
   await runAsync(PG_DDL);
+  // T-09: PG_DDL é CREATE TABLE IF NOT EXISTS — não altera tabelas já
+  // existentes. Garante a coluna users.plan em bancos PostgreSQL legados.
+  const pgUserCols = await allAsync(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'plan'`
+  );
+  if (!pgUserCols.length) {
+    console.log('Adicionando coluna "plan" na tabela "users" (PostgreSQL)...');
+    await runAsync(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'gratuito'`);
+  }
   console.log('Tabelas PostgreSQL verificadas/criadas com sucesso.');
   await seedCoreData();
 }
