@@ -17,6 +17,11 @@ services:
       # DB_DRIVER=postgres no .env + `docker compose up -d transcreveai`.
       # Rollback: remover DB_DRIVER do .env e subir de volta.
       - DB_DRIVER=${DB_DRIVER:-sqlite}
+      # T-28: com NODE_ENV=production (imagem) e sem SMTP, o cadastro público
+      # fica fechado (503) — correto para produção. No self-host local, defina
+      # REGISTRATION_REQUIRES_SMTP=false no .env: o link de confirmação vai
+      # para o log do servidor até você configurar SMTP_*.
+      - REGISTRATION_REQUIRES_SMTP=${REGISTRATION_REQUIRES_SMTP:-true}
       - DATABASE_URL=${DATABASE_URL}
       - PGHOST=${PGHOST:-db}
       - PGPORT=${PGPORT:-5432}

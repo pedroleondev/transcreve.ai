@@ -2,7 +2,7 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
-const { getAsync, allAsync } = require('./db');
+const { getAsync, allAsync, runAsync } = require('./db');
 const secrets = require('./services/secrets');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
@@ -224,6 +224,118 @@ async function runTestSuite() {
     assert(Number(data.totals.total_transcriptions) === Number(mine.n), `Uso reflete apenas as transcrições do próprio usuário (${data.totals.total_transcriptions} == ${mine.n})`);
   } catch (e) {
     assert(false, `Falha ao testar /api/account/usage: ${e.message}`);
+  }
+
+  // ---------------------------------------------------------------
+  // TESTES T-28: LANDING + AUTO-CADASTRO + CONFIRMAÇÃO DE E-MAIL
+  // ---------------------------------------------------------------
+  const LANDING_USER = { name: 'Landing User', email: 'landing-user@test.local', password: 'land1234' };
+
+  // 11. /api/public/metrics: números agregados e reais para a landing
+  try {
+    const res = await fetch(`${BASE_URL}/api/public/metrics`);
+    const data = await res.json();
+    assert(res.ok && typeof data.transcriptions_completed === 'number' && typeof data.audio_hours === 'number' && typeof data.active_users === 'number',
+      `GET /api/public/metrics retorna transcriptions_completed/audio_hours/active_users numéricos (${data.transcriptions_completed} concluídas, ${data.audio_hours} h)`);
+  } catch (e) {
+    assert(false, `Falha ao testar /api/public/metrics: ${e.message}`);
+  }
+
+  // 12. Validações do register: e-mail inválido e senha fraca -> 400 (com regra explícita)
+  try {
+    const badEmail = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'X', email: 'nao-e-email', password: 'land1234' })
+    });
+    assert(badEmail.status === 400, `Register com e-mail inválido retornou 400 (status: ${badEmail.status})`);
+    const weak = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'X', email: 'weak@test.local', password: 'abc' })
+    });
+    const weakData = await weak.json().catch(() => ({}));
+    assert(weak.status === 400 && /senha/i.test(weakData.error || ''), `Register com senha fraca retornou 400 com regra explícita (${weakData.error})`);
+  } catch (e) {
+    assert(false, `Falha ao testar validações do register: ${e.message}`);
+  }
+
+  // 13. Fluxo completo: register -> login bloqueado (403) -> confirm -> login OK.
+  // Token lido do banco (sem SMTP o e-mail vai pro log; fluxo custo zero).
+  try {
+    // Limpeza prévia para a suíte ser repetível
+    await runAsync(`DELETE FROM users WHERE email = ?`, [LANDING_USER.email]);
+
+    const reg = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(LANDING_USER)
+    });
+    const regData = await reg.json().catch(() => ({}));
+    assert(reg.status === 201 && regData.ok, `Register criou conta pendente (status: ${reg.status})`);
+
+    // Duplicado -> 409
+    const dup = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(LANDING_USER)
+    });
+    assert(dup.status === 409, `Register duplicado retornou 409 (status: ${dup.status})`);
+
+    // Login bloqueado antes da confirmação
+    const blocked = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: LANDING_USER.email, password: LANDING_USER.password })
+    });
+    assert(blocked.status === 403, `Login de conta pendente retornou 403 (status: ${blocked.status})`);
+
+    // Token de confirmação no banco
+    const vrow = await getAsync(
+      `SELECT v.token FROM email_verifications v JOIN users u ON u.id = v.user_id WHERE u.email = ? ORDER BY v.created_at DESC`,
+      [LANDING_USER.email]
+    );
+    assert(vrow && vrow.token, 'Token de confirmação gerado e persistido (e-mail em modo log)');
+
+    // Confirm ativa a conta
+    const conf = await fetch(`${BASE_URL}/api/auth/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: vrow.token })
+    });
+    assert(conf.status === 200, `Confirm ativou a conta (status: ${conf.status})`);
+
+    // Token é de uso único
+    const conf2 = await fetch(`${BASE_URL}/api/auth/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: vrow.token })
+    });
+    assert(conf2.status === 400, `Reuso do token de confirmação retornou 400 (status: ${conf2.status})`);
+
+    // Token inválido
+    const confBad = await fetch(`${BASE_URL}/api/auth/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'token-inexistente' })
+    });
+    assert(confBad.status === 400, `Token inválido retornou 400 (status: ${confBad.status})`);
+
+    // Login funciona após confirmação
+    const okLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: LANDING_USER.email, password: LANDING_USER.password })
+    });
+    assert(okLogin.ok, 'Login funciona após confirmação de e-mail');
+  } catch (e) {
+    assert(false, `Falha no fluxo register/confirm: ${e.message}`);
+  }
+
+  // 14. Rate limit no resend (por IP): ao menos um 429 em 6 chamadas seguidas
+  try {
+    let saw429 = false;
+    for (let i = 0; i < 6; i++) {
+      const r = await fetch(`${BASE_URL}/api/auth/resend`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: LANDING_USER.email })
+      });
+      if (r.status === 429) { saw429 = true; break; }
+    }
+    assert(saw429, 'Rate limit do resend disparou 429 após repetidas chamadas');
+  } catch (e) {
+    assert(false, `Falha ao testar rate limit do resend: ${e.message}`);
   }
 
   // TEST 1 (T-15): Chave OpenRouter CIFRADA em repouso e NUNCA exposta pela API.

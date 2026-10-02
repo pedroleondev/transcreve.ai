@@ -55,6 +55,31 @@ async function ensureAuthToken() {
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
+  // T-28: deep-link de confirmação de e-mail (/app?confirm_token=...) — a
+  // landing manda o link para cá; a confirmação é pública e precede o login.
+  const confirmToken = new URLSearchParams(location.search).get('confirm_token');
+  if (confirmToken) {
+    history.replaceState(null, '', '/app');
+    try {
+      const res = await fetch('/api/auth/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: confirmToken })
+      });
+      const data = await res.json().catch(() => ({}));
+      openLoginModal();
+      const notice = document.getElementById('login-notice');
+      if (notice) {
+        notice.textContent = data.message || (res.ok ? 'E-mail confirmado! Faça login.' : 'Não foi possível confirmar.');
+        notice.className = res.ok
+          ? 'text-xs font-semibold p-2.5 rounded-xl border bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+          : 'text-xs font-semibold p-2.5 rounded-xl border bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800';
+      }
+    } catch (_) {
+      openLoginModal();
+    }
+    return;
+  }
   const authed = await ensureAuthToken();
   if (!authed) return; // sem sessão: só o modal de login; os dados carregam após o login
   fetchSystemSettings();

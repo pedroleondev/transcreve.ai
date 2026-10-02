@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TurboScribe — Transforme áudio em texto com IA</title>
+  <meta name="description" content="Transcreva reuniões, aulas e entrevistas em minutos. Modelos Whisper de alta precisão, aprimoramento por IA e exportação em todos os formatos.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#0f131c',
+            panel: '#171c28',
+            line: '#262c3a',
+            cyber: '#00f2fe',
+            violet: '#7928CA',
+            mist: '#dfe2ef'
+          },
+          fontFamily: { jakarta: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] }
+        }
+      }
+    };
+  </script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+    .glow-text { text-shadow: 0 0 24px rgba(0, 242, 254, 0.45); }
+    .hero-grad { background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,242,254,0.14), transparent), radial-gradient(ellipse 60% 50% at 80% 10%, rgba(121,40,202,0.18), transparent); }
+    .card-hover { transition: transform .15s ease, border-color .15s ease; }
+    .card-hover:hover { transform: translateY(-3px); border-color: rgba(0,242,254,0.4); }
+  </style>
+</head>
+<body class="bg-obsidian text-mist antialiased">
+
+  <!-- HEADER -->
+  <header class="fixed top-0 inset-x-0 z-40 bg-obsidian/85 backdrop-blur-md border-b border-line">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <a href="#" class="flex items-center gap-2 font-extrabold text-lg tracking-tight">
+        <span class="bg-cyber text-obsidian p-1.5 rounded-lg flex items-center justify-center"><i data-lucide="infinity" class="w-5 h-5"></i></span>
+        <span>TurboScribe</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-6 text-sm font-semibold text-mist/70">
+        <a href="#recursos" class="hover:text-cyber transition">Recursos</a>
+        <a href="#metricas" class="hover:text-cyber transition">Resultados</a>
+        <a href="#planos" class="hover:text-cyber transition">Planos</a>
+        <a href="#faq" class="hover:text-cyber transition">FAQ</a>
+      </nav>
+      <div class="flex items-center gap-2">
+        <a href="/app" class="text-sm font-bold text-mist/80 hover:text-cyber transition px-3 py-2">Entrar</a>
+        <button onclick="openRegisterModal()" class="bg-cyber hover:bg-[#00dce6] text-obsidian text-sm font-extrabold px-4 py-2 rounded-lg transition">Criar conta grátis</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero-grad pt-32 pb-20 px-4 sm:px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <span class="inline-flex items-center gap-1.5 text-xs font-bold text-cyber bg-cyber/10 border border-cyber/25 px-3 py-1.5 rounded-full mb-6">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Transcrição com IA + juiz de validação (JEV)
+      </span>
+      <h1 class="text-4xl sm:text-6xl font-extrabold leading-tight tracking-tight">
+        Transforme <span class="text-cyber glow-text">áudio</span> em <span class="text-cyber glow-text">texto</span> em minutos
+      </h1>
+      <p class="mt-6 text-lg text-mist/70 max-w-2xl mx-auto">
+        Reuniões, aulas, consultas e entrevistas transcritas com precisão de pontuação em PT-BR.
+        Aprimore com IA, corrija termos com seu dicionário e exporte em PDF, DOCX, SRT e mais.
+      </p>
+      <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+        <button onclick="openRegisterModal()" class="w-full sm:w-auto bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold px-8 py-3.5 rounded-xl transition text-base">
+          Começar agora — é grátis
+        </button>
+        <a href="/app" class="w-full sm:w-auto text-center border border-line hover:border-cyber/50 text-mist font-bold px-8 py-3.5 rounded-xl transition text-base">
+          Já tenho conta
+        </a>
+      </div>
+      <p class="mt-4 text-xs text-mist/40">Sem cartão de crédito. 3 transcrições por dia no plano gratuito.</p>
+    </div>
+  </section>
+
+  <!-- MÉTRICAS REAIS (medidas ao vivo do sistema) -->
+  <section id="metricas" class="px-4 sm:px-6 pb-16">
+    <div class="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p id="metric-transcriptions" class="text-3xl font-extrabold text-cyber">—</p>
+        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Transcrições concluídas</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p id="metric-hours" class="text-3xl font-extrabold text-cyber">—</p>
+        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Horas de áudio transcritas</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p id="metric-users" class="text-3xl font-extrabold text-cyber">—</p>
+        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Usuários ativos</p>
+      </div>
+    </div>
+    <p class="text-center text-[10px] text-mist/30 mt-3">Números reais, medidos nesta instância em tempo real.</p>
+  </section>
+
+  <!-- RECURSOS -->
+  <section id="recursos" class="px-4 sm:px-6 py-16 border-t border-line">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-extrabold text-center">Tudo que você precisa para <span class="text-cyber">nunca mais transcrever na mão</span></h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="audio-lines" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">3 níveis de precisão</h3>
+          <p class="text-sm text-mist/60 mt-2">Base (veloz), Pro (balanceado) e Max — Whisper Large v3 com pontuação perfeita em português.</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="badge-check" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">Aprimoramento com JEV</h3>
+          <p class="text-sm text-mist/60 mt-2">A IA corrige concordância, estrutura e termos do seu dicionário — e um juiz valida o resultado antes de entregar.</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="file-down" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">Exportação completa</h3>
+          <p class="text-sm text-mist/60 mt-2">PDF, DOCX, TXT, SRT, VTT e em massa. Áudios de até 10 horas e 5 GB, 50 arquivos por vez.</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="languages" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">100 idiomas</h3>
+          <p class="text-sm text-mist/60 mt-2">Detecção automática de idioma ou escolha manual — de português a japonês.</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="book-check" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">Dicionário de correções</h3>
+          <p class="text-sm text-mist/60 mt-2">Ensine a IA nomes próprios e termos do seu negócio para transcrições sem erro.</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <i data-lucide="server" class="w-8 h-8 text-cyber"></i>
+          <h3 class="font-bold mt-4">Seus dados, seu servidor</h3>
+          <p class="text-sm text-mist/60 mt-2">Self-hosted com Docker: seus áudios e textos ficam no seu banco — privacidade por arquitetura.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLANOS -->
+  <section id="planos" class="px-4 sm:px-6 py-16 border-t border-line">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-extrabold text-center">Planos para cada momento</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <h3 class="font-bold">Gratuito</h3>
+          <p class="text-3xl font-extrabold mt-2">R$ 0<span class="text-sm font-normal text-mist/50">/mês</span></p>
+          <ul class="text-sm text-mist/60 space-y-2 mt-4">
+            <li>✓ 3 transcrições por dia</li>
+            <li>✓ Todos os níveis de precisão</li>
+            <li>✓ Exportação em todos os formatos</li>
+          </ul>
+          <button onclick="openRegisterModal()" class="w-full mt-6 border border-line hover:border-cyber/50 font-bold text-sm py-2.5 rounded-xl transition">Criar conta</button>
+        </div>
+        <div class="bg-gradient-to-b from-violet/25 to-panel border-2 border-violet rounded-2xl p-6 relative">
+          <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet text-white text-[10px] font-extrabold px-3 py-1 rounded-full">EM BREVE</span>
+          <h3 class="font-bold">Pro</h3>
+          <p class="text-3xl font-extrabold mt-2">—</p>
+          <ul class="text-sm text-mist/60 space-y-2 mt-4">
+            <li>✓ Mais transcrições por dia</li>
+            <li>✓ Prioridade na fila</li>
+            <li>✓ Aprimoramento IA + JEV ilimitado</li>
+          </ul>
+          <button disabled class="w-full mt-6 bg-line text-mist/40 font-bold text-sm py-2.5 rounded-xl cursor-not-allowed">Cobrança em breve</button>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+          <h3 class="font-bold">Max Empresarial</h3>
+          <p class="text-3xl font-extrabold mt-2">—</p>
+          <ul class="text-sm text-mist/60 space-y-2 mt-4">
+            <li>✓ Transcrições ilimitadas</li>
+            <li>✓ Suporte prioritário</li>
+            <li>✓ Deploy dedicado</li>
+          </ul>
+          <button disabled class="w-full mt-6 bg-line text-mist/40 font-bold text-sm py-2.5 rounded-xl cursor-not-allowed">Cobrança em breve</button>
+        </div>
+      </div>
+      <p class="text-center text-xs text-mist/40 mt-6">A cobrança online (cartão, boleto e Pix) será ativada em breve. Enquanto isso, o plano Gratuito está aberto para todos.</p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="px-4 sm:px-6 py-16 border-t border-line">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-3xl font-extrabold text-center">Perguntas frequentes</h2>
+      <div class="space-y-3 mt-10">
+        <details class="bg-panel border border-line rounded-xl p-4 group">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Quais formatos de arquivo são aceitos? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+          <p class="text-sm text-mist/60 mt-3">MP3, M4A, WAV, OGG, OPUS, MP4, MOV, AAC, WMA, WMV e MPEG — até 5 GB e 10 horas por arquivo, 50 arquivos por envio.</p>
+        </details>
+        <details class="bg-panel border border-line rounded-xl p-4 group">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Como funciona o aprimoramento por IA? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+          <p class="text-sm text-mist/60 mt-3">Após transcrever, um modelo de linguagem corrige concordância, estrutura o texto e aplica seu dicionário de termos. O JEV (juiz de validação) revisa o resultado e rejeita o que não está bom — você recebe só texto aprovado.</p>
+        </details>
+        <details class="bg-panel border border-line rounded-xl p-4 group">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Meus dados ficam seguros? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+          <p class="text-sm text-mist/60 mt-3">Sim. O TurboScribe é self-hosted: seus áudios e transcrições ficam no seu próprio banco de dados e servidor, não em serviços de terceiros.</p>
+        </details>
+        <details class="bg-panel border border-line rounded-xl p-4 group">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Preciso de cartão para começar? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+          <p class="text-sm text-mist/60 mt-3">Não. O plano Gratuito é aberto: crie a conta, confirme o e-mail e comece a transcrever na hora.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA FINAL -->
+  <section class="px-4 sm:px-6 py-20 hero-grad border-t border-line">
+    <div class="max-w-2xl mx-auto text-center">
+      <h2 class="text-3xl sm:text-4xl font-extrabold">Pare de transcrever na mão <span class="text-cyber glow-text">hoje</span></h2>
+      <button onclick="openRegisterModal()" class="mt-8 bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold px-10 py-4 rounded-xl transition text-base">
+        Criar conta gratuita
+      </button>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-line px-4 sm:px-6 py-8">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-mist/40">
+      <p>© 2026 TurboScribe — Transcrição com IA, self-hosted.</p>
+      <div class="flex items-center gap-4">
+        <a href="/app" class="hover:text-cyber transition">Acessar o app</a>
+        <a href="#faq" class="hover:text-cyber transition">FAQ</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- MODAL: CADASTRO -->
+  <div id="register-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-panel border border-line rounded-2xl w-full max-w-sm p-6 relative">
+      <button onclick="closeRegisterModal()" class="absolute top-4 right-4 text-mist/40 hover:text-mist" aria-label="Fechar"><i data-lucide="x" class="w-5 h-5"></i></button>
+
+      <div id="register-form-view">
+        <h3 class="text-lg font-extrabold flex items-center gap-2"><i data-lucide="user-plus" class="w-5 h-5 text-cyber"></i> Criar sua conta</h3>
+        <p class="text-xs text-mist/50 mt-1">Grátis, sem cartão. Você confirma o e-mail e já pode transcrever.</p>
+        <form onsubmit="submitRegister(event)" class="mt-5 space-y-3">
+          <div>
+            <label class="block text-xs font-bold text-mist/70 mb-1">Nome</label>
+            <input id="reg-name" type="text" required maxlength="120" placeholder="Seu nome" class="w-full bg-obsidian border border-line rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyber outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-mist/70 mb-1">E-mail</label>
+            <input id="reg-email" type="email" required autocomplete="email" placeholder="voce@empresa.com" class="w-full bg-obsidian border border-line rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyber outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-mist/70 mb-1">Senha</label>
+            <input id="reg-password" type="password" required minlength="8" autocomplete="new-password" placeholder="Mín. 8 caracteres, com letra e número" class="w-full bg-obsidian border border-line rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyber outline-none">
+          </div>
+          <p id="reg-error" class="text-xs text-red-400 hidden"></p>
+          <button type="submit" id="reg-submit" class="w-full bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold text-sm py-3 rounded-xl transition">Criar conta grátis</button>
+          <p class="text-[11px] text-mist/40 text-center">Já tem conta? <a href="/app" class="text-cyber font-bold hover:underline">Entrar</a></p>
+        </form>
+      </div>
+
+      <div id="register-success-view" class="hidden text-center py-4">
+        <div class="w-14 h-14 mx-auto bg-cyber/10 border border-cyber/30 rounded-full flex items-center justify-center">
+          <i data-lucide="mail-check" class="w-7 h-7 text-cyber"></i>
+        </div>
+        <h3 class="text-lg font-extrabold mt-4">Quase lá!</h3>
+        <p id="reg-success-msg" class="text-sm text-mist/60 mt-2">Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos — confira também a caixa de spam.</p>
+        <a href="/app" class="inline-block mt-6 border border-line hover:border-cyber/50 font-bold text-sm px-6 py-2.5 rounded-xl transition">Ir para o login</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    if (window.lucide) lucide.createIcons();
+
+    // Métricas reais, medidas nesta instância (nada inventado).
+    fetch('/api/public/metrics')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(m => {
+        document.getElementById('metric-transcriptions').textContent = m.transcriptions_completed.toLocaleString('pt-BR');
+        document.getElementById('metric-hours').textContent = m.audio_hours.toLocaleString('pt-BR') + ' h';
+        document.getElementById('metric-users').textContent = m.active_users.toLocaleString('pt-BR');
+      })
+      .catch(() => {
+        ['metric-transcriptions', 'metric-hours', 'metric-users'].forEach(id => {
+          document.getElementById(id).textContent = '—';
+        });
+      });
+
+    function openRegisterModal() {
+      document.getElementById('register-modal').classList.remove('hidden');
+      document.getElementById('register-form-view').classList.remove('hidden');
+      document.getElementById('register-success-view').classList.add('hidden');
+    }
+    function closeRegisterModal() { document.getElementById('register-modal').classList.add('hidden'); }
+    document.getElementById('register-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeRegisterModal();
+    });
+
+    async function submitRegister(e) {
+      e.preventDefault();
+      const errEl = document.getElementById('reg-error');
+      errEl.classList.add('hidden');
+      const btn = document.getElementById('reg-submit');
+      btn.disabled = true;
+      btn.textContent = 'Criando…';
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: document.getElementById('reg-name').value,
+            email: document.getElementById('reg-email').value,
+            password: document.getElementById('reg-password').value
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Erro ao criar a conta.');
+        document.getElementById('reg-success-msg').textContent = data.message ||
+          'Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos — confira também a caixa de spam.';
+        document.getElementById('register-form-view').classList.add('hidden');
+        document.getElementById('register-success-view').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Criar conta grátis';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -382,6 +382,18 @@ async function initDatabaseSqlite() {
       if (!workerColumns.some(column => column.name === name)) await runAsync('ALTER TABLE transcriptions ADD COLUMN ' + name + ' ' + type);
     }
     await runAsync('CREATE INDEX IF NOT EXISTS idx_transcriptions_queue ON transcriptions(status, created_at)');
+
+    // 10. T-28: tokens de confirmação de e-mail do auto-cadastro
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS email_verifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     console.log('Tabelas SQLite verificadas/criadas com sucesso.');
 
     await seedCoreData();

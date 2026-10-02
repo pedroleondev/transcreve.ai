@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const { initDatabase, runAsync, getAsync, allAsync, logAction, isPostgres } = require('./db');
 const { transcribeAudioFile, generateChatCompletion, runAnalysisChat, translateTranscript, getAvailableOpenRouterModels, testOpenRouterKey } = require('./services/openrouter');
 const { isValidLanguage } = require('./services/languages');
+const { smtpConfigured, sendVerificationEmail } = require('./services/mailer');
 const { DEFAULT_ENHANCE_SYSTEM_PROMPT, buildEnhanceUserContent, splitTextIntoChunks, PROMPT_VERSION } = require('./services/prompts');
 const { enhanceWithJudge } = require('./services/judge');
 const secrets = require('./services/secrets');
@@ -24,6 +25,7 @@ const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./servi
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'turboscribe_super_secret_jwt_key_2026';
+const isProduction = process.env.NODE_ENV === 'production';
 
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'turboscribe_super_secret_jwt_key_2026')) {
   console.error('ERRO CRÍTICO: JWT_SECRET não definido ou usando valor padrão em ambiente de produção (NODE_ENV=production).');
@@ -159,7 +161,8 @@ app.get('/uploads/:file', authenticateToken, async (req, res) => {
 // Estáticos explícitos: o diretório do projeto NÃO é publicado como um todo.
 // (com express.static(__dirname), /turboscribe.sqlite, /.env e o próprio
 // server.js ficavam baixáveis por qualquer cliente sem autenticação)
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'landing.html')));
+app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
 // T-20: lista canônica de idiomas do Whisper — usada pelo backend (validação)
@@ -240,6 +243,9 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
+    if (user.status === 'pending_verification') {
+      return res.status(403).json({ error: 'Conta aguardando confirmação de e-mail. Verifique sua caixa de entrada (e o spam) ou solicite um novo link de confirmação.' });
+    }
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Conta suspensa pelo Administrador.' });
     }
@@ -294,9 +300,159 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 });
 
 // ----------------------------------------------------
-// ROTAS DA PÁGINA DE CONTA (T-09)
+// AUTO-CADASTRO + CONFIRMAÇÃO DE E-MAIL (T-28)
 // ----------------------------------------------------
 
+// Rate limit em memória por IP (instância única — suficiente para o deploy
+// atual em um container). Janela deslizante de 10 min.
+const rateBuckets = new Map();
+function rateLimit(key, maxHits, windowMs) {
+  const now = Date.now();
+  const hits = (rateBuckets.get(key) || []).filter(t => now - t < windowMs);
+  if (hits.length >= maxHits) { rateBuckets.set(key, hits); return false; }
+  hits.push(now);
+  rateBuckets.set(key, hits);
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateBuckets) if (!v.some(t => now - t < 10 * 60 * 1000)) rateBuckets.delete(k);
+}, 5 * 60 * 1000).unref();
+
+const REGISTER_WINDOW_MS = 10 * 60 * 1000;
+const REGISTER_MAX_PER_IP = 5;
+const RESEND_MAX_PER_IP = 5;
+const VERIFY_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+function validRegisterPassword(pw) {
+  // Regra explícita (aceite T-28): mín. 8 caracteres, com letra e número.
+  if (typeof pw !== 'string' || pw.length < 8 || pw.length > 128) return 'A senha deve ter entre 8 e 128 caracteres.';
+  if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return 'A senha deve conter pelo menos uma letra e um número.';
+  return null;
+}
+
+async function issueVerificationToken(userId) {
+  const token = uuidv4() + uuidv4(); // 72 chars aleatórios
+  const expiresAt = new Date(Date.now() + VERIFY_TOKEN_TTL_MS).toISOString().replace('T', ' ').slice(0, 19);
+  await runAsync(
+    `INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)`,
+    [uuidv4(), userId, token, expiresAt]
+  );
+  return token;
+}
+
+// POST /api/auth/register — cadastro público. Conta nasce 'pending_verification'
+// e só vira 'active' via POST /api/auth/confirm. Sem SMTP em produção → 503.
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body || {};
+  const cleanName = String(name || '').trim().slice(0, 120);
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanName) return res.status(400).json({ error: 'Nome é obrigatório.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) return res.status(400).json({ error: 'E-mail inválido.' });
+  const pwError = validRegisterPassword(password);
+  if (pwError) return res.status(400).json({ error: pwError });
+  // Rate limit só DEPOIS da validação: request malformada não gasta a cota do IP.
+  if (!rateLimit(`register:${req.ip}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW_MS)) {
+    return res.status(429).json({ error: 'Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.' });
+  }
+  // Aceite T-28: sem SMTP em produção o cadastro público fica DESABILITADO
+  // (503 explícito). Escape hatch deliberado p/ self-host local: definir
+  // REGISTRATION_REQUIRES_SMTP=false — o link vai para o log do servidor
+  // (modo dev do services/mailer.js). A conta SEMPRE exige confirmação do token.
+  if (isProduction && !smtpConfigured() && process.env.REGISTRATION_REQUIRES_SMTP !== 'false') {
+    return res.status(503).json({ error: 'Cadastro indisponível no momento: envio de e-mail não configurado pelo administrador.' });
+  }
+
+  try {
+    const existing = await getAsync(`SELECT id, status FROM users WHERE email = ?`, [cleanEmail]);
+    if (existing) {
+      // 409 claro (aceite), sem revelar mais nada sobre a conta.
+      return res.status(409).json({ error: 'Já existe uma conta com este e-mail.' });
+    }
+    const userId = uuidv4();
+    const passHash = await bcrypt.hash(password, 10);
+    await runAsync(
+      `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status, plan) VALUES (?, ?, ?, ?, 'user', 3, 'pending_verification', 'gratuito')`,
+      [userId, cleanName, cleanEmail, passHash]
+    );
+    const token = await issueVerificationToken(userId);
+    const { delivered } = await sendVerificationEmail(cleanEmail, cleanName, token);
+    await logAction(userId, 'REGISTERED', { email: cleanEmail, email_delivered: delivered }, req.ip);
+    res.status(201).json({
+      ok: true,
+      email_delivered: delivered,
+      message: delivered
+        ? 'Conta criada! Confirme seu e-mail para ativar.'
+        : 'Conta criada! Enviamos o link de confirmação (modo desenvolvimento: veja o log do servidor).'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/auth/confirm — ativa a conta com o token do e-mail (uso único, 30 min).
+app.post('/api/auth/confirm', async (req, res) => {
+  const token = String((req.body || {}).token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Token é obrigatório.' });
+  try {
+    const row = await getAsync(`SELECT * FROM email_verifications WHERE token = ?`, [token]);
+    if (!row) return res.status(400).json({ error: 'Link de confirmação inválido.' });
+    if (row.used_at) return res.status(400).json({ error: 'Este link já foi utilizado. Faça login ou solicite um novo.' });
+    // Cross-driver: Postgres devolve TIMESTAMP como Date; SQLite, como string.
+    const expiresAt = row.expires_at instanceof Date
+      ? row.expires_at
+      : new Date(String(row.expires_at).replace(' ', 'T') + 'Z');
+    if (expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Link expirado (válido por 30 minutos). Solicite um novo.' });
+    }
+    await runAsync(`UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
+    await runAsync(`UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending_verification'`, [row.user_id]);
+    await logAction(row.user_id, 'EMAIL_CONFIRMED', null, req.ip);
+    res.json({ ok: true, message: 'E-mail confirmado! Sua conta está ativa — faça login.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/auth/resend — novo link de confirmação (resposta uniforme para
+// não vazar quais e-mails existem).
+app.post('/api/auth/resend', async (req, res) => {
+  if (!rateLimit(`resend:${req.ip}`, RESEND_MAX_PER_IP, REGISTER_WINDOW_MS)) {
+    return res.status(429).json({ error: 'Muitas solicitações. Aguarde alguns minutos.' });
+  }
+  const cleanEmail = String((req.body || {}).email || '').trim().toLowerCase();
+  try {
+    const user = await getAsync(`SELECT id, name, email, status FROM users WHERE email = ?`, [cleanEmail]);
+    const uniform = 'Se a conta estiver aguardando confirmação, um novo link será enviado.';
+    if (!user || user.status !== 'pending_verification') return res.json({ ok: true, message: uniform });
+    if (isProduction && !smtpConfigured() && process.env.REGISTRATION_REQUIRES_SMTP !== 'false') return res.json({ ok: true, message: uniform });
+    const token = await issueVerificationToken(user.id);
+    await sendVerificationEmail(user.email, user.name, token);
+    res.json({ ok: true, message: uniform });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/public/metrics — números REAIS e agregados para a landing
+// (aceite: só publicar o que é medido; nada de métrica inventada).
+app.get('/api/public/metrics', async (req, res) => {
+  try {
+    const t = await getAsync(`SELECT COUNT(*) AS n, COALESCE(SUM(duration_seconds), 0) AS secs FROM transcriptions WHERE status IN ('completed','completed_with_errors')`);
+    const u = await getAsync(`SELECT COUNT(*) AS n FROM users WHERE status = 'active'`);
+    res.json({
+      transcriptions_completed: Number(t.n),
+      audio_hours: Math.round((Number(t.secs) / 3600) * 10) / 10,
+      active_users: Number(u.n)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ----------------------------------------------------
+// ROTAS DA PÁGINA DE CONTA (T-09)
+// ----------------------------------------------------
 // Perfil: o usuário edita o próprio nome (e-mail e papel são imutáveis aqui).
 app.put('/api/account', authenticateToken, async (req, res) => {
   const { name } = req.body;
@@ -1047,6 +1203,7 @@ app.get('/api/admin/metrics', authenticateToken, requireAdmin, async (req, res) 
       hours_transcribed: ((totalTranscriptions.total_duration || 0) / 3600).toFixed(1),
       storage_used_mb: ((totalTranscriptions.total_size || 0) / (1024 * 1024)).toFixed(1),
       active_api_keys: apiKeyCount.count || 0,
+      smtp_configured: smtpConfigured(), // T-28: aviso explícito no admin quando o cadastro público estiver fechado
       recent_logs: recentLogs
     });
   } catch (e) {

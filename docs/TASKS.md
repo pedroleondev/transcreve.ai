@@ -38,7 +38,7 @@
 | T-25 | JEV implementado: juiz valida o aprimoramento antes de entregar | 🟠 P1 | DONE |
 | T-26 | MinIO/S3 para arquivos (camada de storage isolada) | 🟡 P2 | TODO |
 | T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | TODO |
-| T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | TODO |
+| T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | DONE |
 | T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | TODO |
 | T-30 | API pública + webhooks (tool para LLMs) | 🟡 P2 | TODO |
 | T-31 | MCP server / skills sobre a API | 🟢 P3 | TODO |
@@ -719,19 +719,19 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 ---
 
 ### T-28 — Landing page + auto-cadastro + confirmação de e-mail
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2 — cadastro escreve no banco); design base pronto no Stitch (`transcreve.ai_landing_page_oficial`)
+**Estado:** DONE (01/10/2026) · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2 — cadastro escreve no banco); design base pronto no Stitch (`transcreve.ai_landing_page_oficial`)
 **Por quê:** hoje não há porta de entrada: quem quiser usar precisa que o admin crie a conta. A landing é o funil: visitante → demo/argumento → cadastro → e-mail confirmado → primeiro upload. É a peça que transforma o sistema em produto vendável.
-**Contexto:** `server.js:84-137` (auth), `db.js` (users), material do Stitch em `files_frontend_example/stitch_transcreve.ai_mobile_redesign/transcreve.ai_landing_page_oficial/`
-**Toca:** `landing.html` (novo, separado da SPA), `server.js` (rotas públicas de cadastro + verificação de e-mail), `app.js` (deep-link de confirmação), `.env.example` (SMTP), `package.json`
+**Contexto:** `server.js` (auth público), `db.js` (users + email_verifications), material do Stitch em `files_frontend_example/stitch_transcreve.ai_mobile_redesign/transcreve.ai_landing_page_oficial/`
+**Toca:** `landing.html` (novo, separado da SPA), `services/mailer.js` (novo), `server.js` (rotas públicas de cadastro + verificação), `app.js` (deep-link de confirmação), `index.html`, `docker-compose.yml`, `.env.example`, `package.json` (nodemailer), `db.js`, `scripts/migrate-sqlite-to-postgres.js` (PG_DDL), `test_suite.js`
 **Aceite:**
-- [ ] Landing estática servida em `/` para não-autenticado (SPA continua em `/app`): hero com gradiente no verbo, métricas reais do sistema (não inventadas — só publicar número se for medido), pricing, FAQ, CTA de cadastro
-- [ ] `POST /api/auth/register`: nome, e-mail, senha → conta `pending_verification`; e-mail de confirmação com token único (30 min de validade); só após clicar a conta fica `active`
-- [ ] Sem SMTP configurado em produção → cadastro desabilitado com aviso explícito no admin (nunca conta ativa sem verificação)
-- [ ] E-mail duplicado → 409 claro; senha fraca → 400 com regra explícita
-- [ ] Rate limit no register e no resend de confirmação (por IP)
-- [ ] Testes: fluxo completo com SMTP mock (custo zero)
+- [x] Landing estática servida em `/` (SPA migrou para `/app`): hero com gradiente no verbo (paleta Obsidian Wave do Stitch: `#0f131c`/`#00f2fe`/`#7928CA`, Plus Jakarta Sans), métricas reais via `GET /api/public/metrics` (só números medidos — 208 transcrições / 7 h / 4 usuários no ar), recursos, pricing (Pro/Max "Em breve", sem preço fictício), FAQ, CTA de cadastro
+- [x] `POST /api/auth/register`: nome, e-mail, senha → conta `pending_verification`; e-mail com token único de uso único (30 min); só após `POST /api/auth/confirm` a conta vira `active`. Login de conta pendente → 403 com instrução
+- [x] Sem SMTP em produção → cadastro recusado com 503 explícito + `smtp_configured` no `/api/admin/metrics` (aviso no admin). Escape hatch deliberado para self-host local: `REGISTRATION_REQUIRES_SMTP=false` (compose passa do `.env`) — o link vai para o **log do servidor**; a conta ainda exige confirmação do token (nunca ativa sem verificação)
+- [x] E-mail duplicado → 409; senha fraca → 400 com regra explícita (8–128 chars, letra + número); e-mail inválido → 400
+- [x] Rate limit por IP no register e no resend (janela deslizante 10 min, em memória; validação ocorre antes de gastar a cota)
+- [x] Testes de fluxo completo a custo zero: sem SMTP o token é lido do banco (a suíte tem acesso); e-mail real só sai quando SMTP_* estiver configurado
 
-**Evidência:** _(preencher)_
+**Evidência (01/10/2026):** suíte completa **107/107** (12 testes novos: shape de `/api/public/metrics`, 400 e-mail inválido/senha fraca, fluxo register→409 duplicado→403 login pendente→token persistido→confirm 200→reuso 400→token inválido 400→login OK, rate limit do resend 429). Validado manualmente via curl: `/` serve a landing, `/app` serve a SPA, register 201, metrics reais. Detalhes técnicos do caminho: volume anônimo `/app/node_modules` do compose congelava o node_modules — container recriado com `-V` após `docker-compose build` (nodemailer é binário: rebuild obrigatório pela regra de ouro). Correções cross-driver: `isProduction` definido no `server.js`; `expires_at` chega como `Date` no Postgres e string no SQLite (comparação normalizada). **Atenção (mudança de hábito):** o app agora mora em `/app`; a raiz `/` é a landing pública.
 
 ---
 

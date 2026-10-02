@@ -158,6 +158,15 @@ CREATE TABLE IF NOT EXISTS system_logs (
   "timestamp" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_transcription ON transcription_chunks(transcription_id, idx);
+CREATE TABLE IF NOT EXISTS email_verifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_analyses_transcription ON ai_analyses(transcription_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_transcriptions_queue ON transcriptions(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_transcriptions_user ON transcriptions(user_id, created_at);

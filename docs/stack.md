@@ -45,6 +45,7 @@ glossary(id, wrong, correct, created_at)  -- T-18: dicionário de correções ap
 ai_analyses(id, transcription_id → transcriptions, kind, model, prompt_used,
             glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at)  -- T-18
 system_logs(id, user_id, action, details, ip_address, timestamp)
+email_verifications(id, user_id -> users, token UNIQUE, expires_at, used_at, created_at)  -- T-28: confirmacao de e-mail do auto-cadastro
 projects(id, user_id → users, name, created_at)
 transcriptions(id, user_id → users, project_id → projects, file_name, file_path,
                file_size, duration_seconds, language, mode, status, stage, raw_text,
@@ -72,6 +73,10 @@ Todas as rotas em `server.js`, prefixo `/api`.
 |---|---|---|---|
 | POST | `/api/auth/login` | pública | — |
 | GET | `/api/auth/me` | token | — |
+| POST | `/api/auth/register` | pública | T-28: auto-cadastro; conta nasce `pending_verification`; 503 sem SMTP em produção (escape: `REGISTRATION_REQUIRES_SMTP=false`); rate limit por IP |
+| POST | `/api/auth/confirm` | pública | T-28: ativa a conta (token único, uso único, 30 min) |
+| POST | `/api/auth/resend` | pública | T-28: reenvio do link; resposta uniforme (não vaza e-mail cadastrado); rate limit por IP |
+| GET | `/api/public/metrics` | pública | T-28: métricas agregadas REAIS para a landing (transcrições, horas, usuários ativos) |
 | PUT | `/api/account` | token | ✅ dono — T-09: atualiza o próprio nome |
 | PUT | `/api/auth/password` | token | ✅ dono — T-09: troca de senha exigindo a senha atual |
 | GET | `/api/account/subscription` | token | ✅ dono — T-09: plano (`users.plan`), quota do dia; `billing='local'` até a T-27 (Asaas) |
@@ -126,6 +131,8 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 **T-08 (28–29/09): migração para PostgreSQL completa.** O problema real não era o WAL — é o writer único do SQLite, que não escala aos 35 mil usuários mirados. Fase 1 (28/09): service `db` (postgres:16-alpine, volume nomeado `pgdata`, healthcheck `pg_isready`) e ETL `scripts/migrate-sqlite-to-postgres.js` (fonte READONLY, transação única, validação de contagens, `--dry-run`/`--force`). Fase 2 (29/09): driver swap em `db.js` (`DB_DRIVER=sqlite|postgres`) — tradução de placeholders/booleanos, DDL compartilhado com o ETL, dialeto da fila/pipeline/quota/settings portabilizado, `transcript-editor.js` migrado (antes abria SQLite próprio). App verificado de ponta a ponta contra o Postgres (`tests/t08_driver_postgres.js`, 26/26) e sem regressão no SQLite (79/79). **Cutover realizado em 29/09:** app local agora roda 100% no Postgres. O ETL foi reforçado com sanitização de FK (o SQLite nunca teve FK ativa: 194 registros órfãos em `system_logs` tiveram `user_id`/`project_id` → NULL, com contagem impressa; FKs de `transcription_id` permanecem estritas). Resultado: **3.518 linhas, 10 tabelas, contagens idênticas**; `.env` com `DB_DRIVER=postgres`; suíte completa **79/79 contra o Postgres**. Rollback = comentar `DB_DRIVER` (ressalva: dados gravados no Postgres após o ETL não voltam sozinhos pro SQLite — o arquivo `turboscribe.sqlite` ficou intacto como snapshot).
 
 **T-09 (01/10): Página de Conta.** View `#view-account` (perfil com nome editável, segurança, assinatura, logs de uso, sessão), rotas `PUT /api/account`, `PUT /api/auth/password` (exige senha atual), `GET /api/account/subscription`, `GET /api/account/usage` (tokens somados de `ai_analyses`). Coluna `users.plan` migrada nos dois drivers (SQLite DDL + `PRAGMA table_info`; Postgres via `information_schema` + `ALTER`, pois `PG_DDL` é `CREATE IF NOT EXISTS` e não altera tabela existente). Decisão de produto: sem fluxo "esqueci a senha" por e-mail — vai junto da T-28 (SMTP). Modal de upgrade com toggle mensal/anual; preços opcionais em `system_settings` (`plan_pro_monthly` etc.), "Em breve" quando não configurado. `getQuotaState` passou a converter `COUNT(*)` com `Number()` (Postgres devolve bigint como string). Suíte 95/95. Bônus: credenciais falsas removidas do modal de login.
+
+**T-28 (01/10): landing pública + auto-cadastro + confirmação de e-mail.** `/` agora serve `landing.html` (paleta Obsidian Wave do Stitch) e a SPA migrou para `/app` (deep-link `/app?confirm_token=` confirmando via `POST /api/auth/confirm`). `services/mailer.js` (nodemailer, SMTP por `.env`): sem SMTP em produção o cadastro é recusado (503) com `smtp_configured` exposto no `/api/admin/metrics`; no self-host local `REGISTRATION_REQUIRES_SMTP=false` manda o link para o log — a conta sempre exige confirmação do token. Tabela `email_verifications` nos dois drivers (PG_DDL + DDL SQLite). Gotcha registrado: o volume anônimo `/app/node_modules` do compose congela dependências novas — ao adicionar pacote: `docker compose build` + `up -d -V` (recria o volume anônimo). Cross-driver: `TIMESTAMP` volta como `Date` no Postgres e string no SQLite. Suíte 107/107.
 
 ## Limites técnicos conhecidos
 
