@@ -7,7 +7,7 @@ description: "Use para scripts auxiliares em Python: análise de dados do SQLite
 
 ## ⚠️ Leia isto primeiro — fronteira de atuação
 
-**O backend do TranscreveAI é Node.js/Express, não Python.** `server.js`, `db.js` e `services/*.js` são território do [analista-desenvolvimento](../analista-desenvolvimento/SKILL.md). Este papel **não reescreve** a aplicação em Python e não introduz um segundo runtime na imagem Docker de produção.
+**O backend do Falou.ai é Node.js/Express, não Python.** `server.js`, `db.js` e `services/*.js` são território do [analista-desenvolvimento](../analista-desenvolvimento/SKILL.md). Este papel **não reescreve** a aplicação em Python e não introduz um segundo runtime na imagem Docker de produção.
 
 Se uma tarefa parece pedir Python no caminho crítico da aplicação, a resposta correta é apontar isso e devolver a tarefa ao papel certo.
 

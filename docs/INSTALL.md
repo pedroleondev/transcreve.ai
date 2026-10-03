@@ -1,6 +1,6 @@
 # INSTALL.md — Guia de Self-Hosting
 
-> Como baixar, instalar e configurar o TranscreveAI na sua própria máquina ou servidor. Duas rotas: **Docker Compose** (recomendado) e **instalação direta com Node.js**.
+> Como baixar, instalar e configurar o Falou.ai na sua própria máquina ou servidor. Duas rotas: **Docker Compose** (recomendado) e **instalação direta com Node.js**.
 
 ## ⚠️ Antes de instalar — leia isto
 
@@ -104,7 +104,7 @@ Renovando os certificados (a CA dura 10 anos, o leaf 5):
 
 ```bash
 openssl req -x509 -new -nodes -key certs/rootCA-key.pem -sha256 -days 3650 \
-  -out certs/rootCA.pem -subj "/CN=TurboScribe Local CA" \
+  -out certs/rootCA.pem -subj "/CN=Falou.ai Local CA" \
   -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
 openssl req -new -key certs/transcreveai-key.pem -out /tmp/leaf.csr -subj "/CN=transcreveai.local"
 openssl x509 -req -in /tmp/leaf.csr -CA certs/rootCA.pem -CAkey certs/rootCA-key.pem \

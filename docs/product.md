@@ -1,4 +1,4 @@
-# product.md — TranscreveAI (TurboScribe Local)
+# product.md — Falou.ai
 
 > O que o sistema é, para quem, e o que já existe de fato. Fonte de verdade auditada no código em 14/09/2026.
 > Nada aqui é aspiracional sem estar marcado `[PLANEJADO]`.

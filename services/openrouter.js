@@ -236,7 +236,7 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'HTTP-Referer': 'http://localhost:3000',
-          'X-Title': 'TurboScribe Local SaaS',
+          'X-Title': 'Falou.ai Local SaaS',
           ...formData.getHeaders()
         },
         body: formData,
@@ -295,7 +295,7 @@ async function generateChatCompletion(transcriptText, prompt) {
 
   const systemMessage = {
     role: 'system',
-    content: 'Você é o assistente inteligente do TurboScribe. Seu trabalho é ajudar o usuário analisando a transcrição fornecida, resumindo pontos chave, tirando dúvidas ou extraindo ações. Responda sempre em Português do Brasil (PT-BR) de forma profissional, direta e clara.'
+    content: 'Você é o assistente inteligente do Falou.ai. Seu trabalho é ajudar o usuário analisando a transcrição fornecida, resumindo pontos chave, tirando dúvidas ou extraindo ações. Responda sempre em Português do Brasil (PT-BR) de forma profissional, direta e clara.'
   };
 
   const userMessage = {
@@ -310,7 +310,7 @@ async function generateChatCompletion(transcriptText, prompt) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'TurboScribe Local SaaS'
+        'X-Title': 'Falou.ai Local SaaS'
       },
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',
@@ -357,7 +357,7 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'TurboScribe Local SaaS'
+        'X-Title': 'Falou.ai Local SaaS'
       },
       body: JSON.stringify({
         model: model || 'openai/gpt-4o-mini',
@@ -405,7 +405,7 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'TurboScribe Local SaaS'
+        'X-Title': 'Falou.ai Local SaaS'
       },
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',

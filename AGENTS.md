@@ -1,4 +1,4 @@
-# Diretrizes do Projeto: TranscreveAI
+# Diretrizes do Projeto: Falou.ai
 
 Este arquivo é o prompt de sistema do projeto. **Leia-o inteiro; ele é curto de propósito.** O resto do contexto é carregado sob demanda, nunca de uma vez.
 

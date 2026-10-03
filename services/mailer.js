@@ -3,7 +3,7 @@
 // Configuração por .env:
 //   SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS,
 //   SMTP_SECURE=true somente para porta 465,
-//   MAIL_FROM (default "TurboScribe <no-reply@turboscribe.local>"),
+//   MAIL_FROM (default "Falou.ai <no-reply@falou.ai>"),
 //   PUBLIC_BASE_URL (link da landing/app usado nos e-mails; default http://localhost:3000)
 //
 // Regra de honestidade (aceite T-28): sem SMTP configurado, em produção
@@ -31,18 +31,18 @@ if (smtpConfigured()) {
   console.warn('[mailer] ATENÇÃO: SMTP não configurado em produção — cadastro público será recusado (503) a menos que REGISTRATION_REQUIRES_SMTP=false (self-host local; o link vai para o log do servidor).');
 }
 
-const FROM = (process.env.MAIL_FROM || 'TurboScribe <no-reply@turboscribe.local>').trim();
+const FROM = (process.env.MAIL_FROM || 'Falou.ai <no-reply@falou.ai>').trim();
 const BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
 
 // Envia o e-mail de confirmação de cadastro. Retorna { delivered: boolean }.
 // Sem SMTP em ambiente de desenvolvimento, imprime o link no log (custo zero).
 async function sendVerificationEmail(to, name, token) {
   const confirmUrl = `${BASE_URL}/app?confirm_token=${encodeURIComponent(token)}`;
-  const subject = 'Confirme seu cadastro — TurboScribe';
+  const subject = 'Confirme seu cadastro — Falou.ai';
   const text = [
     `Olá, ${name}!`,
     '',
-    'Você criou uma conta no TurboScribe. Confirme seu e-mail para ativar a conta (válido por 30 minutos):',
+    'Você criou uma conta no Falou.ai. Confirme seu e-mail para ativar a conta (válido por 30 minutos):',
     '',
     confirmUrl,
     '',

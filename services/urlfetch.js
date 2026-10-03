@@ -65,7 +65,7 @@ function classifyUrl(rawUrl) {
 function followGet(url, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https:') ? https : http;
-    const req = client.get(url, { headers: { 'User-Agent': 'TurboScribe/1.0' } }, (res) => {
+    const req = client.get(url, { headers: { 'User-Agent': 'Falou.ai/1.0' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();

@@ -1,6 +1,6 @@
-# 🔄 Pipeline de Desenvolvimento SaaS Orientado a Contexto (TurboScribe AI & Engineering Workflow)
+# 🔄 Pipeline de Desenvolvimento SaaS Orientado a Contexto (Falou.ai Engineering Workflow)
 
-Este documento estabelece a metodologia de **Desenvolvimento Orientado a Contexto (Context-Driven Development)** para ser seguida rigorosamente por agentes de Inteligência Artificial e engenheiros de software no projeto TurboScribe. O objetivo é garantir **máxima assertividade, zero regressões e alta qualidade de código e interface**.
+Este documento estabelece a metodologia de **Desenvolvimento Orientado a Contexto (Context-Driven Development)** para ser seguida rigorosamente por agentes de Inteligência Artificial e engenheiros de software no projeto Falou.ai. O objetivo é garantir **máxima assertividade, zero regressões e alta qualidade de código e interface**.
 
 ---
 

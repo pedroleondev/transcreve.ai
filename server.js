@@ -1673,7 +1673,7 @@ databaseReady.then(async () => {
   const queue = await startQueueWorker();
   const server = app.listen(PORT, () => {
   console.log(`=======================================================`);
-  console.log(`🚀 Servidor TurboScribe Local rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor Falou.ai Local rodando na porta ${PORT}`);
   console.log(`🔗 Acesso local: http://localhost:${PORT}`);
   console.log(`🔑 Configure a chave OpenRouter em: sidebar → CONFIGURAR CHAVE`);
   console.log(`=======================================================`);

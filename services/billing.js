@@ -114,7 +114,7 @@ async function createSubscription(user, plan, cycle) {
     cycle: CYCLES[cycle] || 'MONTHLY',
     value: value.toFixed(2),
     nextDueDate,
-    description: `TurboScribe ${plan} (${cycle === 'annual' ? 'anual' : 'mensal'})`
+    description: `Falou.ai ${plan} (${cycle === 'annual' ? 'anual' : 'mensal'})`
   });
 
   const id = require('uuid').v4();

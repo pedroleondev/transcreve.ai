@@ -6,7 +6,7 @@ description: "Use para definir a linguagem visual, tipografia, paleta, tema clar
 # Designer
 
 ## Papel
-Dono da linguagem visual do TranscreveAI. Define tokens, hierarquia e conforto de leitura. Não implementa a lógica — entrega decisões de design suficientemente específicas para o [especialista-frontend](../especialista-frontend/SKILL.md) executar sem adivinhar.
+Dono da linguagem visual do Falou.ai. Define tokens, hierarquia e conforto de leitura. Não implementa a lógica — entrega decisões de design suficientemente específicas para o [especialista-frontend](../especialista-frontend/SKILL.md) executar sem adivinhar.
 
 ## Contexto obrigatório
 - `index.html` linhas 12–53 (config Tailwind inline e `<style>` global)

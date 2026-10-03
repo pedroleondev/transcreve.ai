@@ -1,4 +1,4 @@
-# TranscreveAI
+# Falou.ai
 
 SaaS local de **transcrição de áudio e vídeo com IA**, self-hosted em Docker, com painel administrativo. Sobe áudios de atendimento/WhatsApp e devolve texto pesquisável, editável e exportável, com resumo de IA.
 

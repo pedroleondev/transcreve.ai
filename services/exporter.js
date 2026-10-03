@@ -60,7 +60,7 @@ function generateSRT(segments = []) {
  * Gera formato de Legendas WebVTT
  */
 function generateVTT(segments = []) {
-  let vtt = 'WEBVTT - Gerado por TurboScribe Local\n\n';
+  let vtt = 'WEBVTT - Gerado por Falou.ai Local\n\n';
   if (!segments || segments.length === 0) return vtt + '00:00:00.000 --> 00:00:05.000\nSem legendas.';
 
   vtt += segments.map((seg, index) => {
@@ -79,7 +79,7 @@ function generateVTT(segments = []) {
 async function generateDOCX(transcription, segments = [], includeTimestamps = false) {
   const paragraphs = [
     new Paragraph({
-      text: transcription.file_name || 'Transcrição TurboScribe',
+      text: transcription.file_name || 'Transcrição Falou.ai',
       heading: HeadingLevel.HEADING_1,
       spacing: { after: 200 }
     }),
@@ -135,8 +135,8 @@ function generatePDF(transcription, segments = [], includeTimestamps = false, ca
     callback(null, pdfData);
   });
 
-  // Cabeçalho PDF TurboScribe
-  doc.fillColor('#0066FF').fontSize(22).text('TurboScribe', { inline: true });
+  // Cabeçalho PDF Falou.ai
+  doc.fillColor('#0066FF').fontSize(22).text('Falou.ai', { inline: true });
   doc.fillColor('#666666').fontSize(10).text('   SaaS Local de Transcrição', { inline: true });
   doc.moveDown(1.5);
 
