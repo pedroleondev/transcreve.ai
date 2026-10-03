@@ -854,4 +854,9 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 - **"Modo foco" leitura:** esconder toolbar e player ao rolar pra baixo, reaparecendo no scroll up
 - Nenhuma delas entra sem validação visual do dono no celular
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- **03/10/2026:** implementado conforme aceite. Em <1024px o painel lateral empilha antes do miolo (`order-first lg:order-none`); em <768px o grupo Coluna some e o grupo Fonte + Copiar Markdown recolhem no botão Aₐ (dropdown sob a toolbar). Toolbar: 209px → 57px a 375px, sem scroll horizontal. Desktop inalterado via `md:contents`. Screenshots: `docs/screenshots/t-34/` (Edge headless + CDP, `tests/screenshot_t34.js`). Suíte 130/130.
+- **Ajustes do dono 03/10 (após validação no S24):**
+  1. Fonte removida do mobile (Aₐ some; mobile fica só lupa + copiar) e barra de pesquisa mobile sticky — setas mantêm foco no campo e cada hit alinha abaixo da barra (`tests/check_t34_search.js`, screenshots `after2/`, commit validado pelo dono no celular).
+  2. Espaçamento das setas anterior/próxima da busca aumentado para facilitar o toque (`after3/`).
+  3. **CTA "Transcrever Arquivos" do dashboard**: o texto saindo do box azul no mobile foi corrigido com `flex-wrap` na linha de controles, busca com `min-w-[140px]`, botão em linha própria full-width no mobile (`order-3 lg:order-none flex-1 min-w-full sm:min-w-[220px] lg:flex-none`) e `whitespace-nowrap` no rótulo. Validação headless CDP 375px (`tests/check_dashboard_cta.js`): `textoDentroDoBox=true`, `scrollHorizontal=false`. Screenshot: `docs/screenshots/t-34/after4/1-dashboard-cta.png`. Commit `924cd46`.
