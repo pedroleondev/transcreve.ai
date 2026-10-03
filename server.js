@@ -177,6 +177,8 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'landing.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
+// T-29 F1: tokens Obsidian Wave (CSS estático seguro, mesma política dos demais)
+app.get('/tokens.css', (req, res) => res.sendFile(path.join(__dirname, 'tokens.css')));
 // T-20: lista canônica de idiomas do Whisper — usada pelo backend (validação)
 // e pelo frontend (select do modal de upload). UMD, mesmo arquivo.
 app.get('/languages.js', (req, res) => res.sendFile(path.join(__dirname, 'services', 'languages.js')));

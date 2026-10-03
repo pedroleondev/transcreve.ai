@@ -1,0 +1,59 @@
+{
+  "quando": "2026-10-03T19:11:08.829Z",
+  "report": {
+    "dark-mobile": {
+      "dark": true,
+      "bodyBg": "rgb(6, 8, 15)",
+      "bodyColor": "rgb(223, 226, 239)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "14 19 31",
+      "accentVar": "0 242 254",
+      "scrollHorizontal": false
+    },
+    "dark-tablet": {
+      "dark": true,
+      "bodyBg": "rgb(6, 8, 15)",
+      "bodyColor": "rgb(223, 226, 239)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "14 19 31",
+      "accentVar": "0 242 254",
+      "scrollHorizontal": false
+    },
+    "dark-desktop": {
+      "dark": true,
+      "bodyBg": "rgb(6, 8, 15)",
+      "bodyColor": "rgb(223, 226, 239)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "14 19 31",
+      "accentVar": "0 242 254",
+      "scrollHorizontal": false
+    },
+    "light-mobile": {
+      "dark": false,
+      "bodyBg": "rgb(245, 247, 250)",
+      "bodyColor": "rgb(16, 21, 31)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "255 255 255",
+      "accentVar": "0 166 176",
+      "scrollHorizontal": false
+    },
+    "light-tablet": {
+      "dark": false,
+      "bodyBg": "rgb(245, 247, 250)",
+      "bodyColor": "rgb(16, 21, 31)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "255 255 255",
+      "accentVar": "0 166 176",
+      "scrollHorizontal": false
+    },
+    "light-desktop": {
+      "dark": false,
+      "bodyBg": "rgb(245, 247, 250)",
+      "bodyColor": "rgb(16, 21, 31)",
+      "fontFamily": "\"Plus Jakarta Sans\", Inter, sans-serif",
+      "surfaceVar": "255 255 255",
+      "accentVar": "0 166 176",
+      "scrollHorizontal": false
+    }
+  }
+}

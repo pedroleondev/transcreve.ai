@@ -1,0 +1,70 @@
+/* ==========================================================================
+   Falou.ai — Design Tokens "Obsidian Wave" (T-29 · Fase 1)
+   Fonte única da verdade da paleta. O DESIGN.md do Stitch é material de
+   origem; ESTE arquivo + docs/design-tokens.md são a referência oficial.
+   Regra de ouro: glow desligado no claro; gradiente ciano→violeta só em
+   logo/H1/FAB/card Pro (fases F2+).
+   ========================================================================== */
+
+/* --- Superfícies & Texto (slots semânticos usados pelo app inteiro) --- */
+:root {
+  color-scheme: light;
+  /* Surface Elevation 1 (cards, sheets, painéis) */
+  --surface: 255 255 255;
+  /* Canvas Base (fundo da página) */
+  --canvas: 245 247 250;
+  /* Surface Elevation 2 (chips, inputs, hover) */
+  --raised: 238 242 246;
+  /* Texto primário (Deep Obsidian ink) */
+  --ink: 16 21 31;
+  /* Texto secundário */
+  --copy: 60 70 87;
+  /* Texto terciário / metadados */
+  --muted: 100 116 139;
+  /* Bordas (blend ~8% de preto sobre a surface) */
+  --line: 216 222 231;
+  /* Acento — ciano sombreado p/ contraste AA em fundo claro */
+  --accent: 0 166 176;
+  /* Acento em ~10% de opacidade sobre a surface */
+  --accent-soft: 230 246 247;
+}
+
+/* --- Paleta Obsidian Wave (escuro) --- */
+:root.dark {
+  color-scheme: dark;
+  --surface: 14 19 31;        /* #0E131F — Nível 1 (cards, sheets) */
+  --canvas: 6 8 15;           /* #06080F — Nível 0 (fundo absoluto) */
+  --raised: 22 29 46;         /* #161D2E — Nível 2 (chips, inputs) */
+  --ink: 223 226 239;         /* #DFE2EF — texto primário */
+  --copy: 185 202 203;        /* #B9CACB — texto secundário */
+  --muted: 132 148 149;       /* #849495 — metadados */
+  --line: 33 38 49;           /* ~rgba(255,255,255,.08) sobre #0E131F */
+  --accent: 0 242 254;        /* #00F2FE — Cyan Ray */
+  --accent-soft: 12 46 58;    /* ~rgba(0,242,254,.12) sobre #0E131F */
+}
+
+/* --- Cores de marca (constantes, não alternam com o tema) ---
+   Uso em fases F2+ (badges de tier, chips de status, FAB). */
+:root, :root.dark {
+  --wave-cyan: 0 242 254;       /* #00F2FE Cyan Ray — ações, player ativo */
+  --wave-cyan-dark: 0 166 176;  /* #00A6B0 Cyan sombreado (claro, AA) */
+  --wave-violet: 121 40 202;    /* #7928CA Neural Violet — IA/Pro */
+  --wave-emerald: 16 185 129;   /* #10B981 Emerald — sucesso/concluído */
+  --wave-amber: 245 158 11;     /* #F59E0B Amber Pulse — processando */
+  --wave-coral: 244 63 94;      /* #F43F5E Radiant Coral — erro/falha */
+  --wave-magenta: 236 72 153;   /* #EC4899 Hyper Magenta — tier Max */
+  --wave-electric: 139 92 246;  /* #8B5CF6 Electric Violet — tier Pro */
+  --wave-velocity: 6 182 212;   /* #06B6D4 Velocity Cyan — tier Rápido */
+
+  /* Glow luminescente (1 elemento por viewport; NUNCA no tema claro) */
+  --glow-cyan: 0 0 24px rgba(0, 242, 254, 0.35);
+  --glow-amber: 0 0 24px rgba(245, 158, 11, 0.35);
+}
+
+/* Borda focada (inputs/controls em destaque) — ciano a 40% */
+:root.dark .focus-ring,
+:root.dark input:focus,
+:root.dark textarea:focus,
+:root.dark select:focus {
+  border-color: rgba(0, 242, 254, 0.4);
+}

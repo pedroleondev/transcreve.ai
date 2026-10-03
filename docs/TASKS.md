@@ -744,7 +744,7 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 **Toca:** `index.html`, `app.js` (CSS/tokens/layout; nenhuma rota)
 
 **Fases (uma por sessão, cada uma commitável):**
-- **F1 — Tokens:** `tokens.css` (variáveis das duas paletas, escuro + claro) + tailwind.config estendido (paleta, raios, Jakarta Sans). Aceite: app escuro inteiro na nova paleta, zero mudança estrutural. Tema claro com cores sombreadas (ciano puro falha contraste em fundo branco — usar `#00A6B0`), glow desligado no claro.
+- **F1 — Tokens:** `tokens.css` (variáveis das duas paletas, escuro + claro) + tailwind.config estendido (paleta, raios, Jakarta Sans). Aceite: app escuro inteiro na nova paleta, zero mudança estrutural. Tema claro com cores sombreadas (ciano puro falha contraste em fundo branco — usar `#00A6B0`), glow desligado no claro. ✅ **DONE 03/10/2026** (ver evidência)
 - **F2 — Componentes atômicos:** botões (press 0.97), inputs, chips de status (cor a 12% opacidade), badges de tier, cards, drawer/bottom sheet, **helper único de modal** (Esc, backdrop, foco, sem `prompt()` — fecha o escopo da T-14).
 - **F3 — Telas, nesta ordem:** (1) **Editor de transcrição** primeiro (tela de maior retenção): blocos de fala, player com waveform em canvas, **player fixo/barra persistente** (fecha o escopo da T-12), toolbar unificada; (2) **Workspace/lista**: 3 colunas desktop, card de job ativo, painel player persistente, sidebar colapsável, empilhamento mobile; (3) **Landing** por último (menor risco, identidade pública).
 - **F4 — Polimento:** glow em no máximo 1 elemento por viewport, `prefers-reduced-motion`, auditoria de contraste AA no claro, passada do Avaliador UX/UI nos fluxos-chave.
@@ -764,7 +764,9 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 - [ ] `tests/ui_regressions.js` verde a cada fase; screenshots das 3 larguras (375/768/1440) na evidência
 - [ ] Doc de design tokens em `docs/` (a paleta oficial, matando a duplicidade do DESIGN.md)
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- **F1 (03/10/2026):** `tokens.css` criado com os 9 slots semânticos nas duas paletas (escuro Obsidian `#06080F`/`#0E131F`/`#161D2E`, claro sombreado com acento `#00A6B0`) + cores de marca `--wave-*` e glows (desligados no claro). Variáveis saíram do inline do `index.html` para o arquivo único; `server.js` ganhou rota explícita `/tokens.css` (estáticos são servidos um a um por segurança). Tailwind config: `fontFamily` → Plus Jakarta Sans (Inter como fallback) + paleta `wave-*`. Doc oficial: `docs/design-tokens.md` (paleta canônica; DESIGN.md do Stitch vira material de origem).
+- Validação headless CDP (`tests/screenshot_t29_f1.js`), 3 larguras × 2 temas: tokens computados conferidos (dark: canvas `rgb(6,8,15)`, ink `rgb(223,226,239)`, accent `rgb(0,242,254)`; light: `rgb(245,247,250)`, `rgb(16,21,31)`, `rgb(0,166,176)`), Jakarta Sans ativa, zero scroll horizontal. Screenshots: `docs/screenshots/t-29-f1/`. Suíte completa: **130/130**. Azul `#0066FF` hardcoded restante migra na F2 (componentes atômicos).
 
 ---
 
