@@ -1393,6 +1393,51 @@ function setFontSize(size) {
   applyReadingPreferences();
 }
 
+// T-34: controles de conforto (Fonte/Copiar) recolhidos no botão Aₐ no mobile
+function toggleComfortControls(e) {
+  if (e) e.stopPropagation();
+  const c = document.getElementById('comfort-controls');
+  if (c) c.classList.toggle('comfort-open');
+}
+
+// T-34: pesquisa vira ícone no mobile; o campo abre como painel flutuante
+function toggleSearchBox(e) {
+  if (e) e.stopPropagation();
+  const box = document.getElementById('search-box');
+  if (!box) return;
+  const opening = !box.classList.contains('search-open');
+  box.classList.toggle('search-open');
+  if (opening) {
+    const input = document.getElementById('transcript-search');
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+}
+
+// Fecha os painéis flutuantes ao clicar fora ou apertar Esc
+document.addEventListener('click', (e) => {
+  const cc = document.getElementById('comfort-controls');
+  if (cc && cc.classList.contains('comfort-open') &&
+      !e.target.closest('#comfort-controls') && !e.target.closest('#btn-comfort-toggle')) {
+    cc.classList.remove('comfort-open');
+  }
+  const sb = document.getElementById('search-box');
+  if (sb && sb.classList.contains('search-open') &&
+      !e.target.closest('#search-box') && !e.target.closest('#search-toggle')) {
+    const input = document.getElementById('transcript-search');
+    if (!input || !input.value) sb.classList.remove('search-open');
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  document.getElementById('comfort-controls')?.classList.remove('comfort-open');
+  const sb = document.getElementById('search-box');
+  if (sb) {
+    sb.classList.remove('search-open');
+    const input = document.getElementById('transcript-search');
+    if (input && !input.value) onTranscriptSearch('');
+  }
+});
+
 function setColumnWidth(width) {
   state.columnWidth = width;
   localStorage.setItem('transcreveai_column_width', width);

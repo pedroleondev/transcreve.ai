@@ -144,6 +144,47 @@
       background-color: rgb(var(--accent-soft)) !important;
       border-color: rgb(var(--accent)) !important;
     }
+
+    /* T-34: no mobile, pesquisa expandida e controles de conforto viram
+       um painel flutuante abaixo da toolbar — a barra nunca passa de 2 linhas */
+    @media (max-width: 639px) {
+      #search-box.search-open {
+        display: flex !important;
+        position: absolute;
+        left: 0.75rem;
+        right: 0.75rem;
+        top: calc(100% + 6px);
+        z-index: 40;
+        background: rgb(var(--surface));
+        border: 1px solid rgb(var(--line));
+        border-radius: 12px;
+        padding: 6px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        min-width: 0;
+        max-width: none;
+      }
+    }
+    @media (max-width: 767px) {
+      #comfort-controls.comfort-open {
+        display: flex !important;
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        z-index: 40;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        background: rgb(var(--surface));
+        border: 1px solid rgb(var(--line));
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        width: max-content;
+      }
+      #comfort-controls.comfort-open #btn-copy-md {
+        justify-content: center;
+      }
+    }
   </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden bg-brand-canvas dark:bg-brand-canvas text-brand-ink dark:text-brand-ink transition-colors duration-150">
@@ -379,8 +420,10 @@
             <audio id="audio-player" controls class="w-full h-8"></audio>
           </div>
 
-          <!-- Barra de Modos de Leitura e Controles de Conforto -->
-          <div class="px-4 lg:px-6 py-2.5 bg-brand-surface dark:bg-brand-surface border-b border-brand-line dark:border-brand-line flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
+          <!-- Barra de Modos de Leitura e Controles de Conforto (T-34: enxuta no
+               mobile — pesquisa vira ícone expansível, conforto (Fonte/Copiar) fica
+               no botão Aₐ; Coluna some <768px pois a tela já é estreita) -->
+          <div class="relative px-4 lg:px-6 py-2.5 bg-brand-surface dark:bg-brand-surface border-b border-brand-line dark:border-brand-line flex flex-wrap items-center justify-between gap-2 md:gap-3 shrink-0 text-xs">
             <!-- Selector de Modos de Leitura -->
             <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-xl">
               <button id="btn-mode-transcript" onclick="setReadingMode('transcript')" class="px-3 py-1.5 font-bold rounded-lg transition text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">
@@ -394,38 +437,48 @@
               </button>
             </div>
 
-            <!-- Pesquisa no texto -->
-            <div class="flex items-center bg-brand-raised dark:bg-brand-raised p-1 rounded-lg flex-1 min-w-[150px] sm:max-w-xs">
-              <i data-lucide="search" class="w-3.5 h-3.5 ml-1.5 shrink-0 text-brand-muted dark:text-brand-muted"></i>
-              <input id="transcript-search" type="text" oninput="onTranscriptSearch(this.value)" placeholder="Buscar no texto" class="bg-transparent outline-none px-1.5 py-0.5 w-full text-xs text-brand-ink dark:text-brand-ink placeholder-brand-muted dark:placeholder-brand-muted">
-              <span id="search-count" class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1 whitespace-nowrap"></span>
-              <button onclick="stepSearchHit(-1)" title="Ocorrência anterior" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">‹</button>
-              <button onclick="stepSearchHit(1)" title="Próxima ocorrência" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">›</button>
-            </div>
-
-            <!-- Controles de Conforto e Cópia -->
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <!-- Tamanho da Fonte -->
-              <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
-                <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Fonte</span>
-                <button onclick="setFontSize('sm')" id="btn-font-sm" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">P</button>
-                <button onclick="setFontSize('md')" id="btn-font-md" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">M</button>
-                <button onclick="setFontSize('lg')" id="btn-font-lg" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">G</button>
-              </div>
-
-              <!-- Largura da Coluna -->
-              <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
-                <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Coluna</span>
-                <button onclick="setColumnWidth('narrow')" id="btn-col-narrow" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna estreita">Estreita</button>
-                <button onclick="setColumnWidth('normal')" id="btn-col-normal" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna normal">Normal</button>
-                <button onclick="setColumnWidth('wide')" id="btn-col-wide" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna larga">Larga</button>
-              </div>
-
-              <!-- Botão Copiar como Markdown -->
-              <button id="btn-copy-md" onclick="copyTranscriptAsMarkdown()" class="flex items-center space-x-1.5 bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-3 py-1.5 rounded-lg transition" title="Copiar como Markdown">
-                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                <span>Copiar Markdown</span>
+            <div class="flex items-center gap-2 md:contents">
+              <!-- Pesquisa no texto: no mobile é um ícone que expande o campo (T-34) -->
+              <button id="search-toggle" onclick="toggleSearchBox(event)" class="sm:hidden flex items-center justify-center bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold p-2 rounded-lg transition" title="Buscar no texto" aria-label="Buscar no texto">
+                <i data-lucide="search" class="w-3.5 h-3.5"></i>
               </button>
+              <div id="search-box" class="hidden sm:flex items-center bg-brand-raised dark:bg-brand-raised p-1 rounded-lg flex-1 min-w-[150px] sm:max-w-xs">
+                <i data-lucide="search" class="w-3.5 h-3.5 ml-1.5 shrink-0 text-brand-muted dark:text-brand-muted"></i>
+                <input id="transcript-search" type="text" oninput="onTranscriptSearch(this.value)" placeholder="Buscar no texto" class="bg-transparent outline-none px-1.5 py-0.5 w-full text-xs text-brand-ink dark:text-brand-ink placeholder-brand-muted dark:placeholder-brand-muted">
+                <span id="search-count" class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1 whitespace-nowrap"></span>
+                <button onclick="stepSearchHit(-1)" title="Ocorrência anterior" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">‹</button>
+                <button onclick="stepSearchHit(1)" title="Próxima ocorrência" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">›</button>
+              </div>
+
+              <!-- Controles de Conforto e Cópia: desktop inline, mobile no dropdown Aₐ -->
+              <div class="relative">
+                <button id="btn-comfort-toggle" onclick="toggleComfortControls(event)" class="md:hidden flex items-center justify-center bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-2.5 py-1.5 rounded-lg transition" title="Conforto de leitura" aria-label="Conforto de leitura">
+                  <span class="text-sm leading-none">A<span class="text-[9px] align-sub">a</span></span>
+                </button>
+                <div id="comfort-controls" class="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <!-- Tamanho da Fonte -->
+                  <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
+                    <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Fonte</span>
+                    <button onclick="setFontSize('sm')" id="btn-font-sm" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">P</button>
+                    <button onclick="setFontSize('md')" id="btn-font-md" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">M</button>
+                    <button onclick="setFontSize('lg')" id="btn-font-lg" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm">G</button>
+                  </div>
+
+                  <!-- Largura da Coluna — T-34: inútil em tela estreita, só desktop -->
+                  <div class="hidden md:flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
+                    <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Coluna</span>
+                    <button onclick="setColumnWidth('narrow')" id="btn-col-narrow" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna estreita">Estreita</button>
+                    <button onclick="setColumnWidth('normal')" id="btn-col-normal" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna normal">Normal</button>
+                    <button onclick="setColumnWidth('wide')" id="btn-col-wide" class="px-2 py-0.5 font-bold rounded text-brand-copy dark:text-brand-copy hover:bg-brand-surface dark:hover:bg-brand-surface hover:shadow-sm" title="Coluna larga">Larga</button>
+                  </div>
+
+                  <!-- Botão Copiar como Markdown -->
+                  <button id="btn-copy-md" onclick="copyTranscriptAsMarkdown()" class="flex items-center space-x-1.5 bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-3 py-1.5 rounded-lg transition" title="Copiar como Markdown">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    <span>Copiar Markdown</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -437,8 +490,9 @@
           </div>
         </div>
 
-        <!-- Painel Lateral de Ações & IA -->
-        <div class="lg:w-80 bg-brand-canvas dark:bg-brand-canvas flex flex-col p-4 lg:p-5 lg:overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-brand-line dark:border-brand-line shrink-0 space-y-6">
+        <!-- Painel Lateral de Ações & IA — T-34: no mobile (<1024px) aparece
+             ANTES do miolo (ordem de empilhamento); desktop mantém à direita -->
+        <div class="order-first lg:order-none lg:w-80 bg-brand-canvas dark:bg-brand-canvas flex flex-col p-4 lg:p-5 lg:overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-brand-line dark:border-brand-line shrink-0 space-y-6">
           <!-- Projeto Associado -->
           <div>
             <h3 class="text-xs font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-3">Projeto</h3>
@@ -1512,6 +1566,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.13.1"></script>
+  <script src="app.js?v=3.14.0"></script>
 </body>
 </html>

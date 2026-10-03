@@ -44,7 +44,7 @@
 | T-31 | MCP server / skills sobre a API | 🟢 P3 | TODO |
 | T-32 | Deploy one-click (compose prod, `.env` documentado, INSTALL) | 🟠 P1 | TODO |
 | T-33 | Gravador de voz (waveform, pausar, idioma) | 🟢 P3 | TODO |
-| T-34 | Mobile da tela de detalhe: painel lateral antes do miolo, Fonte/Coluna adaptados, toolbar enxuta | 🟡 P2 | TODO |
+| T-34 | Mobile da tela de detalhe: painel lateral antes do miolo, Fonte/Coluna adaptados, toolbar enxuta | 🟡 P2 | DONE |
 
 **Ordeiro de execução (remodelado 28/09 — virada SaaS):** **T-08** (Postgres, fundação) → T-07 (cotas) → T-13 (export em massa) → T-28 (landing/cadastro) → T-27 (Asaas) → T-32 (deploy) → T-29 (UX/UI, pode correr em paralelo desde a Fase 1) → T-09 · T-11 · T-30 → T-26 → T-21 · T-22 · T-31 · T-33.
 Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, deploy em KVM2/Portainer. T-08 vai primeiro porque billing, cadastro e API pública todos escrevem no banco — em SQLite seriam `SQLITE_BUSY` na primeira campanha.
@@ -563,7 +563,7 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 - [ ] Exportação em massa (T-13) inclui CSV e aceita `lang`
 - [ ] `test_suite.js` cobre CSV e uma tradução por segmento (contagem de segmentos igual antes e depois)
 
-**Evidência:** _(preencher)_
+**Evidência (03/10/2026):** screenshots antes/depois a 375×812 via Edge headless + CDP (`tests/screenshot_t34.js`, saída em `docs/screenshots/t-34/`). Métricas medidas no próprio browser: toolbar de 209px (5,8 linhas) → **57px (1,6 linha)**; painel lateral de DEPOIS do miolo → ANTES; Coluna (Estreita/Normal/Larga) oculta <768px; Fonte mantida no dropdown Aₐ (abre como painel flutuante, fecha fora/Esc); pesquisa virou ícone que expande o campo (painel flutuante); `scrollWidth <= innerWidth + 1` ✓; desktop ≥1024px inalterado (grupo `md:contents` devolve o layout original). Suíte 130/130. Detalhe de implementação: o botão Aₐ e a lupa usam painéis absolutos sob a toolbar (`position: relative` nela), então a barra nunca passa de 2 linhas mesmo com os painéis abertos.
 
 ---
 
@@ -833,19 +833,19 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 ---
 
 ### T-34 — Mobile da tela de detalhe: ordem do painel, controles adaptados, toolbar enxuta
-**Estado:** TODO · **Prioridade:** 🟡 P2 · **Levantada 28/09/2026** (validação do redesenho pelo dono no S24) · **Relacionada:** T-29 (F3 — mesma tela, mesma sessão ideal), T-17
+**Estado:** DONE (03/10/2026) · **Prioridade:** 🟡 P2 · **Levantada 28/09/2026** (validação do redesenho pelo dono no S24) · **Relacionada:** T-29 (F3 — mesma tela, mesma sessão ideal), T-17
 **Por quê:** na tela de detalhe em mobile, o painel lateral direito (Projeto / Exportar / Recursos & IA) renderiza **depois** do miolo da transcrição — o usuário rola o texto inteiro antes de chegar nas ações, que são o que ele quer logo ao abrir o arquivo. E a toolbar de conforto não foi pensada para mobile: controle de Coluna é inútil em tela estreita e a barra inteira quebra em várias linhas, comendo a altura útil.
 **Contexto:** `index.html:368-418` (toolbar central), `index.html:417+` (painel lateral `lg:w-80`, empilha em mobile), `app.js` (`setFontSize`, `setColumnWidth`, `applyReadingPreferences`)
 **Toca:** `index.html`, `app.js`
 
 **Aceite:**
-- [ ] **Ordem mobile:** em <1024px, o painel lateral (Projeto/Exportar/Recursos & IA) aparece **antes** do miolo da transcrição (ordem de empilhamento via `order` flex ou reestruturação das colunas); desktop mantém painel à direita
-- [ ] **Coluna escondida no mobile:** o grupo "Coluna" (Estreita/Normal/Larga) não aparece em <768px — a tela já é estreita; largura útil sempre 100%
-- [ ] **Fonte mantida no mobile:** o grupo "Fonte" (P/M/G) continua disponível — faz sentido em telas pequenas
-- [ ] **Toolbar enxuta no mobile:** toolbar central ocupa **no máximo 2 linhas** em 375px (modos + pesquisa + controles); controles de conforto (Fonte, Copiar Markdown) recolhidos num botão "Aₐ" que abre um sheet/dropdown — pesquisa vira ícone com campo expansível
-- [ ] Sem scroll horizontal em 375px (`document.documentElement.scrollWidth <= innerWidth + 1`)
-- [ ] Desktop (≥1024px) inalterado visualmente
-- [ ] Screenshots 375px antes/depois na evidência (reusar `tests/screenshot_redesign_2026_09_28.js`)
+- [x] **Ordem mobile:** em <1024px, o painel lateral (Projeto/Exportar/Recursos & IA) aparece **antes** do miolo da transcrição (ordem de empilhamento via `order` flex ou reestruturação das colunas); desktop mantém painel à direita
+- [x] **Coluna escondida no mobile:** o grupo "Coluna" (Estreita/Normal/Larga) não aparece em <768px — a tela já é estreita; largura útil sempre 100%
+- [x] **Fonte mantida no mobile:** o grupo "Fonte" (P/M/G) continua disponível — faz sentido em telas pequenas
+- [x] **Toolbar enxuta no mobile:** toolbar central ocupa **no máximo 2 linhas** em 375px (modos + pesquisa + controles); controles de conforto (Fonte, Copiar Markdown) recolhidos num botão "Aₐ" que abre um sheet/dropdown — pesquisa vira ícone com campo expansível
+- [x] Sem scroll horizontal em 375px (`document.documentElement.scrollWidth <= innerWidth + 1`)
+- [x] Desktop (≥1024px) inalterado visualmente
+- [x] Screenshots 375px antes/depois na evidência (reusar `tests/screenshot_redesign_2026_09_28.js`)
 
 **Sugestões avaliadas na concepção (decidir na implementação):**
 - **Sheet de ações no mobile:** em vez do painel inline, Recursos & IA vira um botão fixo que abre bottom sheet — libera o fluxo de leitura inteiro (inspirado no redesign Obsidian Wave, T-29 F3)
