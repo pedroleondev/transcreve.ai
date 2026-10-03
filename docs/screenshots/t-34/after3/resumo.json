@@ -1,0 +1,13 @@
+{
+  "modo": "after3",
+  "quando": "2026-10-03T16:52:13.512Z",
+  "metrics": {
+    "panelBeforeCentral": true,
+    "toolbarHeight": 57,
+    "toolbarLines": 1.6,
+    "searchToggleVisible": true,
+    "comfortToggleVisible": null,
+    "colNarrowHidden": "via-wrapper",
+    "scrollHorizontal": false
+  }
+}

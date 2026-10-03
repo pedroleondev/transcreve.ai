@@ -430,8 +430,8 @@
                 <i data-lucide="search" class="w-3.5 h-3.5 ml-1.5 shrink-0 text-brand-muted dark:text-brand-muted"></i>
                 <input id="transcript-search" type="text" oninput="onTranscriptSearch(this.value)" placeholder="Buscar no texto" class="bg-transparent outline-none px-1.5 py-0.5 w-full text-xs text-brand-ink dark:text-brand-ink placeholder-brand-muted dark:placeholder-brand-muted">
                 <span id="search-count" class="text-[10px] font-bold text-brand-muted dark:text-brand-muted px-1 whitespace-nowrap"></span>
-                <button onclick="stepSearchHit(-1)" title="Ocorrência anterior" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">‹</button>
-                <button onclick="stepSearchHit(1)" title="Próxima ocorrência" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">›</button>
+                <button onclick="stepSearchHit(-1)" title="Ocorrência anterior" aria-label="Ocorrência anterior" class="px-2.5 py-1 ml-1 mr-0.5 min-w-[32px] text-sm font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink rounded-md hover:bg-brand-line/60 dark:hover:bg-brand-line/60 transition touch-target">‹</button>
+                <button onclick="stepSearchHit(1)" title="Próxima ocorrência" aria-label="Próxima ocorrência" class="px-2.5 py-1 mr-1 min-w-[32px] text-sm font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink rounded-md hover:bg-brand-line/60 dark:hover:bg-brand-line/60 transition touch-target">›</button>
               </div>
 
               <!-- Controles de Conforto e Cópia: desktop inline (Fonte/Coluna/
@@ -1550,6 +1550,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.14.1"></script>
+  <script src="app.js?v=3.14.2"></script>
 </body>
 </html>
