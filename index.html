@@ -318,9 +318,9 @@
             <h1 id="dashboard-title" class="text-2xl font-bold text-brand-ink dark:text-brand-ink tracking-tight">Arquivos recentes</h1>
           </div>
 
-          <div class="flex items-center gap-2 w-full lg:w-auto">
+          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
             <!-- Busca -->
-            <div class="relative flex-1 lg:flex-none">
+            <div class="relative flex-1 min-w-[140px] lg:flex-none lg:min-w-0">
               <i data-lucide="search" class="w-4 h-4 text-brand-muted dark:text-brand-muted absolute left-3 top-3"></i>
               <input type="text" id="search-input" onkeyup="handleSearch()" placeholder="Buscar arquivos..." class="pl-9 pr-4 py-2 bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 transition">
             </div>
@@ -330,10 +330,12 @@
               <i data-lucide="mic" class="w-4 h-4 text-red-500 dark:text-red-300"></i>
             </button>
 
-            <!-- Botão Transcrever Principal -->
-            <button onclick="openTranscribeModal()" class="flex-1 lg:flex-none justify-center flex items-center space-x-2 bg-[#0066FF] hover:bg-blue-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/20 transition uppercase tracking-wide touch-target">
-              <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-              <span>Transcrever Arquivos</span>
+            <!-- Botão Transcrever Principal — T-34: no mobile quebra para a
+                 linha de baixo ocupando a largura toda (o texto nunca excede
+                 o box azul, que é o CTA principal da tela) -->
+            <button onclick="openTranscribeModal()" class="order-3 lg:order-none flex-1 min-w-full sm:min-w-[220px] lg:min-w-0 lg:flex-none justify-center flex items-center space-x-2 bg-[#0066FF] hover:bg-blue-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/20 transition uppercase tracking-wide touch-target">
+              <i data-lucide="upload-cloud" class="w-4 h-4 shrink-0"></i>
+              <span class="whitespace-nowrap">Transcrever Arquivos</span>
             </button>
 
             <!-- T-07: consumo do dia (preenchido via checkAuthUser) -->
@@ -1550,6 +1552,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.14.2"></script>
+  <script src="app.js?v=3.14.3"></script>
 </body>
 </html>
