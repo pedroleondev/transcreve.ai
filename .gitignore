@@ -27,3 +27,6 @@ certs/
 
 # Backups locais do banco/uploads (gerados via tar - ver docs/INSTALL.md secao 7)
 backups/
+
+# Perfis temporarios do Edge usados pelos scripts de screenshot (tests/screenshot_t34.js)
+.edge-*/
