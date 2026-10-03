@@ -599,14 +599,14 @@ async function subscribePlan(plan) {
     if (!res.ok) throw new Error(data.error || 'Erro ao criar assinatura.');
     if (data.invoice_url) {
       window.open(data.invoice_url, '_blank', 'noopener');
-      alert('Fatura gerada! Complete o pagamento na nova aba — seu plano será liberado automaticamente.');
+      uiToast('Fatura gerada! Complete o pagamento na nova aba — seu plano será liberado automaticamente.');
     } else {
-      alert('Assinatura criada! A fatura estará disponível em instantes.');
+      uiToast('Assinatura criada! A fatura estará disponível em instantes.');
     }
     closeUpgradeModal();
     if (typeof renderAccountSubscription === 'function') renderAccountSubscription();
   } catch (e) {
-    alert(e.message);
+    uiToast(e.message);
   } finally {
     if (btn && upgradeBillingEnabled) { btn.disabled = false; }
     if (btn) openUpgradeModal(); // repõe o rótulo do botão
@@ -623,10 +623,10 @@ async function cancelSubscription() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Erro ao cancelar.');
-    alert('Assinatura cancelada.');
+    uiToast('Assinatura cancelada.');
     if (typeof renderAccountSubscription === 'function') renderAccountSubscription();
   } catch (e) {
-    alert(e.message);
+    uiToast(e.message);
   }
 }
 
@@ -729,52 +729,120 @@ function renderProjectsSidebar() {
   if (window.lucide) lucide.createIcons();
 }
 
-async function openNewProjectModal() {
-  const name = prompt('Nome do novo projeto:');
-  if (!name || !name.trim()) return;
-
-  try {
-    const res = await fetch('/api/projects', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ name: name.trim() })
-    });
-    if (res.ok) {
-      fetchProjects();
-    } else {
-      const err = await res.json();
-      alert('Erro ao criar projeto: ' + (err.error || 'Erro desconhecido'));
-    }
-  } catch (e) {
-    alert('Erro ao criar projeto: ' + e.message);
+// ---------------------------------------------------
+// HELPERS DE UI — T-29 F2 (Obsidian Wave)
+// uiToast: notificações (ex-alert) · uiPrompt: diálogo de entrada (ex-prompt)
+// ---------------------------------------------------
+function uiToast(message, type) {
+  if (typeof document === 'undefined' || !document.body) return;
+  let host = document.getElementById('ui-toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'ui-toast-host';
+    host.style.cssText = 'position:fixed;bottom:calc(1rem + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:.5rem;max-width:min(92vw,420px);pointer-events:none';
+    document.body.appendChild(host);
   }
+  const colors = { info: 'rgb(var(--accent))', success: '#10B981', error: '#F43F5E', warn: '#F59E0B' };
+  const el = document.createElement('div');
+  el.style.cssText = `background:rgb(var(--surface));color:rgb(var(--ink));border:1px solid rgb(var(--line));border-left:3px solid ${colors[type] || colors.info};padding:.625rem .875rem;border-radius:.75rem;font-size:.8125rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:0;transition:opacity .2s ease,transform .2s ease;transform:translateY(6px);white-space:pre-line`;
+  el.textContent = message;
+  host.appendChild(el);
+  requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+  setTimeout(() => {
+    el.style.opacity = '0'; el.style.transform = 'translateY(6px)';
+    setTimeout(() => el.remove(), 250);
+  }, 4200);
+}
+
+function uiPrompt(message, defaultValue, onOk) {
+  if (typeof document === 'undefined' || !document.body) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:110;background:rgba(6,8,15,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:1rem';
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:rgb(var(--surface));color:rgb(var(--ink));border:1px solid rgb(var(--line));border-radius:1rem;padding:1.25rem;width:100%;max-width:360px;box-shadow:0 -12px 32px rgba(0,0,0,.45)';
+  const label = document.createElement('p');
+  label.style.cssText = 'font-size:.875rem;font-weight:700;margin-bottom:.625rem';
+  label.textContent = message;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = defaultValue || '';
+  input.style.cssText = 'width:100%;background:rgb(var(--raised));border:1px solid rgb(var(--line));color:rgb(var(--ink));border-radius:.5rem;padding:.625rem .75rem;font-size:.9375rem;margin-bottom:.875rem;outline:none';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:.625rem;justify-content:flex-end';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancelar';
+  cancelBtn.className = 'btn-press';
+  cancelBtn.style.cssText = 'padding:.5rem 1rem;border-radius:.5rem;font-size:.8125rem;font-weight:700;color:rgb(var(--muted));background:transparent;border:1px solid rgb(var(--line))';
+  const okBtn = document.createElement('button');
+  okBtn.textContent = 'Confirmar';
+  okBtn.className = 'btn-primary btn-press';
+  okBtn.style.cssText = 'padding:.5rem 1rem;border-radius:.5rem;font-size:.8125rem;border:none';
+  const close = () => { document.removeEventListener('keydown', onKey, true); overlay.remove(); };
+  const confirm = () => { const v = input.value; close(); if (onOk) onOk(v); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  cancelBtn.onclick = close;
+  okBtn.onclick = confirm;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  row.append(cancelBtn, okBtn);
+  panel.append(label, input, row);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  input.focus();
+  if (defaultValue) input.select();
+}
+
+async function openNewProjectModal() {
+  uiPrompt('Nome do novo projeto:', '', async (name) => {
+    if (!name || !name.trim()) return;
+
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      if (res.ok) {
+        fetchProjects();
+      } else {
+        const err = await res.json();
+        uiToast('Erro ao criar projeto: ' + (err.error || 'Erro desconhecido'), 'error');
+      }
+    } catch (e) {
+      uiToast('Erro ao criar projeto: ' + e.message, 'error');
+    }
+  });
 }
 
 async function openEditProjectModal(id, currentName) {
-  const newName = prompt('Editar nome do projeto:', currentName);
-  if (!newName || !newName.trim() || newName.trim() === currentName) return;
+  uiPrompt('Editar nome do projeto:', currentName, async (newName) => {
+    if (!newName || !newName.trim() || newName.trim() === currentName) return;
 
-  try {
-    const res = await fetch(`/api/projects/${id}`, {
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
       body: JSON.stringify({ name: newName.trim() })
-    });
-    if (res.ok) {
-      fetchProjects();
-    } else {
-      const err = await res.json();
-      alert('Erro ao atualizar projeto: ' + (err.error || 'Erro desconhecido'));
+      });
+      if (res.ok) {
+        fetchProjects();
+      } else {
+        const err = await res.json();
+        uiToast('Erro ao atualizar projeto: ' + (err.error || 'Erro desconhecido'), 'error');
+      }
+    } catch (e) {
+      uiToast('Erro ao atualizar projeto: ' + e.message, 'error');
     }
-  } catch (e) {
-    alert('Erro ao atualizar projeto: ' + e.message);
-  }
+  });
 }
 
 async function deleteProject(id, name) {
@@ -791,10 +859,10 @@ async function deleteProject(id, name) {
       fetchTranscriptions();
     } else {
       const err = await res.json();
-      alert('Erro ao excluir projeto: ' + (err.error || 'Erro desconhecido'));
+      uiToast('Erro ao excluir projeto: ' + (err.error || 'Erro desconhecido'));
     }
   } catch (e) {
-    alert('Erro ao excluir projeto: ' + e.message);
+    uiToast('Erro ao excluir projeto: ' + e.message);
   }
 }
 
@@ -881,10 +949,10 @@ async function updateTranscriptionProject() {
       await fetchProjects();
       await fetchTranscriptions();
     } else {
-      alert('Erro ao atualizar projeto da transcrição.');
+      uiToast('Erro ao atualizar projeto da transcrição.');
     }
   } catch (e) {
-    alert('Erro ao salvar projeto: ' + e.message);
+    uiToast('Erro ao salvar projeto: ' + e.message);
   }
 }
 
@@ -939,17 +1007,18 @@ function renderTranscriptionsTable() {
   }
 
   // Badges compartilhados entre a tabela (desktop) e os cards (mobile)
+  // T-29 F2: átomos Obsidian Wave (tier-* e chip-status, ver tokens.css)
   function buildModeBadge(item) {
     if (item.mode === 'base' || item.mode === 'openai/whisper-1') {
-      return `<span class="inline-flex items-center space-x-1.5 bg-amber-900 text-amber-100 border-2 border-amber-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-1">
+      return `<span class="badge-tier tier-fast" title="Modelo: openai/whisper-1">
         <i data-lucide="zap" class="w-3.5 h-3.5"></i><span>Base</span>
       </span>`;
     } else if (item.mode === 'pro' || item.mode === 'openai/whisper-large-v3-turbo') {
-      return `<span class="inline-flex items-center space-x-1.5 bg-teal-900 text-teal-100 border-2 border-teal-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3-turbo">
+      return `<span class="badge-tier tier-pro" title="Modelo: openai/whisper-large-v3-turbo">
         <i data-lucide="gauge" class="w-3.5 h-3.5"></i><span>Pro</span>
       </span>`;
     }
-    return `<span class="inline-flex items-center space-x-1.5 bg-indigo-900 text-indigo-100 border-2 border-indigo-500 shadow-md font-black text-[11px] px-3 py-1 rounded-xl tracking-wide" title="Modelo: openai/whisper-large-v3">
+    return `<span class="badge-tier tier-max" title="Modelo: openai/whisper-large-v3">
       <i data-lucide="award" class="w-3.5 h-3.5"></i><span>Max</span>
     </span>`;
   }
@@ -958,18 +1027,18 @@ function renderTranscriptionsTable() {
     const progress = item.progress || 0;
     if (item.status === 'completed') {
       return `
-        <span class="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-300 font-bold text-xs bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+        <span class="chip-status chip-done">
           <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
           <span>Concluído</span>
         </span>`;
     } else if (item.status === 'completed_with_errors') {
       return `
         <div class="flex flex-col items-start space-y-1">
-          <span title="${escapeHtml(item.error_message || '')}" class="inline-flex items-center space-x-1 text-amber-700 dark:text-amber-300 font-bold text-xs bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 cursor-help">
+          <span title="${escapeHtml(item.error_message || '')}" class="chip-status chip-warn cursor-help">
             <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
             <span>Com falhas</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-xs text-blue-600 dark:text-blue-300 hover:underline font-bold">Reprocessar blocos</button>
+          <button onclick="retryTranscription('${item.id}')" class="chip-action">Reprocessar blocos</button>
         </div>`;
     } else if (item.status === 'processing') {
       const stageLabel = {
@@ -978,35 +1047,35 @@ function renderTranscriptionsTable() {
       }[item.stage] || 'Processando';
       return `
         <div class="flex flex-col items-start space-y-1 min-w-[80px]">
-          <div class="flex items-center space-x-1.5">
-            <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span class="text-blue-700 dark:text-blue-300 font-bold text-xs">${stageLabel}</span>
-          </div>
+          <span class="chip-status chip-processing">
+            <span class="dot"></span>
+            <span>${stageLabel}</span>
+          </span>
           <div class="w-full bg-brand-line dark:bg-brand-line rounded-full h-1.5 overflow-hidden">
-            <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full transition-all duration-700" style="width: ${progress}%"></div>
+            <div class="bg-wave-amber h-1.5 rounded-full transition-all duration-700" style="width: ${progress}%"></div>
           </div>
           <span class="text-[10px] text-brand-muted dark:text-brand-muted font-mono font-bold">${progress}%</span>
         </div>`;
     } else if (item.status === 'pending') {
-      const posLabel = item.queue_position ? `<span class="text-[10px] text-amber-600 dark:text-amber-300 font-bold"> ${item.queue_position}º na fila</span>` : '';
+      const posLabel = item.queue_position ? `<span class="text-[10px] font-bold" style="color: inherit"> ${item.queue_position}º na fila</span>` : '';
       return `
         <div class="flex flex-col items-start space-y-1">
-          <div class="flex items-center space-x-1.5">
-            <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
-            <span class="text-amber-700 dark:text-amber-300 font-bold text-xs">Na Fila</span>${posLabel}
-          </div>
+          <span class="chip-status chip-queued">
+            <span class="dot"></span>
+            <span>Na Fila</span>${posLabel}
+          </span>
           <div class="w-full bg-brand-line dark:bg-brand-line rounded-full h-1.5 overflow-hidden">
-            <div class="bg-amber-400 h-1.5 rounded-full animate-pulse" style="width: 8%"></div>
+            <div class="bg-wave-amber h-1.5 rounded-full animate-pulse" style="width: 8%"></div>
           </div>
         </div>`;
     } else if (item.status === 'failed') {
       return `
         <div class="flex flex-col items-start space-y-1">
-          <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="inline-flex items-center space-x-1 text-red-600 dark:text-red-300 font-bold text-xs bg-red-50 dark:bg-red-950 px-2 py-0.5 rounded-full border border-red-200 dark:border-red-800 cursor-help">
+          <span title="${escapeHtml(item.error_message || 'Erro desconhecido')}" class="chip-status chip-failed cursor-help">
             <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
             <span>Falhou</span>
           </span>
-          <button onclick="retryTranscription('${item.id}')" class="text-xs text-blue-600 dark:text-blue-300 hover:underline font-bold">Tentar de novo</button>
+          <button onclick="retryTranscription('${item.id}')" class="chip-action">Tentar de novo</button>
         </div>`;
     }
     return '';
@@ -1154,7 +1223,7 @@ async function retryTranscription(id) {
     if (!res.ok) throw new Error(data.error || 'Falha ao reprocessar');
     await fetchTranscriptions(); // a lista ja mostra "Na Fila" e liga o polling
   } catch (e) {
-    alert('Erro ao reprocessar: ' + e.message); // T-14 troca alert() por modal proprio
+    uiToast('Erro ao reprocessar: ' + e.message); // T-14 troca uiToast() por modal proprio
   }
 }
 
@@ -1206,7 +1275,7 @@ async function openTranscriptionDetail(id) {
     renderCurrentTranscript();
     showView('details');
   } catch (e) {
-    alert('Erro ao carregar detalhes: ' + e.message);
+    uiToast('Erro ao carregar detalhes: ' + e.message);
   }
 }
 
@@ -1267,7 +1336,7 @@ async function saveInlineTitleEdit() {
       fetchTranscriptions();
     }
   } catch (e) {
-    alert('Erro ao salvar novo nome: ' + e.message);
+    uiToast('Erro ao salvar novo nome: ' + e.message);
   }
 }
 
@@ -1788,9 +1857,9 @@ async function saveTranscriptChanges() {
     if (!res.ok) throw new Error(data.error || 'Falha ao salvar (HTTP ' + res.status + ').');
     current.raw_text = data.raw_text ?? payload.raw_text;
     if (data.segments) current.segments = data.segments;
-    alert('Transcricao salva com sucesso.');
+    uiToast('Transcricao salva com sucesso.');
   } catch (error) {
-    alert('Erro ao salvar edicoes: ' + error.message);
+    uiToast('Erro ao salvar edicoes: ' + error.message);
   } finally {
     if (button) button.disabled = state.readingMode !== 'transcript';
   }
@@ -1808,7 +1877,7 @@ async function deleteTranscription(id) {
       showView('dashboard');
     }
   } catch (e) {
-    alert('Erro ao excluir: ' + e.message);
+    uiToast('Erro ao excluir: ' + e.message);
   }
 }
 
@@ -1896,7 +1965,7 @@ async function submitTranscription() {
   }
 
   if (state.selectedFiles.length === 0) {
-    alert('Por favor, selecione ao menos um arquivo de áudio ou vídeo.');
+    uiToast('Por favor, selecione ao menos um arquivo de áudio ou vídeo.');
     return;
   }
 
@@ -1940,12 +2009,12 @@ async function submitTranscription() {
       showTranscriptionProgressPanel(jobId, fileName);
       await fetchTranscriptions(); // Atualiza a tabela imediatamente
     } else {
-      alert('Erro ao enviar para a fila: ' + (data.error || 'Desconhecido'));
+      uiToast('Erro ao enviar para a fila: ' + (data.error || 'Desconhecido'));
       btn.disabled = false;
       btn.innerText = 'TRANSCREVER';
     }
   } catch (e) {
-    alert('Erro ao enviar áudio: ' + e.message);
+    uiToast('Erro ao enviar áudio: ' + e.message);
     btn.disabled = false;
     btn.innerText = 'TRANSCREVER';
   }
@@ -1982,12 +2051,12 @@ async function submitUrlTranscription(linkValue) {
     const item = data.data && data.data[0];
 
     if (res.status === 429) {
-      alert(data.error || 'Limite diário atingido.');
+      uiToast(data.error || 'Limite diário atingido.');
       closeTranscribeModal();
       return;
     }
     if (item && item.status === 'failed') {
-      alert('Não foi possível transcrever o link: ' + (item.error_message || 'erro desconhecido'));
+      uiToast('Não foi possível transcrever o link: ' + (item.error_message || 'erro desconhecido'));
       closeTranscribeModal();
       await fetchTranscriptions();
       return;
@@ -1996,12 +2065,12 @@ async function submitUrlTranscription(linkValue) {
       showTranscriptionProgressPanel(item.id, item.file_name || linkValue);
       await fetchTranscriptions();
     } else {
-      alert('Erro ao enviar o link: ' + (data.error || 'Desconhecido'));
+      uiToast('Erro ao enviar o link: ' + (data.error || 'Desconhecido'));
       btn.disabled = false;
       btn.innerText = 'TRANSCREVER';
     }
   } catch (e) {
-    alert('Erro ao enviar o link: ' + e.message);
+    uiToast('Erro ao enviar o link: ' + e.message);
     btn.disabled = false;
     btn.innerText = 'TRANSCREVER';
   }
@@ -2155,7 +2224,7 @@ async function startRecording() {
       document.getElementById('recording-timer').innerText = formatSRTTimeShort(state.recordingSeconds);
     }, 1000);
   } catch (err) {
-    alert('Erro ao acessar microfone: ' + err.message);
+    uiToast('Erro ao acessar microfone: ' + err.message);
   }
 }
 
@@ -2203,7 +2272,7 @@ async function submitRecordedAudio() {
       openTranscriptionDetail(data.data[0].id);
     }
   } catch (e) {
-    alert('Erro ao transcrever gravação: ' + e.message);
+    uiToast('Erro ao transcrever gravação: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.innerText = 'ENVIAR PARA TRANSCRIÇÃO';
@@ -2264,12 +2333,12 @@ async function handleLoginSubmit(e) {
       closeLoginModal();
       checkAuthUser();
       fetchTranscriptions();
-      alert(`Autenticado com sucesso como: ${data.user.name} (${data.user.role})`);
+      uiToast(`Autenticado com sucesso como: ${data.user.name} (${data.user.role})`);
     } else {
-      alert('Erro no login: ' + (data.error || 'Credenciais inválidas'));
+      uiToast('Erro no login: ' + (data.error || 'Credenciais inválidas'));
     }
   } catch (err) {
-    alert('Erro no servidor de autenticação: ' + err.message);
+    uiToast('Erro no servidor de autenticação: ' + err.message);
   }
 }
 
@@ -2323,32 +2392,33 @@ async function sendAIChatPrompt(e) {
     `;
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   } catch (err) {
-    alert('Erro no ChatGPT: ' + err.message);
+    uiToast('Erro no ChatGPT: ' + err.message);
   }
 }
 
-async function openTranslateModal() {
-  const targetLang = prompt('Traduzir esta transcrição para qual idioma? (ex: English, Español, Français, Deutsch)', 'English');
-  if (!targetLang || !state.activeTranscription) return;
+function openTranslateModal() {
+  uiPrompt('Traduzir para qual idioma? (ex: English, Español, Français, Deutsch)', 'English', async (targetLang) => {
+    if (!targetLang || !state.activeTranscription) return;
 
-  try {
-    const res = await fetch('/api/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({
-        transcript_text: state.activeTranscription.raw_text,
-        target_language: targetLang,
-        transcription_id: state.activeTranscription.id
-      })
-    });
-    const data = await res.json();
-    alert(`Tradução para ${targetLang}:\n\n` + data.translatedText);
-  } catch (e) {
-    alert('Erro ao traduzir: ' + e.message);
-  }
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({
+          transcript_text: state.activeTranscription.raw_text,
+          target_language: targetLang,
+          transcription_id: state.activeTranscription.id
+        })
+      });
+      const data = await res.json();
+      uiToast(`Tradução para ${targetLang}:\n\n` + data.translatedText, 'info');
+    } catch (e) {
+      uiToast('Erro ao traduzir: ' + e.message, 'error');
+    }
+  });
 }
 
 // ---------------------------------------------------
@@ -2453,7 +2523,7 @@ async function toggleUserStatus(userId, newStatus) {
     await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { status: newStatus });
     loadAdminUsers();
   } catch (e) {
-    alert('Erro ao atualizar usuário: ' + e.message);
+    uiToast('Erro ao atualizar usuário: ' + e.message);
   }
 }
 
@@ -2462,7 +2532,7 @@ async function changeUserRole(userId, newRole) {
     await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { role: newRole });
     loadAdminUsers();
   } catch (e) {
-    alert('Erro ao alterar função: ' + e.message);
+    uiToast('Erro ao alterar função: ' + e.message);
   }
 }
 
@@ -2470,7 +2540,7 @@ async function changeUserRole(userId, newRole) {
 async function updateUserDailyLimit(userId, value) {
   const limit = parseInt(value, 10);
   if (!Number.isInteger(limit) || limit < 0) {
-    alert('Limite diário inválido.');
+    uiToast('Limite diário inválido.');
     loadAdminUsers();
     return;
   }
@@ -2478,20 +2548,21 @@ async function updateUserDailyLimit(userId, value) {
     await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { daily_limit: limit });
     loadAdminUsers();
   } catch (e) {
-    alert('Erro ao atualizar limite: ' + e.message);
+    uiToast('Erro ao atualizar limite: ' + e.message);
     loadAdminUsers();
   }
 }
 
-async function resetUserPassword(userId, email) {
-  const password = prompt(`Nova senha para ${email} (mín. 6 caracteres):`);
-  if (!password) return;
-  try {
-    await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { password });
-    alert('Senha redefinida com sucesso.');
-  } catch (e) {
-    alert('Erro ao redefinir senha: ' + e.message);
-  }
+function resetUserPassword(userId, email) {
+  uiPrompt(`Nova senha para ${email} (mín. 6 caracteres):`, '', async (password) => {
+    if (!password) return;
+    try {
+      await adminUserAction(`/api/admin/users/${userId}`, 'PUT', { password });
+      uiToast('Senha redefinida com sucesso.', 'success');
+    } catch (e) {
+      uiToast('Erro ao redefinir senha: ' + e.message, 'error');
+    }
+  });
 }
 
 function openCreateUserModal() {
@@ -2767,7 +2838,7 @@ async function activateApiKey(id) {
     });
     loadAdminApiKeys();
   } catch (e) {
-    alert('Erro ao ativar chave: ' + e.message);
+    uiToast('Erro ao ativar chave: ' + e.message);
   }
 }
 
@@ -2780,7 +2851,7 @@ async function deleteApiKey(id) {
     });
     loadAdminApiKeys();
   } catch (e) {
-    alert('Erro ao excluir chave: ' + e.message);
+    uiToast('Erro ao excluir chave: ' + e.message);
   }
 }
 
@@ -2908,7 +2979,7 @@ async function addGlossaryTerm() {
   const wrongEl = document.getElementById('glossary-wrong');
   const correctEl = document.getElementById('glossary-correct');
   if (!wrongEl.value.trim() || !correctEl.value.trim()) {
-    alert('Preencha a forma errada e a forma correta.');
+    uiToast('Preencha a forma errada e a forma correta.');
     return;
   }
   try {
@@ -2923,7 +2994,7 @@ async function addGlossaryTerm() {
     correctEl.value = '';
     loadGlossary();
   } catch (e) {
-    alert('Erro: ' + e.message);
+    uiToast('Erro: ' + e.message);
   }
 }
 
@@ -2935,7 +3006,7 @@ async function removeGlossaryTerm(id) {
     });
     loadGlossary();
   } catch (e) {
-    alert('Erro ao remover: ' + e.message);
+    uiToast('Erro ao remover: ' + e.message);
   }
 }
 
@@ -2971,11 +3042,11 @@ async function saveAdminSettings(e) {
       body: JSON.stringify({ settings })
     });
     if (res.ok) {
-      alert('Configurações de modelos e modos salvas com sucesso!');
+      uiToast('Configurações de modelos e modos salvas com sucesso!');
       fetchSystemSettings();
     }
   } catch (e) {
-    alert('Erro ao salvar configurações: ' + e.message);
+    uiToast('Erro ao salvar configurações: ' + e.message);
   }
 }
 
@@ -3058,9 +3129,9 @@ async function deleteSelectedTranscriptions() {
     
     await fetchProjects();
     await fetchTranscriptions();
-    alert('Gravações excluídas com sucesso!');
+    uiToast('Gravações excluídas com sucesso!');
   } catch (e) {
-    alert('Erro ao excluir gravações selecionadas: ' + e.message);
+    uiToast('Erro ao excluir gravações selecionadas: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = oldText;
@@ -3101,7 +3172,7 @@ async function downloadAuthenticatedBlob(url, fallbackName) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
   } catch (e) {
-    alert('Erro ao baixar: ' + e.message);
+    uiToast('Erro ao baixar: ' + e.message);
   }
 }
 
@@ -3135,7 +3206,7 @@ async function exportSelectedTranscriptions(format) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    alert('Erro ao exportar: ' + (data.error || 'HTTP ' + res.status));
+    uiToast('Erro ao exportar: ' + (data.error || 'HTTP ' + res.status));
     return;
   }
   const blob = await res.blob();
@@ -3192,9 +3263,9 @@ async function submitBulkMove() {
     closeBulkMoveModal();
     await fetchProjects();
     await fetchTranscriptions();
-    alert('Gravações movidas com sucesso!');
+    uiToast('Gravações movidas com sucesso!');
   } catch (e) {
-    alert('Erro ao mover gravações selecionadas: ' + e.message);
+    uiToast('Erro ao mover gravações selecionadas: ' + e.message);
   }
 }
 
