@@ -293,7 +293,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const user = await getAsync(`SELECT id, name, email, role, daily_limit, status, plan, created_at FROM users WHERE email = ? OR id = ?`, [req.user.email, req.user.id]);
+    const user = await getAsync(`SELECT id, name, email, role, daily_limit, status, plan, cpf_cnpj, created_at FROM users WHERE email = ? OR id = ?`, [req.user.email, req.user.id]);
     if (!user) {
       return res.json({ user: req.user });
     }
@@ -467,15 +467,28 @@ app.get('/api/public/metrics', async (req, res) => {
 // ----------------------------------------------------
 // Perfil: o usuário edita o próprio nome (e-mail e papel são imutáveis aqui).
 app.put('/api/account', authenticateToken, async (req, res) => {
-  const { name } = req.body;
+  const { name, cpf_cnpj } = req.body;
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: 'Nome é obrigatório.' });
   }
   const clean = String(name).trim().slice(0, 120);
+  // T-27: CPF/CNPJ opcional no perfil, obrigatório só na hora de assinar
+  // (validação de formato aqui; a exigência do Asaas é tratada no billing).
+  let cpf = null;
+  if (cpf_cnpj !== undefined && cpf_cnpj !== null && String(cpf_cnpj).trim() !== '') {
+    cpf = String(cpf_cnpj).replace(/\D/g, '');
+    if (cpf.length !== 11 && cpf.length !== 14) {
+      return res.status(400).json({ error: 'CPF/CNPJ inválido — use 11 dígitos (CPF) ou 14 (CNPJ).' });
+    }
+  }
   try {
-    await runAsync(`UPDATE users SET name = ? WHERE id = ?`, [clean, req.user.id]);
-    await logAction(req.user.id, 'PROFILE_UPDATED', { name: clean }, req.ip);
-    res.json({ ok: true, name: clean });
+    if (cpf !== null) {
+      await runAsync(`UPDATE users SET name = ?, cpf_cnpj = ? WHERE id = ?`, [clean, cpf, req.user.id]);
+    } else {
+      await runAsync(`UPDATE users SET name = ? WHERE id = ?`, [clean, req.user.id]);
+    }
+    await logAction(req.user.id, 'PROFILE_UPDATED', { name: clean, cpf: cpf ? 'informado' : undefined }, req.ip);
+    res.json({ ok: true, name: clean, cpf_cnpj: cpf });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -570,7 +583,7 @@ app.post('/api/account/subscribe', authenticateToken, async (req, res) => {
   if (!billing.billingEnabled()) return res.status(503).json({ error: 'Cobrança não configurada no servidor.' });
   const { plan, cycle } = req.body || {};
   try {
-    const me = await getAsync(`SELECT id, name, email FROM users WHERE id = ?`, [req.user.id]);
+    const me = await getAsync(`SELECT id, name, email, cpf_cnpj FROM users WHERE id = ?`, [req.user.id]);
     if (!me) return res.status(404).json({ error: 'Usuário não encontrado.' });
     const result = await billing.createSubscription(me, plan, cycle === 'annual' ? 'annual' : 'monthly');
     await logAction(req.user.id, 'SUBSCRIPTION_CREATED', { plan: result.plan, cycle: result.cycle }, req.ip);

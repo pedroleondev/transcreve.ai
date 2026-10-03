@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS users (
   daily_limit INTEGER DEFAULT 3,
   status TEXT DEFAULT 'active',
   plan TEXT DEFAULT 'gratuito',
+  cpf_cnpj TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS projects (

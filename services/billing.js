@@ -77,6 +77,7 @@ async function ensureCustomer(user) {
   const customer = await asaasApi('POST', '/customers', {
     name: user.name,
     email: user.email,
+    cpfCnpj: user.cpf_cnpj,
     externalReference: user.id
   });
   return customer.id;
@@ -96,7 +97,16 @@ async function createSubscription(user, plan, cycle) {
   );
   if (active) throw Object.assign(new Error('Você já tem uma assinatura. Cancele-a antes de trocar de plano.'), { statusHint: 409 });
 
-  const customerId = await ensureCustomer(user);
+  // O Asaas exige CPF/CNPJ no customer para gerar cobranças.
+  const cpfDigits = String(user.cpf_cnpj || '').replace(/\D/g, '');
+  if (cpfDigits.length !== 11 && cpfDigits.length !== 14) {
+    throw Object.assign(
+      new Error('Informe um CPF ou CNPJ válido no seu perfil (aba Conta) para assinar — é exigência do Asaas para emitir cobranças.'),
+      { statusHint: 400 }
+    );
+  }
+
+  const customerId = await ensureCustomer({ ...user, cpf_cnpj: cpfDigits });
   const nextDueDate = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
   const sub = await asaasApi('POST', '/subscriptions', {
     customer: customerId,

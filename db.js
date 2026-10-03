@@ -216,6 +216,7 @@ async function initDatabaseSqlite() {
         daily_limit INTEGER DEFAULT 3,
         status TEXT DEFAULT 'active',
         plan TEXT DEFAULT 'gratuito',
+        cpf_cnpj TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -225,6 +226,11 @@ async function initDatabaseSqlite() {
     if (!userColumns.some(col => col.name === 'plan')) {
       console.log('Adicionando coluna "plan" na tabela "users"...');
       await runAsync(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'gratuito'`);
+    }
+    // T-27: CPF/CNPJ (obrigatório no Asaas para gerar cobranças; perfil do usuário).
+    if (!userColumns.some(col => col.name === 'cpf_cnpj')) {
+      console.log('Adicionando coluna "cpf_cnpj" na tabela "users"...');
+      await runAsync(`ALTER TABLE users ADD COLUMN cpf_cnpj TEXT`);
     }
 
     // 2. Tabela de Chaves de API
@@ -430,6 +436,14 @@ async function initDatabasePostgres() {
   if (!pgUserCols.length) {
     console.log('Adicionando coluna "plan" na tabela "users" (PostgreSQL)...');
     await runAsync(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'gratuito'`);
+  }
+  // T-27: CPF/CNPJ para cobranças Asaas (mesmo padrão do plan acima).
+  const pgCpfCols = await allAsync(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cpf_cnpj'`
+  );
+  if (!pgCpfCols.length) {
+    console.log('Adicionando coluna "cpf_cnpj" na tabela "users" (PostgreSQL)...');
+    await runAsync(`ALTER TABLE users ADD COLUMN cpf_cnpj TEXT`);
   }
   console.log('Tabelas PostgreSQL verificadas/criadas com sucesso.');
   await seedCoreData();

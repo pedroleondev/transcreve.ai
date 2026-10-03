@@ -373,6 +373,8 @@ async function loadAccountData() {
         if (emailEl) emailEl.value = data.user.email || '';
         if (roleEl) roleEl.value = data.user.role === 'admin' ? 'Administrador' : 'Usuário';
         if (sinceEl && data.user.created_at) sinceEl.textContent = new Date(data.user.created_at).toLocaleDateString('pt-BR');
+        const cpfEl = document.getElementById('account-cpf');
+        if (cpfEl) cpfEl.value = data.user.cpf_cnpj || '';
       }
     }
   } catch (_) { /* silencioso: seções abaixo carregam independentemente */ }
@@ -469,18 +471,21 @@ async function saveAccountProfile(e) {
   const msg = document.getElementById('account-profile-msg');
   const name = document.getElementById('account-name').value.trim();
   if (!name) return;
+  const cpfInput = document.getElementById('account-cpf');
+  const cpf = cpfInput ? cpfInput.value.trim() : '';
   try {
     const res = await fetch('/api/account', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, cpf_cnpj: cpf })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Erro ao salvar.');
     state.currentUser.name = data.name || name;
+    if (cpfInput && data.cpf_cnpj) cpfInput.value = data.cpf_cnpj;
     const nameSpan = document.getElementById('user-dropdown-name');
     if (nameSpan) nameSpan.textContent = state.currentUser.name;
-    if (msg) { msg.textContent = 'Nome salvo.'; msg.className = 'text-xs font-semibold text-emerald-600 dark:text-emerald-300'; msg.classList.remove('hidden'); }
+    if (msg) { msg.textContent = 'Perfil salvo.'; msg.className = 'text-xs font-semibold text-emerald-600 dark:text-emerald-300'; msg.classList.remove('hidden'); }
   } catch (err) {
     if (msg) { msg.textContent = err.message; msg.className = 'text-xs font-semibold text-red-600 dark:text-red-300'; msg.classList.remove('hidden'); }
   }

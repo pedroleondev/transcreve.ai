@@ -860,6 +860,31 @@ async function runTestSuite() {
       });
       assert(dupRes.status === 409, `2ª assinatura com uma ativa existente retornou 409 (status: ${dupRes.status})`);
 
+      // T-27 (E2E sandbox 02/10): o Asaas exige CPF/CNPJ do customer para
+      // gerar cobranças — sem CPF no perfil o subscribe recusa ANTES de
+      // qualquer chamada externa (offline por construção).
+      await runAsync(`DELETE FROM subscriptions WHERE user_id = ?`, [suiteUserId]);
+      const noCpfRes = await fetch(`${BASE_URL}/api/account/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        body: JSON.stringify({ plan: 'bronze', cycle: 'monthly' })
+      });
+      assert(noCpfRes.status === 400, `Subscribe sem CPF no perfil retornou 400 (status: ${noCpfRes.status})`);
+      const noCpfData = await noCpfRes.json().catch(() => ({}));
+      assert(/CPF|CNPJ/i.test(noCpfData.error || ''), `Erro 400 orienta informar CPF/CNPJ ("${noCpfData.error}")`);
+      const badCpfPut = await fetch(`${BASE_URL}/api/account`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        body: JSON.stringify({ name: 'Suite User', cpf_cnpj: '123' })
+      });
+      assert(badCpfPut.status === 400, `CPF inválido no perfil (PUT /api/account) recusado com 400 (status: ${badCpfPut.status})`);
+      // Reinsere a assinatura ativa para o teste de cancelamento abaixo
+      await runAsync(
+        `INSERT INTO subscriptions (id, user_id, asaas_customer_id, asaas_subscription_id, plan, cycle, status)
+         VALUES ('sub-suite-test-0002', ?, 'cus-suite-test', 'sub-suite-test-456', 'prata', 'monthly', 'active')`,
+        [suiteUserId]
+      );
+
       // 10. Cancelamento via API: cancela no Asaas (falha silenciosa no fake) e volta ao gratuito
       const cancelRes = await fetch(`${BASE_URL}/api/account/subscribe/cancel`, {
         method: 'POST',

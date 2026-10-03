@@ -840,9 +840,13 @@
                   <input id="account-role" type="text" disabled class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-muted dark:text-brand-muted rounded-xl px-3 py-2 text-xs cursor-not-allowed">
                 </div>
               </div>
+              <div>
+                <label class="block text-xs font-bold text-brand-copy dark:text-brand-copy mb-1">CPF/CNPJ <span class="font-normal text-brand-muted dark:text-brand-muted">(opcional — necessário para assinar um plano pago)</span></label>
+                <input id="account-cpf" type="text" maxlength="18" placeholder="000.000.000-00" class="w-full bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
               <p class="text-[11px] text-brand-muted dark:text-brand-muted">E-mail e papel só podem ser alterados pelo administrador. Membro desde <span id="account-since" class="font-semibold">—</span>.</p>
               <div class="flex items-center gap-3">
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-lg">Salvar nome</button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-lg">Salvar perfil</button>
                 <span id="account-profile-msg" class="text-xs font-semibold hidden"></span>
               </div>
             </form>
@@ -1508,6 +1512,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.13.0"></script>
+  <script src="app.js?v=3.13.1"></script>
 </body>
 </html>
