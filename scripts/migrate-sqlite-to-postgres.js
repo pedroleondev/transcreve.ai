@@ -167,6 +167,19 @@ CREATE TABLE IF NOT EXISTS email_verifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id, created_at);
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  asaas_customer_id TEXT,
+  asaas_subscription_id TEXT,
+  plan TEXT NOT NULL,
+  cycle TEXT DEFAULT 'monthly',
+  status TEXT DEFAULT 'pending',
+  current_period_end TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_analyses_transcription ON ai_analyses(transcription_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_transcriptions_queue ON transcriptions(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_transcriptions_user ON transcriptions(user_id, created_at);

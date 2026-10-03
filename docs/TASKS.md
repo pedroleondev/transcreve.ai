@@ -37,7 +37,7 @@
 | T-24 | JEV (juiz de validação) no aprimoramento — viabilidade e desenho | 🟠 P1 | DONE |
 | T-25 | JEV implementado: juiz valida o aprimoramento antes de entregar | 🟠 P1 | DONE |
 | T-26 | MinIO/S3 para arquivos (camada de storage isolada) | 🟡 P2 | TODO |
-| T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | TODO |
+| T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | DONE |
 | T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | DONE |
 | T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | TODO |
 | T-30 | API pública + webhooks (tool para LLMs) | 🟡 P2 | TODO |
@@ -702,19 +702,19 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 ---
 
 ### T-27 — Asaas: assinaturas, webhook de pagamento, suspensão automática
-**Estado:** TODO · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2), T-07 (cotas), T-28 (cadastro)
+**Estado:** DONE (02/10/2026) · **Prioridade:** 🔴 P0 · **Depende de:** T-08 (fase 2), T-07 (cotas), T-28 (cadastro)
 **Por quê:** "ganhar dinheiro dormindo" exige cobrança sem intervenção: o usuário assina, paga, usa; deixou de pagar, o sistema suspende sozinho. O Asaas é o PSP escolhido (PIX/boleto/cartão, sem burocracia de gateway internacional).
 **Contexto:** `db.js` (`users.status`, `daily_limit` — base do controle), `server.js` (rotas admin)
-**Toca:** novo `services/billing.js`, `server.js` (webhook público + rotas de assinatura), `db.js` (tabela `subscriptions`), `app.js` (seção Assinatura na Conta, T-09), `docker-compose.yml`, `.env.example`
+**Toca:** novo `services/billing.js`, `server.js` (webhook público + rotas de assinatura), `db.js` (tabela `subscriptions`), `app.js` (modal de planos + seção Assinatura), `index.html`, `docker-compose.yml`, `.env.example`, `scripts/migrate-sqlite-to-postgres.js` (PG_DDL), `test_suite.js`, `docs/INSTALL.md`
 **Aceite:**
-- [ ] `POST /webhooks/asaas` (público) validando token de assinatura do webhook; eventos `PAYMENT_CONFIRMED`/`PAYMENT_OVERDUE`/`SUBSCRIPTION_CANCELLED` idempotentes (recebido 2× = efeito 1×)
-- [ ] Pagamento confirmado → usuário `active` com cota do plano; vencido → `suspended` (login bloqueia com mensagem clara, dados intactos)
-- [ ] Tabela `subscriptions` (user_id, asaas_customer_id, asaas_subscription_id, plan, status, timestamps) — histórico, não só estado atual
-- [ ] Sem token de webhook configurado em produção → servidor recusa subir (mesmo padrão do `JWT_SECRET`)
-- [ ] Testes com payloads assinados gerados no próprio teste (sem chamar Asaas de verdade)
-- [ ] `docs/INSTALL.md`: como conectar a conta Asaas (API key + webhook token no `.env`)
+- [x] `POST /api/webhooks/asaas` (público) validando token (`asaas-access-token`, mesmo valor de `ASAAS_WEBHOOK_TOKEN` — o Asaas não assina payload); eventos `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`/`PAYMENT_AUTHORIZED`/`PAYMENT_OVERDUE`/`SUBSCRIPTION_CANCELLED` idempotentes por construção (só escrevem quando o estado muda; reentrega testada 2x com efeito 1x)
+- [x] Pagamento confirmado → usuário `active` com cota do plano (`daily_limit` do plano, ex.: bronze=15/dia); vencido → `suspended` (login 403, dados intactos, admin nunca suspenso); cancelado → volta a `gratuito`/cota 3/`active`
+- [x] Tabela `subscriptions` (user_id, asaas_customer_id, asaas_subscription_id, plan, cycle, status, current_period_end, timestamps) — histórico, com FK `ON DELETE CASCADE` e índice por usuário (DDL nos dois drivers)
+- [x] Sem `ASAAS_WEBHOOK_TOKEN` em produção → servidor recusa subir (mesmo padrão do `JWT_SECRET`); escape hatch self-host local: `BILLING_STRICT=false`. Sem `ASAAS_API_KEY` a plataforma roda inteira com os botões em "Em breve" (503 no subscribe)
+- [x] Testes com payloads gerados na própria suíte usando o token real do ambiente — zero chamadas ao Asaas (12 testes: 401 sem token/erro, ativação bronze, idempotência, espelho no GET subscription, suspensão 403 no login, cancelamento, 400 plano inválido, 409 assinatura dupla, cancel via API)
+- [x] `docs/INSTALL.md` seção 9: como conectar a conta Asaas (API key + URL sandbox/produção + webhook token + `BILLING_STRICT`) e defaults de preço/cota (admin ajusta em Configurações)
 
-**Evidência:** _(preencher)_
+**Evidência (02/10/2026):** suíte completa **127/127** (12 testes novos no bloco T-27). Chave sandbox validada com chamada somente leitura (`GET /customers` → 200, sem criar nada). Pegadinha real encontrada: a chave Asaas começa com `$` e o compose v2 interpola `.env` — sem aspas a variável ia vazia pro container (aspas simples `'$aact_...'` resolvem; registrado no INSTALL). Container recriado (env novo exige recreate, não restart). Frontend: modal de upgrade com Bronze/Prata/Ouro (preços e cotas de `system_settings` com defaults 19.90/49.90/99.90 e cotas 15/60/ilimitado), toggle mensal/anual, "Assinar" gera fatura e abre `invoiceUrl` em nova aba; aba Conta mostra assinatura real (plano/ciclo/status/renovação) + botão cancelar. Fluxo ponta a ponta real na sandbox (fatura PIX + webhook) fica como validação manual do operador — na sandbox o pagamento não confirma sozinho.
 
 ---
 

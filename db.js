@@ -394,6 +394,22 @@ async function initDatabaseSqlite() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // 11. T-27: assinaturas Asaas (histórico — não só estado atual)
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        asaas_customer_id TEXT,
+        asaas_subscription_id TEXT,
+        plan TEXT NOT NULL,
+        cycle TEXT DEFAULT 'monthly',
+        status TEXT DEFAULT 'pending',
+        current_period_end DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     console.log('Tabelas SQLite verificadas/criadas com sucesso.');
 
     await seedCoreData();

@@ -882,12 +882,13 @@
               </div>
               <span id="account-plan-badge" class="bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[11px] font-bold px-3 py-1 rounded-full border border-blue-200 dark:border-blue-800">—</span>
             </div>
-            <div id="account-quota" class="text-xs text-brand-copy dark:text-brand-copy mb-4">—</div>
+            <div id="account-quota" class="text-xs text-brand-copy dark:text-brand-copy mb-2">—</div>
+            <div id="account-subscription-detail" class="mb-4"></div>
             <div class="flex flex-wrap items-center gap-3">
               <button onclick="openUpgradeModal()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition">
                 <i data-lucide="sparkles" class="w-4 h-4"></i> Fazer upgrade
               </button>
-              <p class="text-[11px] text-brand-muted dark:text-brand-muted">A cobrança online (cartão, boleto, Pix) será ativada em breve.</p>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted">Pagamento via PIX, boleto ou cartão. Plano liberado automaticamente após o pagamento.</p>
             </div>
           </div>
 
@@ -1263,15 +1264,15 @@
     </div>
   </div>
 
-  <!-- MODAL: UPGRADE DE PLANO (T-09) — preços lidos de system_settings
-       (plan_pro_monthly, plan_pro_annual, plan_max_monthly, plan_max_annual);
-       sem preço configurado o plano aparece como "Em breve", sem dado fictício. -->
+  <!-- MODAL: UPGRADE DE PLANO (T-27) — preços lidos de system_settings
+       (plan_bronze_monthly etc.); sem ASAAS_API_KEY configurada o botão vira
+       "Em breve". O pagamento é feito na fatura Asaas (PIX, boleto ou cartão). -->
   <div id="upgrade-modal" class="modal-root hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-brand-line dark:border-brand-line p-6 sm:p-8 text-brand-ink dark:text-brand-ink">
+    <div class="modal-panel bg-brand-surface dark:bg-brand-surface rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden border border-brand-line dark:border-brand-line p-6 sm:p-8 text-brand-ink dark:text-brand-ink max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-start mb-2">
         <div>
-          <h3 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink">Upgrade de plano</h3>
-          <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Escolha entre cobrança mensal ou anual. O pagamento online será ativado em breve.</p>
+          <h3 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink">Escolha seu plano</h3>
+          <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Cobrança mensal ou anual. Você paga com PIX, boleto ou cartão na fatura — o plano é liberado automaticamente após o pagamento.</p>
         </div>
         <button onclick="closeUpgradeModal()" class="text-brand-muted dark:text-brand-muted hover:text-brand-copy dark:hover:text-brand-copy shrink-0">
           <i data-lucide="x" class="w-6 h-6"></i>
@@ -1286,38 +1287,50 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-5 my-4">
-        <!-- Pro -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 my-4">
+        <!-- Bronze -->
         <div class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-2xl p-6">
-          <h4 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-1.5"><i data-lucide="gauge" class="w-4 h-4 text-teal-600 dark:text-teal-300"></i> Pro</h4>
-          <p id="upgrade-price-pro" class="text-2xl font-black text-brand-ink dark:text-brand-ink mt-2">Em breve</p>
-          <p id="upgrade-price-pro-note" class="text-[10px] text-brand-muted dark:text-brand-muted"></p>
+          <h4 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-1.5"><i data-lucide="gauge" class="w-4 h-4 text-amber-600 dark:text-amber-300"></i> Bronze</h4>
+          <p id="upgrade-price-bronze" class="text-2xl font-black text-brand-ink dark:text-brand-ink mt-2">—</p>
+          <p id="upgrade-price-bronze-note" class="text-[10px] text-brand-muted dark:text-brand-muted"></p>
           <ul class="text-xs text-brand-copy dark:text-brand-copy space-y-2 mt-4">
-            <li>✓ Mais transcrições por dia</li>
+            <li>✓ <span id="quota-bronze">15</span> transcrições por dia</li>
             <li>✓ Todos os níveis de precisão (Base, Pro e Max)</li>
             <li>✓ Aprimoramento por IA com juiz de validação (JEV)</li>
             <li>✓ Exportação em todos os formatos</li>
           </ul>
-          <button disabled onclick="alert('A cobrança online será ativada em breve.')" class="w-full mt-5 bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed">Assinar Pro</button>
+          <button id="btn-subscribe-bronze" onclick="subscribePlan('bronze')" class="w-full mt-5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 rounded-xl transition">Assinar Bronze</button>
         </div>
 
-        <!-- Max -->
-        <div class="bg-indigo-50/90 dark:bg-indigo-950/90 border-2 border-indigo-600 rounded-2xl p-6 relative shadow-md">
-          <span class="absolute top-3 right-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">MAIS COMPLETO</span>
-          <h4 class="font-bold text-indigo-950 dark:text-indigo-300 flex items-center gap-1.5"><i data-lucide="award" class="w-4 h-4 text-indigo-600 dark:text-indigo-300"></i> Max</h4>
-          <p id="upgrade-price-max" class="text-2xl font-black text-indigo-950 dark:text-indigo-300 mt-2">Em breve</p>
-          <p id="upgrade-price-max-note" class="text-[10px] text-indigo-800/70 dark:text-indigo-300/70"></p>
-          <ul class="text-xs text-indigo-900 dark:text-indigo-300 space-y-2 mt-4 font-medium">
-            <li>✓ Tudo do Pro</li>
-            <li>✓ Transcrições ilimitadas</li>
-            <li>✓ Prioridade na fila de processamento</li>
-            <li>✓ Suporte prioritário</li>
+        <!-- Prata -->
+        <div class="bg-brand-canvas dark:bg-brand-canvas border-2 border-blue-600 rounded-2xl p-6 relative shadow-md">
+          <span class="absolute top-3 right-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">POPULAR</span>
+          <h4 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-1.5"><i data-lucide="gem" class="w-4 h-4 text-blue-600 dark:text-blue-300"></i> Prata</h4>
+          <p id="upgrade-price-prata" class="text-2xl font-black text-brand-ink dark:text-brand-ink mt-2">—</p>
+          <p id="upgrade-price-prata-note" class="text-[10px] text-brand-muted dark:text-brand-muted"></p>
+          <ul class="text-xs text-brand-copy dark:text-brand-copy space-y-2 mt-4 font-medium">
+            <li>✓ <span id="quota-prata">60</span> transcrições por dia</li>
+            <li>✓ Tudo do Bronze</li>
+            <li>✓ Ideal para profissionais que transcrevem diariamente</li>
           </ul>
-          <button disabled onclick="alert('A cobrança online será ativada em breve.')" class="w-full mt-5 bg-indigo-300 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200 font-bold text-xs py-2.5 rounded-xl cursor-not-allowed">Assinar Max</button>
+          <button id="btn-subscribe-prata" onclick="subscribePlan('prata')" class="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition">Assinar Prata</button>
+        </div>
+
+        <!-- Ouro -->
+        <div class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-2xl p-6">
+          <h4 class="font-bold text-brand-ink dark:text-brand-ink flex items-center gap-1.5"><i data-lucide="award" class="w-4 h-4 text-yellow-600 dark:text-yellow-300"></i> Ouro</h4>
+          <p id="upgrade-price-ouro" class="text-2xl font-black text-brand-ink dark:text-brand-ink mt-2">—</p>
+          <p id="upgrade-price-ouro-note" class="text-[10px] text-brand-muted dark:text-brand-muted"></p>
+          <ul class="text-xs text-brand-copy dark:text-brand-copy space-y-2 mt-4">
+            <li>✓ Transcrições praticamente ilimitadas</li>
+            <li>✓ Tudo do Prata</li>
+            <li>✓ Prioridade na fila de processamento</li>
+          </ul>
+          <button id="btn-subscribe-ouro" onclick="subscribePlan('ouro')" class="w-full mt-5 bg-yellow-600 hover:bg-yellow-700 text-white font-bold text-xs py-2.5 rounded-xl transition">Assinar Ouro</button>
         </div>
       </div>
 
-      <p class="text-[11px] text-brand-muted dark:text-brand-muted text-center">A definição dos preços e a cobrança (cartão, boleto, Pix) chegam com a integração Asaas. Administradores podem pré-configurar os preços em Configurações.</p>
+      <p id="upgrade-billing-note" class="text-[11px] text-brand-muted dark:text-brand-muted text-center">Administradores podem ajustar preços e cotas em Configurações.</p>
     </div>
   </div>
 
@@ -1495,6 +1508,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.12.0"></script>
+  <script src="app.js?v=3.13.0"></script>
 </body>
 </html>

@@ -206,11 +206,13 @@ async function runTestSuite() {
     assert(false, `Falha ao testar PUT /api/auth/password: ${e.message}`);
   }
 
-  // 9. /api/account/subscription: espelho honesto do plano (billing local até a T-27)
+  // 9. /api/account/subscription: espelho honesto do plano (billing 'local'
+  // quando não há assinatura Asaas; o ciclo completo do billing é testado no
+  // bloco T-27 no fim da suíte)
   try {
     const res = await fetch(`${BASE_URL}/api/account/subscription`, { headers: { 'Authorization': `Bearer ${userToken}` } });
     const data = await res.json();
-    assert(res.ok && typeof data.plan === 'string' && data.billing === 'local', `GET /api/account/subscription retorna plan + billing='local' (plano: ${data.plan})`);
+    assert(res.ok && typeof data.plan === 'string' && data.billing === 'local' && data.subscription === null, `GET /api/account/subscription retorna plan + billing='local' sem assinatura (plano: ${data.plan})`);
     assert(data.quota && typeof data.quota.used_today === 'number', 'GET /api/account/subscription retorna quota.used_today numérico');
   } catch (e) {
     assert(false, `Falha ao testar /api/account/subscription: ${e.message}`);
@@ -760,6 +762,127 @@ async function runTestSuite() {
     }
   } catch (e) {
     assert(false, 'Falha ao limpar glossário: ' + e.message);
+  }
+
+  // TESTES T-27: COBRANÇA VIA ASAAS (webhook offline — nenhuma chamada real
+  // ao Asaas; os payloads são gerados aqui com o token do próprio ambiente).
+  const WEBHOOK_TOKEN = (process.env.ASAAS_WEBHOOK_TOKEN || '').trim();
+  let suiteUserId = null;
+  try {
+    const row = await getAsync(`SELECT id, plan, daily_limit, status FROM users WHERE email = 'suite-user@test.local'`);
+    suiteUserId = row ? row.id : null;
+
+    // 1. Webhook sem token -> 401
+    const noTokenRes = await fetch(`${BASE_URL}/api/webhooks/asaas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'PAYMENT_CONFIRMED', payment: {} })
+    });
+    assert(noTokenRes.status === 401, `Webhook Asaas sem token retornou 401 (status: ${noTokenRes.status})`);
+
+    // 2. Webhook com token errado -> 401
+    const badTokenRes = await fetch(`${BASE_URL}/api/webhooks/asaas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'asaas-access-token': 'token_errado' },
+      body: JSON.stringify({ event: 'PAYMENT_CONFIRMED', payment: {} })
+    });
+    assert(badTokenRes.status === 401, `Webhook Asaas com token errado retornou 401 (status: ${badTokenRes.status})`);
+
+    if (WEBHOOK_TOKEN && suiteUserId) {
+      // 3. Cria assinatura fake (pending) para o suite-user
+      await runAsync(`DELETE FROM subscriptions WHERE user_id = ?`, [suiteUserId]);
+      await runAsync(
+        `INSERT INTO subscriptions (id, user_id, asaas_customer_id, asaas_subscription_id, plan, cycle, status)
+         VALUES ('sub-suite-test-0001', ?, 'cus-suite-test', 'sub-suite-test-123', 'bronze', 'monthly', 'pending')`,
+        [suiteUserId]
+      );
+
+      const postWebhook = (payload) => fetch(`${BASE_URL}/api/webhooks/asaas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'asaas-access-token': WEBHOOK_TOKEN },
+        body: JSON.stringify(payload)
+      });
+      const confirmedPayload = { event: 'PAYMENT_CONFIRMED', payment: { subscription: 'sub-suite-test-123' } };
+
+      // 4. PAYMENT_CONFIRMED -> usuário ativa no plano bronze (cota 15)
+      const confirmRes = await postWebhook(confirmedPayload);
+      assert(confirmRes.status === 200, `Webhook PAYMENT_CONFIRMED retornou 200 (status: ${confirmRes.status})`);
+      let u = await getAsync(`SELECT plan, daily_limit, status FROM users WHERE id = ?`, [suiteUserId]);
+      assert(u && u.plan === 'bronze' && Number(u.daily_limit) === 15 && u.status === 'active',
+        `Pagamento confirmado: usuário ativo no bronze com cota 15 (plan=${u && u.plan}, limit=${u && u.daily_limit}, status=${u && u.status})`);
+
+      // 5. Idempotência: mesmo evento 2x -> efeito 1x (sem mudança, sem linha extra)
+      await postWebhook(confirmedPayload);
+      const subCount = await getAsync(`SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = ?`, [suiteUserId]);
+      u = await getAsync(`SELECT plan, daily_limit FROM users WHERE id = ?`, [suiteUserId]);
+      assert(Number(subCount.n) === 1 && u.plan === 'bronze' && Number(u.daily_limit) === 15,
+        `Reentrega do mesmo evento não duplicou efeito (assinaturas=${subCount.n}, plan=${u.plan})`);
+
+      // 6. GET /api/account/subscription espelha a assinatura Asaas
+      const subRes = await fetch(`${BASE_URL}/api/account/subscription`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+      const subData = await subRes.json();
+      assert(subRes.ok && subData.billing === 'asaas' && subData.subscription && subData.subscription.plan === 'bronze' && subData.subscription.status === 'active',
+        `GET subscription espelha assinatura Asaas ativa (billing=${subData.billing}, plan=${subData.subscription && subData.subscription.plan})`);
+
+      // 7. PAYMENT_OVERDUE -> usuário suspenso; login passa a dar 403
+      await postWebhook({ event: 'PAYMENT_OVERDUE', payment: { subscription: 'sub-suite-test-123' } });
+      u = await getAsync(`SELECT status FROM users WHERE id = ?`, [suiteUserId]);
+      assert(u && u.status === 'suspended', `Pagamento em atraso suspendeu o usuário (status=${u && u.status})`);
+      const suspendedLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'suite-user@test.local', password: 'suite123' })
+      });
+      assert(suspendedLogin.status === 403, `Login de usuário suspenso retornou 403 (status: ${suspendedLogin.status})`);
+
+      // 8. SUBSCRIPTION_CANCELLED -> volta ao gratuito (cota 3, status active)
+      await postWebhook({ event: 'SUBSCRIPTION_CANCELLED', payment: { subscription: 'sub-suite-test-123' } });
+      u = await getAsync(`SELECT plan, daily_limit, status FROM users WHERE id = ?`, [suiteUserId]);
+      assert(u && u.plan === 'gratuito' && Number(u.daily_limit) === 3 && u.status === 'active',
+        `Cancelamento voltou ao gratuito com cota 3 (plan=${u && u.plan}, limit=${u && u.daily_limit}, status=${u && u.status})`);
+
+      // 9. Validações da rota subscribe (sem chamar o Asaas de verdade)
+      const badPlanRes = await fetch(`${BASE_URL}/api/account/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        body: JSON.stringify({ plan: 'diamante', cycle: 'monthly' })
+      });
+      assert(badPlanRes.status === 400, `Plano inválido no subscribe retornou 400 (status: ${badPlanRes.status})`);
+      await runAsync(
+        `INSERT INTO subscriptions (id, user_id, asaas_customer_id, asaas_subscription_id, plan, cycle, status)
+         VALUES ('sub-suite-test-0002', ?, 'cus-suite-test', 'sub-suite-test-456', 'prata', 'monthly', 'active')`,
+        [suiteUserId]
+      );
+      const dupRes = await fetch(`${BASE_URL}/api/account/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        body: JSON.stringify({ plan: 'ouro', cycle: 'monthly' })
+      });
+      assert(dupRes.status === 409, `2ª assinatura com uma ativa existente retornou 409 (status: ${dupRes.status})`);
+
+      // 10. Cancelamento via API: cancela no Asaas (falha silenciosa no fake) e volta ao gratuito
+      const cancelRes = await fetch(`${BASE_URL}/api/account/subscribe/cancel`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${userToken}` }
+      });
+      u = await getAsync(`SELECT plan, daily_limit, status FROM users WHERE id = ?`, [suiteUserId]);
+      assert(cancelRes.ok && u.plan === 'gratuito' && Number(u.daily_limit) === 3,
+        `Cancelamento via API voltou ao gratuito (plan=${u.plan}, limit=${u.daily_limit})`);
+
+      // Restaura o usuário para não poluir os demais testes
+      await runAsync(`DELETE FROM subscriptions WHERE user_id = ?`, [suiteUserId]);
+      await runAsync(`UPDATE users SET plan = 'gratuito', daily_limit = 3, status = 'active' WHERE id = ?`, [suiteUserId]);
+    } else {
+      assert(false, `T-27: suite precisa de ASAAS_WEBHOOK_TOKEN no ambiente (presente: ${!!WEBHOOK_TOKEN}, suite user: ${!!suiteUserId})`);
+    }
+  } catch (e) {
+    assert(false, 'Falha nos testes T-27 (Asaas): ' + e.message);
+    try {
+      if (suiteUserId) {
+        await runAsync(`DELETE FROM subscriptions WHERE user_id = ?`, [suiteUserId]);
+        await runAsync(`UPDATE users SET plan = 'gratuito', daily_limit = 3, status = 'active' WHERE id = ?`, [suiteUserId]);
+      }
+    } catch (_) { /* melhor esforço */ }
   }
 
   // Limpar usuário comum dedicado da suíte

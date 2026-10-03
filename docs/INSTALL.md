@@ -235,7 +235,41 @@ npm start
 
 Regra prática: mudou só `.js`/`.html` → `docker compose restart transcreveai` basta. Mudou o `Dockerfile` ou dependência de sistema → precisa `build`. Detalhe em [../pipeline.md](../pipeline.md) §1.4.
 
-## 9. Solução de problemas comuns
+## 9. Cobrança recorrente via Asaas (opcional — T-27)
+
+O sistema monetiza sozinho: o usuário escolhe Bronze, Prata ou Ouro no botão
+**Fazer upgrade**, paga a fatura (PIX, boleto ou cartão) e o plano é liberado
+**automaticamente** pelo webhook. Atraso suspende a conta (dados intactos);
+cancelamento volta ao plano gratuito.
+
+**Sem configurar nada**, a plataforma roda normal com os botões de assinatura
+em "Em breve". Para ligar a cobrança:
+
+1. Crie a conta no [Asaas](https://www.asaas.com) e gere a chave de API
+   (Integrações → API). Para testar sem dinheiro real, use o
+   [ambiente sandbox](https://sandbox.asaas.com) — a API é a mesma, só a URL muda.
+2. No `.env`:
+
+```dotenv
+ASAAS_API_KEY=$aact_sua_chave_aqui
+ASAAS_API_URL=https://sandbox.asaas.com/api/v3   # produção: https://www.asaas.com/api/v3
+ASAAS_WEBHOOK_TOKEN=gere_um_valor_aleatorio
+```
+
+3. No painel do Asaas (Webhooks), aponte para
+   `https://seu-dominio/api/webhooks/asaas` usando o **mesmo** token do passo 2.
+4. `docker compose up -d transcreveai` (as novas variáveis exigem recreate).
+
+**Importante:** em `NODE_ENV=production` o servidor **recusa subir** sem
+`ASAAS_WEBHOOK_TOKEN` (o webhook é a alma da cobrança). Para desenvolver
+localmente sem cobrança, defina `BILLING_STRICT=false` no `.env`.
+
+Preços e cotas (R$ / transcrições por dia) ficam em `system_settings` — o
+admin ajusta no painel (Configurações) sem tocar em código. Defaults:
+bronze R$ 19,90/mês (15/dia), prata R$ 49,90 (60/dia), ouro R$ 99,90
+(ilimitado); anual com ~2 meses de desconto.
+
+## 10. Solução de problemas comuns
 
 | Sintoma | Causa provável | Solução |
 |---|---|---|

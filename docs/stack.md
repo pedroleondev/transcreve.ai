@@ -46,6 +46,8 @@ ai_analyses(id, transcription_id → transcriptions, kind, model, prompt_used,
             glossary_used, result_md, tokens_in, tokens_out, cost_usd, created_at)  -- T-18
 system_logs(id, user_id, action, details, ip_address, timestamp)
 email_verifications(id, user_id -> users, token UNIQUE, expires_at, used_at, created_at)  -- T-28: confirmacao de e-mail do auto-cadastro
+subscriptions(id, user_id -> users ON DELETE CASCADE, asaas_customer_id, asaas_subscription_id,
+               plan, cycle, status, current_period_end, created_at, updated_at)  -- T-27: assinaturas Asaas (historico; indice user_id+created_at)
 projects(id, user_id → users, name, created_at)
 transcriptions(id, user_id → users, project_id → projects, file_name, file_path,
                file_size, duration_seconds, language, mode, status, stage, raw_text,
@@ -79,8 +81,11 @@ Todas as rotas em `server.js`, prefixo `/api`.
 | GET | `/api/public/metrics` | pública | T-28: métricas agregadas REAIS para a landing (transcrições, horas, usuários ativos) |
 | PUT | `/api/account` | token | ✅ dono — T-09: atualiza o próprio nome |
 | PUT | `/api/auth/password` | token | ✅ dono — T-09: troca de senha exigindo a senha atual |
-| GET | `/api/account/subscription` | token | ✅ dono — T-09: plano (`users.plan`), quota do dia; `billing='local'` até a T-27 (Asaas) |
+| GET | `/api/account/subscription` | token | ✅ dono — T-09: plano (`users.plan`), quota do dia; T-27: `billing='asaas'` + `subscription{plan,cycle,status,renews_at}` quando há assinatura ativa |
 | GET | `/api/account/usage` | token | ✅ dono — T-09: transcrições recentes com tokens de IA + totais |
+| POST | `/api/webhooks/asaas` | pública (token no header `asaas-access-token`) | T-27: webhook Asaas; sempre 200 p/ eventos OK/ignorados; idempotente |
+| POST | `/api/account/subscribe` | token | T-27: cria assinatura Asaas; devolve `invoice_url` da 1ª fatura; 503 sem `ASAAS_API_KEY`; 400 plano inválido; 409 se já houver assinatura ativa |
+| POST | `/api/account/subscribe/cancel` | token | T-27: cancela no Asaas e volta o usuário ao plano `gratuito` |
 | GET/POST/DELETE | `/api/projects[/:id]` | token | ✅ dono (admin: `?all=true`) |
 | GET | `/api/transcriptions` | token | ✅ dono (admin: `?all=true`) |
 | GET/PUT/DELETE | `/api/transcriptions/:id` | token | ✅ dono — alheio retorna 404 |
@@ -136,6 +141,8 @@ O bind-mount publica **código**, nunca **binários de sistema**. Mudou o `Docke
 **T-28 (01/10): landing pública + auto-cadastro + confirmação de e-mail.** `/` agora serve `landing.html` (paleta Obsidian Wave do Stitch) e a SPA migrou para `/app` (deep-link `/app?confirm_token=` confirmando via `POST /api/auth/confirm`). `services/mailer.js` (nodemailer, SMTP por `.env`): sem SMTP em produção o cadastro é recusado (503) com `smtp_configured` exposto no `/api/admin/metrics`; no self-host local `REGISTRATION_REQUIRES_SMTP=false` manda o link para o log — a conta sempre exige confirmação do token. Tabela `email_verifications` nos dois drivers (PG_DDL + DDL SQLite). Gotcha registrado: o volume anônimo `/app/node_modules` do compose congela dependências novas — ao adicionar pacote: `docker compose build` + `up -d -V` (recria o volume anônimo). Cross-driver: `TIMESTAMP` volta como `Date` no Postgres e string no SQLite. Suíte 107/107.
 
 **T-11 (02/10): transcrição por link (YouTube/Vimeo/URL direta).** `services/urlfetch.js` classifica a URL (youtube/vimeo → `yt-dlp` no container, `--no-playlist`, título vira nome da transcrição; extensão de mídia → fetch HTTP com redirects), baixa para `uploads/` e reaproveita `probeMedia` + fila. Anti-SSRF: hosts privados recusados em produção; `ALLOW_PRIVATE_DOWNLOADS=true` libera no self-host local (e viabiliza o mock de teste). Falha de download → linha `failed` com causa; URL inválida/domínio não suportado → 400 sem criar linha. Campo "Cole um link" no modal de upload (link tem prioridade sobre arquivos selecionados). Suíte 115/115.
+
+**T-27 (02/10): cobrança recorrente via Asaas.** `services/billing.js` (API REST v3, header `access_token`): `createSubscription` cria customer (`externalReference` = user.id) + assinatura (`billingType: UNDEFINED` — usuário escolhe PIX/boleto/cartão na fatura) e devolve a `invoiceUrl` da 1ª fatura; webhook `POST /api/webhooks/asaas` valida `asaas-access-token` contra `ASAAS_WEBHOOK_TOKEN` e aplica eventos idempotentes por construção (só escreve quando o estado muda): confirmado → `active` + cota do plano, atraso → `suspended` (login 403, admin nunca suspenso), cancelado → `gratuito`/cota 3. Tabela `subscriptions` nos dois drivers (FK cascade + índice). Preços/cotas em `system_settings` (`plan_bronze_monthly` etc.; defaults 19.90/49.90/99.90, cotas 15/60/ilimitado — admin ajusta no painel). Boot: produção sem `ASAAS_WEBHOOK_TOKEN` recusa subir; escape self-host `BILLING_STRICT=false`; sem `ASAAS_API_KEY` tudo roda com botões "Em breve" (503). `/api/settings` público ganhou flags `billing_enabled`/`smtp_configured`. Gotcha: chave Asaas começa com `$` e o compose v2 interpola `.env` — usar aspas simples (`'$aact_...'`). Suíte 127/127.
 
 ## Limites técnicos conhecidos
 

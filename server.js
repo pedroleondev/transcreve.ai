@@ -22,6 +22,7 @@ const archiver = require('archiver');
 const { probeMedia } = require('./services/audio');
 const { downloadFromUrl } = require('./services/urlfetch');
 const { startQueueWorker, getJobProgress, retryFailedChunks } = require('./services/pipeline');
+const billing = require('./services/billing');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,16 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'turboscribe_super_secret_jwt_key_2026')) {
   console.error('ERRO CRÍTICO: JWT_SECRET não definido ou usando valor padrão em ambiente de produção (NODE_ENV=production).');
+  process.exit(1);
+}
+
+// T-27 (Asaas): em produção o webhook de cobrança precisa de token; em
+// self-host local o operador define BILLING_STRICT=false para desenvolver
+// sem o Asaas configurado (mesmo padrão do check de JWT acima).
+if (process.env.NODE_ENV === 'production' &&
+    !process.env.ASAAS_WEBHOOK_TOKEN &&
+    process.env.BILLING_STRICT !== 'false') {
+  console.error('ERRO CRÍTICO: ASAAS_WEBHOOK_TOKEN não definido em produção. Configure-o (e ASAAS_API_KEY) ou defina BILLING_STRICT=false para rodar localmente sem cobrança.');
   process.exit(1);
 }
 
@@ -498,18 +509,28 @@ app.put('/api/auth/password', authenticateToken, async (req, res) => {
   }
 });
 
-// Assinatura: espelho honesto do plano local. A cobrança real (Asaas, portal
-// de pagamento) chega na T-27 — até lá, "source" deixa claro que é local.
+// Assinatura: espelho honesto do plano local + assinatura Asaas (T-27) quando existir.
 app.get('/api/account/subscription', authenticateToken, async (req, res) => {
   try {
     const user = await getAsync(`SELECT plan, status, daily_limit, role, created_at FROM users WHERE id = ?`, [req.user.id]);
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
     const quota = await getQuotaState(req.user.id);
+    const sub = await getAsync(
+      `SELECT asaas_subscription_id, plan, cycle, status, current_period_end, created_at
+         FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+    const asaasActive = sub && ['pending', 'active', 'overdue'].includes(sub.status);
     res.json({
       plan: user.plan || 'gratuito',
       status: user.status,
-      billing: 'local',           // T-27 troca para 'asaas' quando o billing existir
-      renews_at: null,            // sem cobrança ativa, não há renovação
+      billing: asaasActive ? 'asaas' : 'local',
+      subscription: asaasActive ? {
+        plan: sub.plan,
+        cycle: sub.cycle,
+        status: sub.status,
+        renews_at: sub.current_period_end || null
+      } : null,
       quota: {
         used_today: quota ? quota.used : 0,
         limit: quota ? quota.limit : null,
@@ -518,6 +539,57 @@ app.get('/api/account/subscription', authenticateToken, async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// T-27 (Asaas): webhook público de cobrança. O Asaas manda o token no header
+// `asaas-access-token` (não assina o payload). Sempre respondemos 200 para
+// eventos reconhecidos/ignorados — a idempotência do handler garante que
+// reentregas do mesmo evento não duplicam efeito.
+app.post('/api/webhooks/asaas', express.json({ type: '*/*' }), async (req, res) => {
+  try {
+    if (!billing.verifyWebhookToken(req.get('asaas-access-token'))) {
+      return res.status(401).json({ error: 'Token de webhook inválido.' });
+    }
+    const result = await billing.handleWebhook(req.body || {});
+    if (result.ok) {
+      await logAction(null, 'ASAAS_WEBHOOK', { event: req.body.event, effect: result.effect }, req.ip);
+    } else {
+      console.log(`[Asaas] evento ignorado: ${req.body && req.body.event} — ${result.reason}`);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[Asaas] erro no webhook:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// T-27 (Asaas): criar assinatura. Devolve a URL da 1ª fatura (PIX/boleto/cartão)
+// para o frontend abrir em nova aba.
+app.post('/api/account/subscribe', authenticateToken, async (req, res) => {
+  if (!billing.billingEnabled()) return res.status(503).json({ error: 'Cobrança não configurada no servidor.' });
+  const { plan, cycle } = req.body || {};
+  try {
+    const me = await getAsync(`SELECT id, name, email FROM users WHERE id = ?`, [req.user.id]);
+    if (!me) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const result = await billing.createSubscription(me, plan, cycle === 'annual' ? 'annual' : 'monthly');
+    await logAction(req.user.id, 'SUBSCRIPTION_CREATED', { plan: result.plan, cycle: result.cycle }, req.ip);
+    res.json({ invoice_url: result.invoiceUrl, plan: result.plan, cycle: result.cycle });
+  } catch (e) {
+    res.status(e.statusHint || 500).json({ error: e.message });
+  }
+});
+
+// T-27 (Asaas): cancelar assinatura ativa e voltar ao plano gratuito.
+app.post('/api/account/subscribe/cancel', authenticateToken, async (req, res) => {
+  try {
+    const me = await getAsync(`SELECT id, role FROM users WHERE id = ?`, [req.user.id]);
+    if (!me) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    await billing.cancelSubscription(me);
+    await logAction(req.user.id, 'SUBSCRIPTION_CANCELLED', null, req.ip);
+    res.json({ ok: true, plan: 'gratuito' });
+  } catch (e) {
+    res.status(e.statusHint || 500).json({ error: e.message });
   }
 });
 
@@ -1522,6 +1594,10 @@ app.get('/api/settings', async (req, res) => {
     const settings = await allAsync(`SELECT * FROM system_settings`);
     const settingsMap = {};
     settings.forEach(s => settingsMap[s.key] = s.value);
+    // Flags públicas sem segredos: o frontend decide se mostra "Em breve" ou
+    // os botões reais de assinatura (T-27) e de verificação de e-mail (T-09).
+    settingsMap.billing_enabled = billing.billingEnabled();
+    settingsMap.smtp_configured = smtpConfigured();
     res.json(settingsMap);
   } catch (e) {
     res.status(500).json({ error: e.message });

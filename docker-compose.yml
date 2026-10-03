@@ -25,6 +25,14 @@ services:
       # T-11: baixar de hosts privados/LAN (anti-SSRF ligado por padrao em
       # producao). No self-host local, true permite baixar de 192.168.x.x etc.
       - ALLOW_PRIVATE_DOWNLOADS=${ALLOW_PRIVATE_DOWNLOADS:-false}
+      # T-27: cobrança recorrente via Asaas. Sem ASAAS_API_KEY a plataforma roda
+      # normal, mas os botões de assinatura ficam "Em breve". Em produção sem
+      # ASAAS_WEBHOOK_TOKEN o app recusa subir — no self-host local defina
+      # BILLING_STRICT=false para desenvolver sem o Asaas configurado.
+      - ASAAS_API_KEY=${ASAAS_API_KEY:-}
+      - ASAAS_API_URL=${ASAAS_API_URL:-https://sandbox.asaas.com/api/v3}
+      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN:-}
+      - BILLING_STRICT=${BILLING_STRICT:-true}
       - DATABASE_URL=${DATABASE_URL}
       - PGHOST=${PGHOST:-db}
       - PGPORT=${PGPORT:-5432}

@@ -378,25 +378,46 @@ async function loadAccountData() {
   } catch (_) { /* silencioso: seções abaixo carregam independentemente */ }
 
   // Assinatura (plano + quota)
+  await renderAccountSubscription();
+
+  loadAccountUsage();
+}
+
+// T-27 (Asaas): renderiza plano, quota e assinatura Asaas na aba Conta.
+async function renderAccountSubscription() {
   try {
     const res = await fetch('/api/account/subscription', { headers: { 'Authorization': `Bearer ${state.token}` } });
-    if (res.ok) {
-      const sub = await res.json();
-      const badge = document.getElementById('account-plan-badge');
-      const quota = document.getElementById('account-quota');
-      if (badge) {
-        const label = sub.plan === 'gratuito' ? 'Gratuito' : sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
-        badge.textContent = `${label}${sub.status === 'suspended' ? ' (suspenso)' : ''}`;
-      }
-      if (quota) {
-        quota.innerHTML = sub.quota.unlimited
-          ? '📊 Consumo hoje: <b>ilimitado</b> (administrador)'
-          : `📊 Consumo hoje: <b>${sub.quota.used_today} de ${sub.quota.limit}</b> transcrições nas últimas 24 h`;
+    if (!res.ok) return;
+    const sub = await res.json();
+    const badge = document.getElementById('account-plan-badge');
+    const quota = document.getElementById('account-quota');
+    const subDetail = document.getElementById('account-subscription-detail');
+    const planLabels = { gratuito: 'Gratuito', bronze: 'Bronze', prata: 'Prata', ouro: 'Ouro' };
+    if (badge) {
+      const label = planLabels[sub.plan] || sub.plan;
+      badge.textContent = `${label}${sub.status === 'suspended' ? ' (suspenso)' : ''}`;
+    }
+    if (quota) {
+      quota.innerHTML = sub.quota.unlimited
+        ? '📊 Consumo hoje: <b>ilimitado</b> (administrador)'
+        : `📊 Consumo hoje: <b>${sub.quota.used_today} de ${sub.quota.limit}</b> transcrições nas últimas 24 h`;
+    }
+    if (subDetail) {
+      if (sub.subscription) {
+        const s = sub.subscription;
+        const cycleLabel = s.cycle === 'annual' ? 'anual' : 'mensal';
+        const statusLabels = { pending: 'aguardando pagamento', active: 'ativa', overdue: 'em atraso' };
+        subDetail.innerHTML = `
+          <p class="text-xs text-brand-copy dark:text-brand-copy">Assinatura <b>${planLabels[s.plan] || s.plan}</b> (${cycleLabel}) — ${statusLabels[s.status] || s.status}
+            ${s.renews_at ? ` · renovação em <b>${new Date(s.renews_at).toLocaleDateString('pt-BR')}</b>` : ''}</p>
+          <button onclick="cancelSubscription()" class="mt-2 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline">Cancelar assinatura</button>`;
+      } else {
+        subDetail.innerHTML = sub.plan === 'gratuito'
+          ? `<button onclick="openUpgradeModal()" class="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline">Ver planos pagos</button>`
+          : '';
       }
     }
   } catch (_) { /* silencioso */ }
-
-  loadAccountUsage();
 }
 
 async function loadAccountUsage() {
@@ -496,30 +517,58 @@ async function changeAccountPassword(e) {
   }
 }
 
-// Upgrade de plano (T-09): preços opcionais via system_settings — sem valor
-// configurado o plano exibe "Em breve" (nada de dado fictício).
+// Upgrade de plano (T-27/Asaas): preços lidos de system_settings
+// (plan_bronze_monthly etc.). Sem ASAAS_API_KEY no servidor, os botões viram
+// "Em breve" (nada de dado fictício).
 let upgradeCycle = 'monthly';
+const UPGRADE_PLANS = ['bronze', 'prata', 'ouro'];
+const UPGRADE_DEFAULTS = {
+  bronze: { monthly: '19.90', annual: '199.00', quota: 15 },
+  prata: { monthly: '49.90', annual: '499.00', quota: 60 },
+  ouro: { monthly: '99.90', annual: '999.00', quota: 999999 }
+};
+let upgradeBillingEnabled = false;
+
 async function openUpgradeModal() {
   document.getElementById('upgrade-modal').classList.remove('hidden');
   applyUpgradeCycleUI();
   try {
     const res = await fetch('/api/settings');
     const settings = res.ok ? await res.json() : {};
-    for (const [planKey, label] of [['pro', 'upgrade-price-pro'], ['max', 'upgrade-price-max']]) {
-      const price = settings[`plan_${planKey}_${upgradeCycle}`];
-      const note = settings[`plan_${planKey}_${upgradeCycle}_note`] || '';
-      const priceEl = document.getElementById(label);
-      const noteEl = document.getElementById(`${label}-note`);
-      if (priceEl) priceEl.innerHTML = price ? `R$ ${price} <span class="text-xs font-normal text-brand-muted dark:text-brand-muted">/${upgradeCycle === 'monthly' ? 'mês' : 'ano'}</span>` : 'Em breve';
-      if (noteEl) noteEl.textContent = note;
+    upgradeBillingEnabled = settings.billing_enabled === true;
+    for (const planKey of UPGRADE_PLANS) {
+      const d = UPGRADE_DEFAULTS[planKey];
+      const price = settings[`plan_${planKey}_${upgradeCycle}`] || (upgradeCycle === 'monthly' ? d.monthly : d.annual);
+      const priceEl = document.getElementById(`upgrade-price-${planKey}`);
+      const noteEl = document.getElementById(`upgrade-price-${planKey}-note`);
+      const btn = document.getElementById(`btn-subscribe-${planKey}`);
+      const quotaEl = document.getElementById(`quota-${planKey}`);
+      const quota = Number(settings[`plan_${planKey}_quota`] || d.quota);
+      if (quotaEl) quotaEl.textContent = quota >= 999999 ? 'ilimitadas' : quota;
+      if (priceEl) priceEl.innerHTML = `R$ ${price} <span class="text-xs font-normal text-brand-muted dark:text-brand-muted">/${upgradeCycle === 'monthly' ? 'mês' : 'ano'}</span>`;
+      if (noteEl) noteEl.textContent = upgradeCycle === 'annual' ? 'cobrança anual' : 'cobrança mensal';
+      if (btn) {
+        if (upgradeBillingEnabled) {
+          btn.disabled = false;
+          btn.textContent = `Assinar ${planKey.charAt(0).toUpperCase() + planKey.slice(1)}`;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+          btn.disabled = true;
+          btn.textContent = 'Em breve';
+          btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+      }
     }
-  } catch (_) { /* mantém "Em breve" */ }
+    const note = document.getElementById('upgrade-billing-note');
+    if (note) note.textContent = upgradeBillingEnabled
+      ? 'O plano é liberado automaticamente após o pagamento da fatura (PIX, boleto ou cartão).'
+      : 'A cobrança online ainda não está configurada neste servidor. Administradores podem ajustar preços em Configurações.';
+  } catch (_) { /* mantém o estado atual */ }
 }
 function closeUpgradeModal() { document.getElementById('upgrade-modal').classList.add('hidden'); }
 function setUpgradeCycle(cycle) {
   upgradeCycle = cycle;
   applyUpgradeCycleUI();
-  // Recarrega os preços já abrindo de novo (idempotente)
   openUpgradeModal();
 }
 function applyUpgradeCycleUI() {
@@ -529,6 +578,51 @@ function applyUpgradeCycleUI() {
   const a = document.getElementById('upgrade-cycle-annual');
   if (m) m.className = `px-4 py-1.5 rounded-full transition ${upgradeCycle === 'monthly' ? active : idle}`;
   if (a) a.className = `px-4 py-1.5 rounded-full transition ${upgradeCycle === 'annual' ? active : idle}`;
+}
+
+// T-27 (Asaas): cria a assinatura e abre a fatura (PIX/boleto/cartão) em nova aba.
+async function subscribePlan(plan) {
+  const btn = document.getElementById(`btn-subscribe-${plan}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando fatura…'; }
+  try {
+    const res = await fetch('/api/account/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+      body: JSON.stringify({ plan, cycle: upgradeCycle })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Erro ao criar assinatura.');
+    if (data.invoice_url) {
+      window.open(data.invoice_url, '_blank', 'noopener');
+      alert('Fatura gerada! Complete o pagamento na nova aba — seu plano será liberado automaticamente.');
+    } else {
+      alert('Assinatura criada! A fatura estará disponível em instantes.');
+    }
+    closeUpgradeModal();
+    if (typeof renderAccountSubscription === 'function') renderAccountSubscription();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn && upgradeBillingEnabled) { btn.disabled = false; }
+    if (btn) openUpgradeModal(); // repõe o rótulo do botão
+  }
+}
+
+// T-27 (Asaas): cancela a assinatura ativa e volta ao plano gratuito.
+async function cancelSubscription() {
+  if (!confirm('Cancelar a assinatura? Você voltará ao plano gratuito no fim do processamento. Seu histórico e transcrições são mantidos.')) return;
+  try {
+    const res = await fetch('/api/account/subscribe/cancel', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Erro ao cancelar.');
+    alert('Assinatura cancelada.');
+    if (typeof renderAccountSubscription === 'function') renderAccountSubscription();
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 // Logout: limpa o token e volta ao modal de login (aceite T-09).
