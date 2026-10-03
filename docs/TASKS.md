@@ -565,6 +565,8 @@ Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, dep
 
 **Evidência (03/10/2026):** screenshots antes/depois a 375×812 via Edge headless + CDP (`tests/screenshot_t34.js`, saída em `docs/screenshots/t-34/`). Métricas medidas no próprio browser: toolbar de 209px (5,8 linhas) → **57px (1,6 linha)**; painel lateral de DEPOIS do miolo → ANTES; Coluna (Estreita/Normal/Larga) oculta <768px; Fonte mantida no dropdown Aₐ (abre como painel flutuante, fecha fora/Esc); pesquisa virou ícone que expande o campo (painel flutuante); `scrollWidth <= innerWidth + 1` ✓; desktop ≥1024px inalterado (grupo `md:contents` devolve o layout original). Suíte 130/130. Detalhe de implementação: o botão Aₐ e a lupa usam painéis absolutos sob a toolbar (`position: relative` nela), então a barra nunca passa de 2 linhas mesmo com os painéis abertos.
 
+**Ajuste pós-validação do dono no S24 (03/10):** seleção de fonte REMOVIDA do mobile por decisão do dono (o dropdown Aₐ sumiu; no mobile restam lupa + copiar na toolbar, Fonte/Coluna/Copiar continuam só no desktop) e a busca mobile ganhou comportamento de "acompanhar": com o campo expandido a toolbar fica `sticky` no topo, tocar nas setas ‹ › mantém o foco no campo (teclado não recua) e cada ocorrência alinha logo abaixo da barra (`scroll-margin-top` = altura da toolbar + 12px, `block: 'start'`). Validado funcionalmente via CDP (`tests/check_t34_search.js`): sticky ativa, foco mantido, hit visível abaixo da barra, sem scroll horizontal. Aceite revisado: Fonte NÃO fica no mobile (revoga a sugestão original da concepção).
+
 ---
 
 ### T-23 — Presets de análise avançados (processos, vendas, ações)

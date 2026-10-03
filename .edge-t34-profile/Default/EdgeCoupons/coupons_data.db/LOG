@@ -1,0 +1,5 @@
+2026/10/03-13:20:29.753 5cd0 Creating DB C:\Users\pedro\Documents\antigravity\keen-einstein\.edge-t34-profile\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/10/03-13:20:29.772 5cd0 Reusing MANIFEST C:\Users\pedro\Documents\antigravity\keen-einstein\.edge-t34-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/10/03-13:20:30.106 304 Level-0 table #5: started
+2026/10/03-13:20:30.111 304 Level-0 table #5: 683273 bytes OK
+2026/10/03-13:20:30.121 304 Delete type=0 #3

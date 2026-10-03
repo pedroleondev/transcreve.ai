@@ -1393,20 +1393,16 @@ function setFontSize(size) {
   applyReadingPreferences();
 }
 
-// T-34: controles de conforto (Fonte/Copiar) recolhidos no botão Aₐ no mobile
-function toggleComfortControls(e) {
-  if (e) e.stopPropagation();
-  const c = document.getElementById('comfort-controls');
-  if (c) c.classList.toggle('comfort-open');
-}
-
 // T-34: pesquisa vira ícone no mobile; o campo abre como painel flutuante
+// grudado no topo (toolbar-sticky) para as setas acompanharem a navegação.
 function toggleSearchBox(e) {
   if (e) e.stopPropagation();
   const box = document.getElementById('search-box');
+  const toolbar = document.getElementById('reading-toolbar');
   if (!box) return;
   const opening = !box.classList.contains('search-open');
   box.classList.toggle('search-open');
+  if (toolbar) toolbar.classList.toggle('toolbar-sticky', opening);
   if (opening) {
     const input = document.getElementById('transcript-search');
     if (input) setTimeout(() => input.focus(), 50);
@@ -1415,24 +1411,22 @@ function toggleSearchBox(e) {
 
 // Fecha os painéis flutuantes ao clicar fora ou apertar Esc
 document.addEventListener('click', (e) => {
-  const cc = document.getElementById('comfort-controls');
-  if (cc && cc.classList.contains('comfort-open') &&
-      !e.target.closest('#comfort-controls') && !e.target.closest('#btn-comfort-toggle')) {
-    cc.classList.remove('comfort-open');
-  }
   const sb = document.getElementById('search-box');
   if (sb && sb.classList.contains('search-open') &&
       !e.target.closest('#search-box') && !e.target.closest('#search-toggle')) {
     const input = document.getElementById('transcript-search');
-    if (!input || !input.value) sb.classList.remove('search-open');
+    if (!input || !input.value) {
+      sb.classList.remove('search-open');
+      document.getElementById('reading-toolbar')?.classList.remove('toolbar-sticky');
+    }
   }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  document.getElementById('comfort-controls')?.classList.remove('comfort-open');
   const sb = document.getElementById('search-box');
   if (sb) {
     sb.classList.remove('search-open');
+    document.getElementById('reading-toolbar')?.classList.remove('toolbar-sticky');
     const input = document.getElementById('transcript-search');
     if (input && !input.value) onTranscriptSearch('');
   }
@@ -1731,7 +1725,21 @@ function stepSearchHit(dir, silent = false) {
     h.classList.toggle('ring-blue-500', i === searchCursor);
     h.classList.toggle('rounded-sm', i === searchCursor);
   });
-  searchHits[searchCursor].scrollIntoView({ behavior: silent ? 'auto' : 'smooth', block: 'center' });
+  // T-34 mobile: com a busca expandida, a tela acompanha cada ocorrência —
+  // alinha o hit logo abaixo da toolbar sticky (que fica grudada no topo) e
+  // devolve o foco ao campo para o teclado não sumir ao tocar nas setas.
+  const hit = searchHits[searchCursor];
+  const mobileSearchOpen = document.getElementById('search-box')?.classList.contains('search-open');
+  if (mobileSearchOpen) {
+    const toolbar = document.getElementById('reading-toolbar');
+    const offset = toolbar ? toolbar.offsetHeight + 12 : 72;
+    hit.style.scrollMarginTop = `${offset}px`;
+    hit.scrollIntoView({ behavior: silent ? 'auto' : 'smooth', block: 'start' });
+    const input = document.getElementById('transcript-search');
+    if (input) input.focus({ preventScroll: true });
+  } else {
+    hit.scrollIntoView({ behavior: silent ? 'auto' : 'smooth', block: 'center' });
+  }
   const count = document.getElementById('search-count');
   if (count) count.innerText = `${searchCursor + 1}/${searchHits.length}`;
 }

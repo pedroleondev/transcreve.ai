@@ -145,8 +145,8 @@
       border-color: rgb(var(--accent)) !important;
     }
 
-    /* T-34: no mobile, pesquisa expandida e controles de conforto viram
-       um painel flutuante abaixo da toolbar — a barra nunca passa de 2 linhas */
+    /* T-34: no mobile, a pesquisa expandida fica grudada no topo enquanto o
+       texto rola — as setas de ocorrência continuam acessíveis a cada toque */
     @media (max-width: 639px) {
       #search-box.search-open {
         display: flex !important;
@@ -163,26 +163,10 @@
         min-width: 0;
         max-width: none;
       }
-    }
-    @media (max-width: 767px) {
-      #comfort-controls.comfort-open {
-        display: flex !important;
-        position: absolute;
-        right: 0;
-        top: calc(100% + 6px);
-        z-index: 40;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 8px;
-        background: rgb(var(--surface));
-        border: 1px solid rgb(var(--line));
-        border-radius: 12px;
-        padding: 10px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-        width: max-content;
-      }
-      #comfort-controls.comfort-open #btn-copy-md {
-        justify-content: center;
+      #reading-toolbar.toolbar-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 30;
       }
     }
   </style>
@@ -421,9 +405,9 @@
           </div>
 
           <!-- Barra de Modos de Leitura e Controles de Conforto (T-34: enxuta no
-               mobile — pesquisa vira ícone expansível, conforto (Fonte/Copiar) fica
-               no botão Aₐ; Coluna some <768px pois a tela já é estreita) -->
-          <div class="relative px-4 lg:px-6 py-2.5 bg-brand-surface dark:bg-brand-surface border-b border-brand-line dark:border-brand-line flex flex-wrap items-center justify-between gap-2 md:gap-3 shrink-0 text-xs">
+               mobile — pesquisa vira ícone expansível e fica grudada no topo;
+               Fonte/Coluna/Copiar só no desktop; mobile tem só copiar) -->
+          <div id="reading-toolbar" class="relative px-4 lg:px-6 py-2.5 bg-brand-surface dark:bg-brand-surface border-b border-brand-line dark:border-brand-line flex flex-wrap items-center justify-between gap-2 md:gap-3 shrink-0 text-xs">
             <!-- Selector de Modos de Leitura -->
             <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-xl">
               <button id="btn-mode-transcript" onclick="setReadingMode('transcript')" class="px-3 py-1.5 font-bold rounded-lg transition text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">
@@ -450,12 +434,13 @@
                 <button onclick="stepSearchHit(1)" title="Próxima ocorrência" class="px-1 font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink">›</button>
               </div>
 
-              <!-- Controles de Conforto e Cópia: desktop inline, mobile no dropdown Aₐ -->
-              <div class="relative">
-                <button id="btn-comfort-toggle" onclick="toggleComfortControls(event)" class="md:hidden flex items-center justify-center bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold px-2.5 py-1.5 rounded-lg transition" title="Conforto de leitura" aria-label="Conforto de leitura">
-                  <span class="text-sm leading-none">A<span class="text-[9px] align-sub">a</span></span>
-                </button>
-                <div id="comfort-controls" class="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2">
+              <!-- Controles de Conforto e Cópia: desktop inline (Fonte/Coluna/
+                   Copiar); no mobile só o Copiar como botão direto (decisão do
+                   dono 03/10: seleção de fonte fora do mobile) -->
+              <button id="btn-copy-md-mobile" onclick="copyTranscriptAsMarkdown()" class="md:hidden flex items-center justify-center bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line text-brand-copy dark:text-brand-copy font-bold p-2 rounded-lg transition" title="Copiar como Markdown" aria-label="Copiar como Markdown">
+                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              </button>
+              <div id="comfort-controls" class="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2">
                   <!-- Tamanho da Fonte -->
                   <div class="flex items-center space-x-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg">
                     <span class="text-xs font-bold text-brand-muted dark:text-brand-muted px-1.5 uppercase">Fonte</span>
@@ -478,7 +463,6 @@
                     <span>Copiar Markdown</span>
                   </button>
                 </div>
-              </div>
             </div>
           </div>
 
@@ -1566,6 +1550,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.14.0"></script>
+  <script src="app.js?v=3.14.1"></script>
 </body>
 </html>
