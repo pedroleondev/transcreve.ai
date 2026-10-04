@@ -27,6 +27,10 @@ services:
       - "3001:3000"
     environment:
       - PORT=3000
+      # T-08: o lab tem rede própria sem serviço Postgres — força SQLite
+      # (banco próprio ./turboscribe.sqlite montado abaixo). Sem isso o
+      # container herda o .env da raiz (Postgres "db") e entra em crash-loop.
+      - DB_DRIVER=${UX_DB_DRIVER:-sqlite}
       # Segredos DEDICADOS do lab — se vazarem, não afetam a produção.
       # Pode sobrescrever criando ux-lab/.env (não versionado).
       - JWT_SECRET=${UX_JWT_SECRET:-transcreveai_ux_lab_jwt_secret_2026}

@@ -75,6 +75,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   clearAutofilledSearch();
   setTimeout(clearAutofilledSearch, 1000);
   setTimeout(clearAutofilledSearch, 3000);
+  // T-29 F3: swipe-to-back no miolo das telas empilhadas (mobile).
+  ['view-details', 'view-admin', 'view-account'].forEach(initSwipeBack);
   // O campo começa readonly (Chrome não autofill campo readonly) e perde o
   // readonly no foco — em dois mecanismos (inline onfocus + listener) para
   // cobrir navegadores mobile que tratam foco por toque de forma diferente.
@@ -370,18 +372,159 @@ function showView(viewName) {
   document.getElementById('view-account').classList.add('hidden');
   closeSidebar(); // T-17: drawer fecha ao navegar (mobile)
 
+  let revealed = null;
   if (viewName === 'dashboard') {
-    document.getElementById('view-dashboard').classList.remove('hidden');
+    revealed = document.getElementById('view-dashboard');
     fetchTranscriptions();
   } else if (viewName === 'details') {
-    document.getElementById('view-details').classList.remove('hidden');
+    revealed = document.getElementById('view-details');
   } else if (viewName === 'admin') {
-    document.getElementById('view-admin').classList.remove('hidden');
+    revealed = document.getElementById('view-admin');
     loadAdminMetrics();
   } else if (viewName === 'account') {
-    document.getElementById('view-account').classList.remove('hidden');
+    revealed = document.getElementById('view-account');
     loadAccountData();
   }
+  _revealView(revealed);
+  _pushNavState(viewName);
+}
+
+// ---------------------------------------------------
+// T-29 F3: NAVEGAÇÃO ESTILO PWA (history API)
+// No Android de tela infinita o "voltar" é o gesto de borda, que dispara
+// history.back() — sem entradas na pilha do browser ele SAIA do app. Agora
+// cada navegação interna empilha um state {falouView, falouId} e o popstate
+// restaura a view. Dashboard é o default (não empilha): back a partir de
+// qualquer tela cai no dashboard, como num app nativo.
+// ---------------------------------------------------
+let _navSuppress = false;
+
+function _revealView(el) {
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.classList.remove('view-enter');
+  void el.offsetWidth; // reflow: reinicia a animação de entrada
+  el.classList.add('view-enter');
+}
+
+function _pushNavState(viewName) {
+  if (_navSuppress) { _navSuppress = false; return; }
+  if (!state.token || viewName === 'dashboard') return;
+  try {
+    const falouId = (state.activeTranscription && state.activeTranscription.id) || null;
+    const top = history.state || {};
+    if (top.falouView === viewName && top.falouId === falouId) return; // clique duplo
+    history.pushState({ falouView: viewName, falouId }, '', '/app');
+  } catch (_) { /* history indisponível: navegação continua, sem gesto do sistema */ }
+}
+
+// Volta ao dashboard pelo caminho certo: se a tela atual veio de navegação
+// interna, consome a entrada da pilha (o popstate troca a view); senão troca
+// direto. Usado pelos botões "Voltar para arquivos" e pelo swipe-to-back.
+function goBack() {
+  let top = {};
+  try { top = history.state || {}; } catch (_) { /* ignora */ }
+  if (top.falouView && top.falouView !== 'dashboard') {
+    history.back();
+  } else {
+    showView('dashboard');
+  }
+}
+
+// Substitui o topo da pilha em vez de empilhar — usado quando a tela atual
+// deixa de existir (ex.: excluir a transcrição aberta) e o back não pode
+// tentar reabri-la.
+function navReplace(viewName) {
+  showView(viewName); // pode empilhar; o replaceState abaixo sobrescreve o topo
+  try {
+    history.replaceState({
+      falouView: viewName,
+      falouId: viewName === 'details' ? ((state.activeTranscription && state.activeTranscription.id) || null) : null
+    }, '', '/app');
+  } catch (_) { /* ignora */ }
+}
+
+window.addEventListener('popstate', (e) => {
+  const v = (e.state && e.state.falouView) || 'dashboard';
+  _navSuppress = true;
+  if (v === 'details' && e.state && e.state.falouId) {
+    openTranscriptionDetail(e.state.falouId);
+  } else {
+    showView(v);
+  }
+});
+
+// ---------------------------------------------------
+// T-29 F3: SWIPE-TO-BACK (gesto esquerda→direita no miolo, com follow)
+// A tela acompanha o dedo e, ao passar do limiar, conclui com a mesma
+// animação de saída e chama goBack(). touch-action: pan-y mantém o scroll
+// vertical nativo; o gesto horizontal fica conosco. Os primeiros 24px da
+// borda esquerda ficam livres (zona do drawer/sistema).
+// ---------------------------------------------------
+function initSwipeBack(viewId) {
+  // Sem detecção de touch: os listeners são passive e custam zero no desktop
+  // (touch não existe lá) — e dispositivos híbridos/touchscreen de notebook
+  // passam a ter o gesto sem depender de matchMedia/ontouchstart.
+  const view = document.getElementById(viewId);
+  if (!view) return;
+  view.style.touchAction = 'pan-y';
+
+  let startX = 0, startY = 0, active = false, decided = false, horizontal = false;
+
+  const reset = () => {
+    view.style.transition = 'transform .18s ease-out, opacity .18s ease-out';
+    view.style.transform = '';
+    view.style.opacity = '';
+    setTimeout(() => { view.style.transition = ''; }, 200);
+  };
+
+  view.addEventListener('touchstart', (e) => {
+    if (state.currentView === 'dashboard') return;
+    const t = e.touches[0];
+    if (t.clientX <= 24) { active = false; return; }
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]')) { active = false; return; }
+    active = true; decided = false; horizontal = false;
+    startX = t.clientX; startY = t.clientY;
+  }, { passive: true });
+
+  view.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX, dy = t.clientY - startY;
+    if (!decided) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // gesto ainda ambíguo
+      decided = true;
+      horizontal = Math.abs(dx) > Math.abs(dy) * 1.5;
+    }
+    if (!horizontal || dx <= 0) return;
+    const pull = Math.min(dx, 140);
+    view.style.transition = 'none';
+    view.style.transform = `translateX(${pull}px)`;
+    view.style.opacity = String(1 - pull / 420);
+  }, { passive: true });
+
+  view.addEventListener('touchend', (e) => {
+    if (!active) return;
+    active = false;
+    if (!decided || !horizontal) { if (decided) reset(); return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = Math.abs(t.clientY - startY);
+    if (dx > 80 && dx > dy * 1.5) {
+      view.style.transition = 'transform .16s ease-out, opacity .16s ease-out';
+      view.style.transform = 'translateX(110%)';
+      view.style.opacity = '0';
+      setTimeout(() => { goBack(); reset(); }, 150);
+    } else {
+      reset();
+    }
+  }, { passive: true });
+
+  view.addEventListener('touchcancel', () => {
+    if (!active) return;
+    active = false;
+    reset();
+  }, { passive: true });
 }
 
 // ---------------------------------------------------
@@ -665,10 +808,14 @@ function logoutUser() {
   localStorage.removeItem('turboscribe_token');
   state.token = '';
   state.currentUser = null;
+  state.activeTranscription = null;
   ['view-dashboard', 'view-details', 'view-admin', 'view-account'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
+  // Limpa a pilha de navegação da sessão que acabou (T-29 F3 PWA): back não
+  // pode tentar reabrir telas de um usuário deslogado.
+  try { history.replaceState(null, '', '/app'); } catch (_) { /* ignora */ }
   openLoginModal();
 }
 
@@ -1390,6 +1537,7 @@ async function openTranscriptionDetail(id) {
     const view = document.getElementById('view-details');
     if (view) view.scrollTo({ top: 0, behavior: 'auto' });
   } catch (e) {
+    _navSuppress = false; // popstate pendente não pode vazar p/ próxima navegação
     uiToast('Erro ao carregar detalhes: ' + e.message);
   }
 }
@@ -2249,7 +2397,7 @@ async function deleteTranscription(id) {
     });
     fetchTranscriptions();
     if (state.activeTranscription && state.activeTranscription.id === id) {
-      showView('dashboard');
+      navReplace('dashboard'); // pilha substituída: back não pode tentar reabrir o excluído
     }
   } catch (e) {
     uiToast('Erro ao excluir: ' + e.message);

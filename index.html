@@ -59,6 +59,13 @@
       #ai-chat-drawer { padding-bottom: env(safe-area-inset-bottom); }
     }
 
+    /* --- T-29 F3: transição de entrada das views (navegação estilo PWA) ---
+       Ao trocar de tela a view entra deslizando da direita com fade curto;
+       o swipe-to-back completa com a saída correspondente. */
+    @keyframes view-slide-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+    .view-enter { animation: view-slide-in .18s ease-out; }
+    @media (prefers-reduced-motion: reduce) { .view-enter { animation-duration: 0s !important; } }
+
     /* --- UX mobile: header enxuto — seletor de tema sai do topo no celular
        (vai para o rodapé da sidebar) e o conteúdo ganha espaço para a
        bottom nav fixa (64px + safe-area) --- */
@@ -385,7 +392,7 @@
         <div class="flex flex-col lg:flex-1 lg:border-r border-brand-line dark:border-brand-line lg:overflow-hidden bg-brand-surface dark:bg-brand-surface">
           <div class="p-4 lg:p-6 border-b border-brand-line dark:border-brand-line flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-brand-surface dark:bg-brand-surface shrink-0">
             <div>
-              <button onclick="showView('dashboard')" class="text-xs font-semibold text-blue-600 dark:text-blue-300 hover:underline flex items-center space-x-1 mb-2">
+              <button onclick="goBack()" class="text-xs font-semibold text-blue-600 dark:text-blue-300 hover:underline flex items-center space-x-1 mb-2">
                 <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
                 <span>Voltar para arquivos</span>
               </button>
@@ -637,7 +644,7 @@
             </h1>
             <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">Gerenciamento completo de usuários, acessos, logs de auditoria, chaves e modelos da API OpenRouter.</p>
           </div>
-          <button onclick="showView('dashboard')" class="bg-brand-surface dark:bg-brand-surface hover:bg-brand-raised dark:hover:bg-brand-raised text-brand-copy dark:text-brand-copy font-semibold text-xs px-4 py-2 rounded-xl border border-brand-line dark:border-brand-line shadow-sm transition">
+          <button onclick="goBack()" class="bg-brand-surface dark:bg-brand-surface hover:bg-brand-raised dark:hover:bg-brand-raised text-brand-copy dark:text-brand-copy font-semibold text-xs px-4 py-2 rounded-xl border border-brand-line dark:border-brand-line shadow-sm transition">
             Voltar ao Dashboard Client
           </button>
         </div>
@@ -900,7 +907,7 @@
               <h2 class="text-xl font-extrabold text-brand-ink dark:text-brand-ink">Minha Conta</h2>
               <p class="text-xs text-brand-muted dark:text-brand-muted mt-0.5">Gerencie seu perfil, segurança, assinatura e acompanhe seu uso.</p>
             </div>
-            <button onclick="showView('dashboard')" class="shrink-0 flex items-center gap-1.5 text-xs font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line px-3 py-2 rounded-lg transition">
+            <button onclick="goBack()" class="shrink-0 flex items-center gap-1.5 text-xs font-bold text-brand-copy dark:text-brand-copy hover:text-brand-ink dark:hover:text-brand-ink bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line px-3 py-2 rounded-lg transition">
               <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar
             </button>
           </div>

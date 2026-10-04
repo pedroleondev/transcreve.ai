@@ -14,7 +14,7 @@ const context = {
     querySelectorAll: () => [],
     documentElement: { classList: { toggle: (name, enabled) => { dark = enabled; } } }
   },
-  window: { matchMedia: () => ({ matches: true, addEventListener() {} }) },
+  window: { matchMedia: () => ({ matches: true, addEventListener() {} }), addEventListener() {} },
   fetch: async (url, options) => { savedBody = JSON.parse(options.body); return { ok: true, json: async () => ({success: true, raw_text: savedBody.raw_text, segments: savedBody.segments}) }; },
   alert() {}, console
 };
