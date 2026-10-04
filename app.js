@@ -60,6 +60,31 @@ async function ensureAuthToken() {
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
   syncNerdToggle();
+  // Anti-autofill da busca (incidente 04/10): o Chrome insiste em escrever o
+  // e-mail da sessão no campo de busca — mesmo com autocomplete=off — e a
+  // lista inteira ficava invisível (parecia "arquivos sumiram"). O campo é
+  // readonly até o foco; aqui, por precaução, limpamos qualquer valor que
+  // aparecer sem foco nos primeiros segundos após o carregamento.
+  const clearAutofilledSearch = () => {
+    const input = document.getElementById('search-input');
+    if (input && input.value && document.activeElement !== input) {
+      input.value = '';
+      handleSearch();
+    }
+  };
+  clearAutofilledSearch();
+  setTimeout(clearAutofilledSearch, 1000);
+  setTimeout(clearAutofilledSearch, 3000);
+  // O campo começa readonly (Chrome não autofill campo readonly) e perde o
+  // readonly no foco — em dois mecanismos (inline onfocus + listener) para
+  // cobrir navegadores mobile que tratam foco por toque de forma diferente.
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) {
+    const unlock = function () { this.removeAttribute('readonly'); };
+    searchInput.addEventListener('focus', unlock);
+    searchInput.addEventListener('pointerdown', unlock);
+    searchInput.addEventListener('touchstart', unlock, { passive: true });
+  }
   // T-28: deep-link de confirmação de e-mail (/app?confirm_token=...) — a
   // landing manda o link para cá; a confirmação é pública e precede o login.
   const confirmToken = new URLSearchParams(location.search).get('confirm_token');

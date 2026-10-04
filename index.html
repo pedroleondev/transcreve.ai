@@ -323,7 +323,7 @@
             <!-- Busca -->
             <div class="relative flex-1 min-w-[140px] lg:flex-none lg:min-w-0">
               <i data-lucide="search" class="w-4 h-4 text-brand-muted dark:text-brand-muted absolute left-3 top-3"></i>
-              <input type="text" id="search-input" onkeyup="handleSearch()" placeholder="Buscar arquivos..." autocomplete="off" spellcheck="false" class="pl-9 pr-4 py-2 bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 transition">
+              <input type="text" id="search-input" onkeyup="handleSearch()" placeholder="Buscar arquivos..." autocomplete="off" spellcheck="false" readonly onfocus="this.removeAttribute('readonly')" class="pl-9 pr-4 py-2 bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 transition">
             </div>
 
             <!-- Gravação direta via Microfone -->
