@@ -189,6 +189,15 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'landing.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
+// Landing: índice para agentes de IA (padrão llms.txt) + mídias das telas
+// reais. Nome de arquivo estrito (basename + extensão whitelisted) para não
+// abrir diretório — mesma cautela dos estáticos um a um.
+app.get('/llms.txt', (req, res) => res.type('text/plain').sendFile(path.join(__dirname, 'llms.txt')));
+app.get('/assets/landing/:file', (req, res) => {
+  const file = path.basename(req.params.file);
+  if (!/^[a-z0-9-]+\.(png|gif|jpg|webp)$/i.test(file)) return res.status(404).end();
+  res.sendFile(path.join(__dirname, 'assets', 'landing', file));
+});
 // T-29 F1: tokens Obsidian Wave (CSS estático seguro, mesma política dos demais)
 app.get('/tokens.css', (req, res) => res.sendFile(path.join(__dirname, 'tokens.css')));
 // T-20: lista canônica de idiomas do Whisper — usada pelo backend (validação)

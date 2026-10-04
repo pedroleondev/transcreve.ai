@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Falou.ai — Transforme áudio em texto com IA</title>
+  <title>Falou.ai · Transforme áudio em texto com IA</title>
   <meta name="description" content="Transcreva reuniões, aulas e entrevistas em minutos. Modelos Whisper de alta precisão, aprimoramento por IA e exportação em todos os formatos.">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt: índice para agentes de IA">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,12 +15,14 @@
       theme: {
         extend: {
           colors: {
-            obsidian: '#0f131c',
-            panel: '#171c28',
-            line: '#262c3a',
-            cyber: '#00f2fe',
+            // T-29: paleta Obsidian Wave oficial (tokens.css do app)
+            obsidian: '#06080F',
+            panel: '#0E131F',
+            raised: '#161D2E',
+            line: '#212631',
+            cyber: '#00F2FE',
             violet: '#7928CA',
-            mist: '#dfe2ef'
+            mist: '#DFE2EF'
           },
           fontFamily: { jakarta: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] }
         }
@@ -32,6 +35,12 @@
     .hero-grad { background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,242,254,0.14), transparent), radial-gradient(ellipse 60% 50% at 80% 10%, rgba(121,40,202,0.18), transparent); }
     .card-hover { transition: transform .15s ease, border-color .15s ease; }
     .card-hover:hover { transform: translateY(-3px); border-color: rgba(0,242,254,0.4); }
+    /* Moldura das telas reais do app: card elevado + fio ciano no topo */
+    .shot-frame { border: 1px solid #212631; border-radius: 1rem; overflow: hidden; background: #0E131F; box-shadow: 0 24px 60px -24px rgba(0,0,0,.7); transition: transform .2s ease, border-color .2s ease; }
+    .shot-frame:hover { transform: translateY(-4px); border-color: rgba(0,242,254,.45); }
+    .shot-frame img { display: block; width: 100%; height: auto; }
+    .shot-glow { position: relative; }
+    .shot-glow::before { content: ''; position: absolute; inset: -1px; border-radius: 1.1rem; padding: 1px; background: linear-gradient(135deg, rgba(0,242,254,.5), transparent 40%, transparent 60%, rgba(121,40,202,.5)); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
   </style>
 </head>
 <body class="bg-obsidian text-mist antialiased">
@@ -44,6 +53,7 @@
         <span>Falou.ai</span>
       </a>
       <nav class="hidden md:flex items-center gap-6 text-sm font-semibold text-mist/70">
+        <a href="#telas" class="hover:text-cyber transition">Telas</a>
         <a href="#recursos" class="hover:text-cyber transition">Recursos</a>
         <a href="#metricas" class="hover:text-cyber transition">Resultados</a>
         <a href="#planos" class="hover:text-cyber transition">Planos</a>
@@ -71,13 +81,21 @@
       </p>
       <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
         <button onclick="openRegisterModal()" class="w-full sm:w-auto bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold px-8 py-3.5 rounded-xl transition text-base">
-          Começar agora — é grátis
+          Começar agora, é grátis
         </button>
         <a href="/app" class="w-full sm:w-auto text-center border border-line hover:border-cyber/50 text-mist font-bold px-8 py-3.5 rounded-xl transition text-base">
           Já tenho conta
         </a>
       </div>
       <p class="mt-4 text-xs text-mist/40">Sem cartão de crédito. 3 transcrições por dia no plano gratuito.</p>
+
+      <!-- Tour real do app: GIF com telas capturadas do sistema em funcionamento -->
+      <div class="mt-14 shot-glow max-w-4xl mx-auto">
+        <div class="shot-frame">
+          <img src="/assets/landing/hero-tour.gif" alt="Tour do Falou.ai: dashboard, editor com player e waveform, e a versão mobile" width="960" height="576" loading="eager">
+        </div>
+        <p class="mt-3 text-[11px] text-mist/40">Telas reais do sistema, capturadas em funcionamento.</p>
+      </div>
     </div>
   </section>
 
@@ -85,19 +103,41 @@
   <section id="metricas" class="px-4 sm:px-6 pb-16">
     <div class="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-transcriptions" class="text-3xl font-extrabold text-cyber">—</p>
+        <p id="metric-transcriptions" class="text-3xl font-extrabold text-cyber">…</p>
         <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Transcrições concluídas</p>
       </div>
       <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-hours" class="text-3xl font-extrabold text-cyber">—</p>
+        <p id="metric-hours" class="text-3xl font-extrabold text-cyber">…</p>
         <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Horas de áudio transcritas</p>
       </div>
       <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-users" class="text-3xl font-extrabold text-cyber">—</p>
+        <p id="metric-users" class="text-3xl font-extrabold text-cyber">…</p>
         <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Usuários ativos</p>
       </div>
     </div>
     <p class="text-center text-[10px] text-mist/30 mt-3">Números reais, medidos nesta instância em tempo real.</p>
+  </section>
+
+  <!-- VEJA POR DENTRO (telas reais do sistema) -->
+  <section id="telas" class="px-4 sm:px-6 py-16 border-t border-line">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-extrabold text-center">Veja por dentro do <span class="text-cyber glow-text">Falou.ai</span></h2>
+      <p class="text-center text-mist/60 mt-3 max-w-2xl mx-auto">Nada de mockup: estas são as telas que você usa depois de criar a conta.</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12 items-start">
+        <div class="shot-frame">
+          <img src="/assets/landing/app-dashboard.png" alt="Dashboard do Falou.ai com a lista de transcrições, status e modos Base, Pro e Max" loading="lazy">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">Dashboard.</span> Todos os seus arquivos, status em tempo real e busca instantânea.</p>
+        </div>
+        <div class="shot-frame">
+          <img src="/assets/landing/app-editor.png" alt="Editor de transcrição do Falou.ai com player, waveform e blocos de fala destacados" loading="lazy">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">Editor.</span> Player com waveform, blocos de fala e leitura karaokê que segue o áudio.</p>
+        </div>
+        <div class="shot-frame max-w-[280px] mx-auto md:max-w-none w-full">
+          <img src="/assets/landing/app-mobile.png" alt="Falou.ai no celular: dashboard mobile com bottom navigation" loading="lazy">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">No celular.</span> Feito para o S24 e qualquer Android: leve, rápido e com gestos.</p>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- RECURSOS -->
@@ -108,12 +148,12 @@
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="audio-lines" class="w-8 h-8 text-cyber"></i>
           <h3 class="font-bold mt-4">3 níveis de precisão</h3>
-          <p class="text-sm text-mist/60 mt-2">Base (veloz), Pro (balanceado) e Max — Whisper Large v3 com pontuação perfeita em português.</p>
+          <p class="text-sm text-mist/60 mt-2">Base (veloz), Pro (balanceado) e Max. Whisper Large v3 com pontuação perfeita em português.</p>
         </div>
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="badge-check" class="w-8 h-8 text-cyber"></i>
           <h3 class="font-bold mt-4">Aprimoramento com JEV</h3>
-          <p class="text-sm text-mist/60 mt-2">A IA corrige concordância, estrutura e termos do seu dicionário — e um juiz valida o resultado antes de entregar.</p>
+          <p class="text-sm text-mist/60 mt-2">A IA corrige concordância, estrutura e termos do seu dicionário, e um juiz valida o resultado antes de entregar.</p>
         </div>
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="file-down" class="w-8 h-8 text-cyber"></i>
@@ -123,7 +163,7 @@
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="languages" class="w-8 h-8 text-cyber"></i>
           <h3 class="font-bold mt-4">100 idiomas</h3>
-          <p class="text-sm text-mist/60 mt-2">Detecção automática de idioma ou escolha manual — de português a japonês.</p>
+          <p class="text-sm text-mist/60 mt-2">Detecção automática de idioma ou escolha manual, de português a japonês.</p>
         </div>
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="book-check" class="w-8 h-8 text-cyber"></i>
@@ -133,7 +173,7 @@
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <i data-lucide="server" class="w-8 h-8 text-cyber"></i>
           <h3 class="font-bold mt-4">Seus dados, seu servidor</h3>
-          <p class="text-sm text-mist/60 mt-2">Self-hosted com Docker: seus áudios e textos ficam no seu banco — privacidade por arquitetura.</p>
+          <p class="text-sm text-mist/60 mt-2">Self-hosted com Docker: seus áudios e textos ficam no seu banco. Privacidade por arquitetura.</p>
         </div>
       </div>
     </div>
@@ -157,7 +197,7 @@
         <div class="bg-gradient-to-b from-violet/25 to-panel border-2 border-violet rounded-2xl p-6 relative">
           <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet text-white text-[10px] font-extrabold px-3 py-1 rounded-full">EM BREVE</span>
           <h3 class="font-bold">Pro</h3>
-          <p class="text-3xl font-extrabold mt-2">—</p>
+          <p class="text-3xl font-extrabold mt-2">Em breve</p>
           <ul class="text-sm text-mist/60 space-y-2 mt-4">
             <li>✓ Mais transcrições por dia</li>
             <li>✓ Prioridade na fila</li>
@@ -167,7 +207,7 @@
         </div>
         <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
           <h3 class="font-bold">Max Empresarial</h3>
-          <p class="text-3xl font-extrabold mt-2">—</p>
+          <p class="text-3xl font-extrabold mt-2">Em breve</p>
           <ul class="text-sm text-mist/60 space-y-2 mt-4">
             <li>✓ Transcrições ilimitadas</li>
             <li>✓ Suporte prioritário</li>
@@ -187,11 +227,11 @@
       <div class="space-y-3 mt-10">
         <details class="bg-panel border border-line rounded-xl p-4 group">
           <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Quais formatos de arquivo são aceitos? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
-          <p class="text-sm text-mist/60 mt-3">MP3, M4A, WAV, OGG, OPUS, MP4, MOV, AAC, WMA, WMV e MPEG — até 5 GB e 10 horas por arquivo, 50 arquivos por envio.</p>
+          <p class="text-sm text-mist/60 mt-3">MP3, M4A, WAV, OGG, OPUS, MP4, MOV, AAC, WMA, WMV e MPEG: até 5 GB e 10 horas por arquivo, 50 arquivos por envio.</p>
         </details>
         <details class="bg-panel border border-line rounded-xl p-4 group">
           <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Como funciona o aprimoramento por IA? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
-          <p class="text-sm text-mist/60 mt-3">Após transcrever, um modelo de linguagem corrige concordância, estrutura o texto e aplica seu dicionário de termos. O JEV (juiz de validação) revisa o resultado e rejeita o que não está bom — você recebe só texto aprovado.</p>
+          <p class="text-sm text-mist/60 mt-3">Após transcrever, um modelo de linguagem corrige concordância, estrutura o texto e aplica seu dicionário de termos. O JEV (juiz de validação) revisa o resultado e rejeita o que não está bom: você recebe só texto aprovado.</p>
         </details>
         <details class="bg-panel border border-line rounded-xl p-4 group">
           <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Meus dados ficam seguros? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
@@ -218,8 +258,9 @@
   <!-- FOOTER -->
   <footer class="border-t border-line px-4 sm:px-6 py-8">
     <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-mist/40">
-      <p>© 2026 Falou.ai — Transcrição com IA, self-hosted.</p>
+      <p>© 2026 Falou.ai · Transcrição com IA, self-hosted.</p>
       <div class="flex items-center gap-4">
+        <a href="/llms.txt" class="hover:text-cyber transition" title="Índice para agentes de IA">llms.txt</a>
         <a href="/app" class="hover:text-cyber transition">Acessar o app</a>
         <a href="#faq" class="hover:text-cyber transition">FAQ</a>
       </div>
@@ -258,13 +299,49 @@
           <i data-lucide="mail-check" class="w-7 h-7 text-cyber"></i>
         </div>
         <h3 class="text-lg font-extrabold mt-4">Quase lá!</h3>
-        <p id="reg-success-msg" class="text-sm text-mist/60 mt-2">Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos — confira também a caixa de spam.</p>
+        <p id="reg-success-msg" class="text-sm text-mist/60 mt-2">Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos. Confira também a caixa de spam.</p>
         <a href="/app" class="inline-block mt-6 border border-line hover:border-cyber/50 font-bold text-sm px-6 py-2.5 rounded-xl transition">Ir para o login</a>
       </div>
     </div>
   </div>
 
   <script>
+    // === MARKETING (ativar quando for veicular anúncios) ===
+    // Preencha os IDs abaixo e os scripts são injetados automaticamente.
+    // Deixado vazio de propósito: sem ID, NADA é carregado (zero rastreador
+    // para quem self-hosta sem campanha).
+    const FACEBOOK_PIXEL_ID = '';
+    const GOOGLE_TAG_ID = '';
+
+    (function initMarketing() {
+      if (FACEBOOK_PIXEL_ID) {
+        // Facebook/Meta Pixel (snippet oficial, f)
+        const fbq = window.fbq = function () { fbq.queue.push(arguments); };
+        fbq.queue = fbq.queue || []; fbq.loaded = true; fbq.version = '2.0';
+        const s = document.createElement('script');
+        s.async = true; s.src = 'https://connect.facebook.net/en_US/fbevents.js';
+        document.head.appendChild(s);
+        fbq('init', FACEBOOK_PIXEL_ID);
+        fbq('track', 'PageView');
+      }
+      if (GOOGLE_TAG_ID) {
+        // Google tag (gtag.js)
+        const g = document.createElement('script');
+        g.async = true; g.src = 'https://www.googletagmanager.com/gtag/js?id=' + GOOGLE_TAG_ID;
+        document.head.appendChild(g);
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        window.gtag('config', GOOGLE_TAG_ID);
+      }
+    })();
+
+    // Conversão de cadastro (dispara só se algum pixel estiver ativo)
+    function trackRegisterSuccess() {
+      if (window.fbq) fbq('track', 'CompleteRegistration');
+      if (window.gtag) gtag('event', 'sign_up', { method: 'landing' });
+    }
+
     if (window.lucide) lucide.createIcons();
 
     // Métricas reais, medidas nesta instância (nada inventado).
@@ -277,7 +354,7 @@
       })
       .catch(() => {
         ['metric-transcriptions', 'metric-hours', 'metric-users'].forEach(id => {
-          document.getElementById(id).textContent = '—';
+          document.getElementById(id).textContent = '…';
         });
       });
 
@@ -311,9 +388,10 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Erro ao criar a conta.');
         document.getElementById('reg-success-msg').textContent = data.message ||
-          'Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos — confira também a caixa de spam.';
+          'Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos. Confira também a caixa de spam.';
         document.getElementById('register-form-view').classList.add('hidden');
         document.getElementById('register-success-view').classList.remove('hidden');
+        trackRegisterSuccess();
         if (window.lucide) lucide.createIcons();
       } catch (err) {
         errEl.textContent = err.message;

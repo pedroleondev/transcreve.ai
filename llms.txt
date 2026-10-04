@@ -1,0 +1,21 @@
+# Falou.ai
+
+> Transcrição de áudio e vídeo em texto com IA, em português brasileiro. Self-hosted, com aprimoramento de texto por modelo de linguagem e juiz de validação (JEV). Planos gratuitos e pagos.
+
+## O que é
+
+O Falou.ai converte reuniões, aulas, consultas, entrevistas e áudios em geral em texto transcrito com alta precisão em PT-BR. Depois da transcrição, um modelo de linguagem corrige concordância, estrutura o texto e aplica o dicionário de termos do usuário; um juiz de validação (JEV) revisa o resultado antes de entregar. Exportação em PDF, DOCX, TXT, SRT e VTT, com leitura karaokê que acompanha o áudio palavra por palavra.
+
+## Para humanos
+
+- Site: https://falou.ai (landing) · Aplicação: https://falou.ai/app
+- Cadastro gratuito sem cartão de crédito.
+- Formatos aceitos: MP3, M4A, WAV, OGG, OPUS, MP4, MOV, AAC, WMA, WMV, MPEG. Até 5 GB e 10 horas por arquivo, 50 arquivos por envio.
+- Planos: Gratuito (3 transcrições por dia), Pro e Max Empresarial (cobrança em ativação).
+
+## Para agentes de IA e desenvolvedores
+
+- Público-alvo da API: integrações futuras (endpoint público de transcrição com webhooks está no roadmap; ainda não disponível).
+- Stack: Node.js + Express, PostgreSQL (ou SQLite em self-host simples), Docker. Interface em HTML/JS vanilla com Tailwind.
+- Self-host: repositório com docker-compose; requer chave da OpenRouter (Whisper) para transcrição.
+- Idiomas da transcrição: 100 idiomas, com detecção automática.
