@@ -50,11 +50,23 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// PT-BR: o busboy (multer) decodifica o nome original do multipart como
+// latin1, então "Classificação.m4a" chega como "ClassificaÃ§Ã£o.m4a"
+// (mojibake — incidente 04/10). Reverte para UTF-8 real antes de usar.
+// Aplicado em TODO uso de originalname (disco, banco, erros, resposta).
+function decodeOriginalName(name) {
+  try {
+    return Buffer.from(String(name || ''), 'latin1').toString('utf8');
+  } catch (_) {
+    return name;
+  }
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    cb(null, uniqueSuffix + '-' + decodeOriginalName(file.originalname));
   }
 });
 const MAX_FILES_PER_UPLOAD = Number(process.env.MAX_FILES_PER_UPLOAD || 50);
@@ -819,8 +831,9 @@ app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynami
 
   // Valida cada arquivo com ffprobe ANTES de enfileirar: um invalido nao derruba os outros.
   for (const file of req.files) {
+    const displayName = decodeOriginalName(file.originalname); // PT-BR: nome em UTF-8 real
     const reject = async (message) => {
-      errors.push({ file_name: file.originalname, error: message });
+      errors.push({ file_name: displayName, error: message });
       await fs.promises.unlink(file.path).catch(() => {});
     };
     try {
@@ -850,7 +863,7 @@ app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynami
           transcriptionId,
           req.user.id || 'admin-local',
           project_id || null,
-          file.originalname,
+          displayName,
           relativePath,
           file.size,
           probe.duration,
@@ -864,7 +877,7 @@ app.post('/api/transcribe', authenticateToken, checkDailyQuota, uploadWithDynami
         ]
       );
 
-      results.push({ id: transcriptionId, file_name: file.originalname, status: 'pending', progress: 0, duration_seconds: probe.duration });
+      results.push({ id: transcriptionId, file_name: displayName, status: 'pending', progress: 0, duration_seconds: probe.duration });
     } catch (err) {
       console.error('Erro ao registrar áudio para transcrição na fila:', err);
       await reject(err.message);
