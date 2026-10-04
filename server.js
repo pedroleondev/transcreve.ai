@@ -153,14 +153,14 @@ app.use((req, res, next) => {
 });
 
 // T-02: /uploads deixou de ser estático público. Cada áudio só é servido ao
-// dono (admin precisa de ?all=true, como nas rotas de dados). O player usa
+// dono (admin sempre lê; usuário comum só o seu). O player usa
 // ?token= porque <audio> não envia header Authorization. Nome sanitizado com
 // path.basename para não sair do diretório de uploads.
 app.get('/uploads/:file', authenticateToken, async (req, res) => {
   try {
     const fileName = path.basename(req.params.file);
     const row = await getAsync('SELECT user_id FROM transcriptions WHERE file_path = ?', ['/uploads/' + fileName]);
-    const all = req.user.role === 'admin' && req.query.all === 'true';
+    const all = req.user.role === 'admin';
     if (!row || (!all && row.user_id !== req.user.id)) {
       return res.status(404).send('Arquivo não encontrado.');
     }
@@ -228,17 +228,23 @@ function requireAdmin(req, res, next) {
 }
 
 // T-02 — Isolamento multi-tenant.
-// Escopo do usuário autenticado: admin só enxerga tudo com ?all=true EXPLÍCITO;
-// qualquer outro usuário enxerga apenas o que é seu. Acesso a recurso alheio
-// responde 404 (não 403) — não revela nem a existência do recurso.
+// Escopo do usuário autenticado: admin só ENLISTA tudo com ?all=true EXPLÍCITO
+// (dashboard dele não é poluído por padrão); mas em recurso INDIVIDUAL admin
+// sempre passa — dono de plataforma precisa abrir/ouvir/exportar qualquer
+// arquivo (incidente 04/10: admin levava 404 no detalhe de arquivo alheio).
+// Usuário comum segue enxergando apenas o que é seu; acesso alheio = 404.
 function scopeOf(req) {
-  return { userId: req.user.id, all: req.user.role === 'admin' && req.query.all === 'true' };
+  return {
+    userId: req.user.id,
+    all: req.user.role === 'admin' && req.query.all === 'true',
+    admin: req.user.role === 'admin'
+  };
 }
 
 // Resolve a transcrição se — e somente se — existir E pertencer ao escopo.
 async function ownedTranscription(id, scope) {
   const row = await getAsync('SELECT id, user_id, status FROM transcriptions WHERE id = ?', [id]);
-  if (!row || (!scope.all && row.user_id !== scope.userId)) return null;
+  if (!row || (!scope.all && !scope.admin && row.user_id !== scope.userId)) return null;
   return row;
 }
 
@@ -696,7 +702,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
     const scope = scopeOf(req);
     const row = await getAsync('SELECT user_id FROM projects WHERE id = ?', [req.params.id]);
-    if (!row || (!scope.all && row.user_id !== scope.userId)) {
+    if (!row || (!scope.all && !scope.admin && row.user_id !== scope.userId)) {
       return res.status(404).json({ error: 'Projeto não encontrado.' });
     }
     await runAsync(`DELETE FROM projects WHERE id = ?`, [req.params.id]);
@@ -749,7 +755,7 @@ app.get('/api/transcriptions/:id', authenticateToken, async (req, res) => {
       [req.params.id]
     );
 
-    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+    if (!transcription || (!scope.all && !scope.admin && transcription.user_id !== scope.userId)) {
       return res.status(404).json({ error: 'Transcrição não encontrada.' });
     }
 
@@ -1026,7 +1032,7 @@ app.get('/api/export/:id/:format', authenticateToken, async (req, res) => {
   try {
     const scope = scopeOf(req);
     const transcription = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [id]);
-    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+    if (!transcription || (!scope.all && !scope.admin && transcription.user_id !== scope.userId)) {
       return res.status(404).send('Transcrição não encontrada.');
     }
 
@@ -1086,7 +1092,7 @@ app.get('/api/transcriptions/:id/audio', authenticateToken, async (req, res) => 
       `SELECT id, user_id, file_name, file_path FROM transcriptions WHERE id = ?`,
       [req.params.id]
     );
-    if (!transcription || (!scope.all && transcription.user_id !== scope.userId)) {
+    if (!transcription || (!scope.all && !scope.admin && transcription.user_id !== scope.userId)) {
       return res.status(404).json({ error: 'Transcrição não encontrada.' });
     }
 
@@ -1181,7 +1187,7 @@ app.post('/api/export/bulk', authenticateToken, async (req, res) => {
     for (const id of ids) {
       try {
         const t = await getAsync(`SELECT * FROM transcriptions WHERE id = ?`, [id]);
-        if (!t || (!scope.all && t.user_id !== scope.userId)) {
+        if (!t || (!scope.all && !scope.admin && t.user_id !== scope.userId)) {
           errors.push(`${id}: não encontrada ou sem permissão.`);
           continue;
         }
