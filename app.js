@@ -1256,6 +1256,8 @@ async function openTranscriptionDetail(id) {
     if (audioPlayer) {
       audioPlayer.src = `/api/transcriptions/${data.id}/audio?token=` + encodeURIComponent(state.token);
     }
+    // T-29 F3: waveform + player persistente ganham os dados desta transcrição
+    setupPlayer(data);
 
     // T-13: rótulo do botão de download com o tamanho do arquivo ("Áudio original · 4,4 MB").
     const audioLabel = document.getElementById('download-audio-label');
@@ -1570,6 +1572,13 @@ function renderCurrentTranscript() {
   clearSearchHits();
 
   applyReadingPreferences();
+
+  // T-29 F3: aba de modo ativa com elevação (átomo .mode-tab-active)
+  ['transcript', 'reading', 'summary'].forEach(m => {
+    const btn = document.getElementById('btn-mode-' + m);
+    if (btn) btn.classList.toggle('mode-tab-active', state.readingMode === m);
+  });
+
   const saveButton = document.getElementById('save-transcript-button');
   if (saveButton) {
     saveButton.disabled = state.readingMode !== 'transcript';
@@ -1666,20 +1675,23 @@ function renderCurrentTranscript() {
     return;
   }
 
+  // T-29 F3: blocos de fala (cards) — chip de tempo ciano + chip de locutor
+  // dinâmico; o bloco inteiro acende enquanto o áudio passa por ele.
   container.innerHTML = segments.map(seg => {
     const color = getSpeakerColor(seg.speaker);
     return `
-      <div class="mb-4 flex items-start space-x-3 group hover:bg-blue-50/50 dark:hover:bg-blue-950/50 p-2 rounded-xl transition">
-        <button onclick="seekAudio(${seg.start_time})" class="text-xs font-bold text-blue-600 dark:text-blue-300 hover:underline bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded shrink-0">
-          [${formatSRTTimeShort(seg.start_time)}]
-        </button>
-        <div class="flex-1">
-          ${seg.speaker ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${color.bg} ${color.text} ${color.border} border mb-1 block w-fit">${escapeHtml(seg.speaker)}</span>` : ''}
-          <p data-segment-id="${escapeHtml(seg.id)}" contenteditable="plaintext-only" role="textbox" aria-label="Texto do segmento" class="text-brand-ink dark:text-brand-ink leading-relaxed whitespace-pre-wrap">${escapeHtml(seg.text)}</p>
+      <div class="speech-block" data-seg-start="${seg.start_time}" data-seg-end="${seg.end_time}">
+        <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+          <button onclick="seekAudio(${seg.start_time})" class="time-chip" title="Ir para ${formatSRTTimeShort(seg.start_time)}">
+            [${formatSRTTimeShort(seg.start_time)}]
+          </button>
+          ${seg.speaker ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${color.bg} ${color.text} ${color.border} border">${escapeHtml(seg.speaker)}</span>` : ''}
         </div>
+        <p data-segment-id="${escapeHtml(seg.id)}" contenteditable="plaintext-only" role="textbox" aria-label="Texto do segmento" class="text-brand-ink dark:text-brand-ink leading-relaxed whitespace-pre-wrap">${escapeHtml(seg.text)}</p>
       </div>
     `;
   }).join('');
+  if (window.lucide) lucide.createIcons();
 }
 
 function copyTranscriptAsMarkdown() {
@@ -1824,10 +1836,162 @@ document.addEventListener('input', (e) => {
   });
 });
 
+// ---------------------------------------------------
+// PLAYER PERSISTENTE — T-29 F3 (Obsidian Wave)
+// Waveform em canvas (sem dados de amplitude reais: a densidade de caracteres
+// por segundo de cada segmento vira a altura da barra — forma estável, sem
+// custo de processamento). Progresso via rAF; clique no canvas busca o trecho.
+// ---------------------------------------------------
+let waveformPeaks = [];
+let waveformRaf = null;
+let playerWired = false;
+
+function computeWaveformPeaks(segments) {
+  if (segments && segments.length) {
+    return segments.map(s => {
+      const dur = Math.max(0.5, (s.end_time || 0) - (s.start_time || 0));
+      const density = (s.text || '').length / dur;
+      return Math.max(0.15, Math.min(1, density / 12));
+    });
+  }
+  // Sem segmentos: pseudo-forma estável (mesmo seed, mesma forma)
+  const n = 48; const peaks = []; let seed = 7;
+  for (let i = 0; i < n; i++) { seed = (seed * 9301 + 49297) % 233280; peaks.push(0.2 + (seed / 233280) * 0.8); }
+  return peaks;
+}
+
+function drawWaveform(progressRatio) {
+  const canvas = document.getElementById('waveform-canvas');
+  if (!canvas || !waveformPeaks.length) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const barW = 3, gap = 2, step = barW + gap;
+  const n = Math.max(1, Math.floor(w / step));
+  const played = Math.round((progressRatio || 0) * n);
+  const mid = h / 2;
+  const isDark = document.documentElement.classList.contains('dark');
+  const playedColor = isDark ? '#00F2FE' : '#00A6B0';
+  const restColor = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(16,21,31,0.15)';
+  ctx.fillStyle = restColor;
+  for (let i = 0; i < n; i++) {
+    const peak = waveformPeaks[Math.floor(i * waveformPeaks.length / n)] || 0.3;
+    const bh = Math.max(3, peak * (h - 6));
+    ctx.fillStyle = i < played ? playedColor : restColor;
+    const x = i * step;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, mid - bh / 2, barW, bh, 1.5);
+    else ctx.rect(x, mid - bh / 2, barW, bh);
+    ctx.fill();
+  }
+}
+
+function updatePlayerTime() {
+  const audio = document.getElementById('audio-player');
+  const el = document.getElementById('player-time');
+  if (!audio || !el) return;
+  const fmt = (s) => {
+    if (!isFinite(s) || s < 0) s = 0;
+    return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+  };
+  el.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+}
+
+function updatePlayIcon() {
+  const audio = document.getElementById('audio-player');
+  const icon = document.getElementById('icon-play-pause');
+  if (!audio || !icon) return;
+  icon.setAttribute('data-lucide', audio.paused ? 'play' : 'pause');
+  if (window.lucide) lucide.createIcons();
+}
+
+function highlightActiveSegment(t) {
+  const blocks = document.querySelectorAll('#transcript-content .speech-block');
+  if (!blocks.length) return;
+  let active = null;
+  for (const b of blocks) {
+    const start = parseFloat(b.dataset.segStart || '0');
+    if (start <= t) active = b; else break;
+  }
+  blocks.forEach(b => b.classList.toggle('seg-active', b === active && t > 0));
+}
+
+function startWaveformLoop() {
+  cancelAnimationFrame(waveformRaf);
+  const tick = () => {
+    const audio = document.getElementById('audio-player');
+    if (audio && audio.duration) {
+      drawWaveform(audio.currentTime / audio.duration);
+      updatePlayerTime();
+      highlightActiveSegment(audio.currentTime);
+    }
+    if (audio && !audio.paused && !audio.ended) waveformRaf = requestAnimationFrame(tick);
+  };
+  waveformRaf = requestAnimationFrame(tick);
+}
+
+function setupPlayer(data) {
+  const audio = document.getElementById('audio-player');
+  if (!audio) return;
+  waveformPeaks = computeWaveformPeaks(data.segments);
+  drawWaveform(0);
+  updatePlayerTime();
+  updatePlayIcon();
+  const rate = document.getElementById('playback-rate');
+  if (rate) audio.playbackRate = parseFloat(rate.value) || 1;
+  if (playerWired) return;
+  playerWired = true;
+  audio.addEventListener('loadedmetadata', () => { updatePlayerTime(); drawWaveform(0); });
+  audio.addEventListener('play', () => { updatePlayIcon(); startWaveformLoop(); });
+  audio.addEventListener('pause', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); });
+  audio.addEventListener('ended', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); drawWaveform(1); highlightActiveSegment(0); });
+  const canvas = document.getElementById('waveform-canvas');
+  if (canvas) canvas.addEventListener('click', (e) => {
+    if (!audio.duration) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * audio.duration;
+    drawWaveform(ratio);
+    updatePlayerTime();
+    highlightActiveSegment(audio.currentTime);
+  });
+  window.addEventListener('resize', () => {
+    const a = document.getElementById('audio-player');
+    drawWaveform(a && a.duration ? a.currentTime / a.duration : 0);
+  });
+}
+
+function togglePlay() {
+  const audio = document.getElementById('audio-player');
+  if (!audio) return;
+  if (audio.paused) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+function skipAudio(seconds) {
+  const audio = document.getElementById('audio-player');
+  if (!audio || !isFinite(audio.duration)) return;
+  audio.currentTime = Math.min(audio.duration, Math.max(0, audio.currentTime + seconds));
+  drawWaveform(audio.currentTime / audio.duration);
+  updatePlayerTime();
+  highlightActiveSegment(audio.currentTime);
+}
+
+function setPlaybackRate(v) {
+  const audio = document.getElementById('audio-player');
+  if (audio) audio.playbackRate = parseFloat(v) || 1;
+}
+
 function seekAudio(seconds) {
   const audio = document.getElementById('audio-player');
   if (audio) {
     audio.currentTime = seconds;
+    drawWaveform(isFinite(audio.duration) && audio.duration ? seconds / audio.duration : 0);
+    highlightActiveSegment(seconds);
     audio.play();
   }
 }

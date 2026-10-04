@@ -67,6 +67,9 @@
     }
     @media (max-width: 1023px) {
       main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+      /* T-29 F3: player fixo no topo enquanto o texto rola (T-12) — a
+         toolbar de busca (z-30) passa por cima dele só ao abrir a pesquisa */
+      #player-bar { position: sticky; top: 0; z-index: 25; }
     }
     #sidebar-theme button[aria-pressed="true"] { background: #2563eb; color: #fff; }
   </style>
@@ -400,9 +403,33 @@
             </button>
           </div>
 
-          <!-- Áudio Player Sincronizado -->
-          <div class="px-4 lg:px-6 py-3 bg-brand-canvas dark:bg-brand-canvas border-b border-brand-line dark:border-brand-line flex items-center space-x-4 shrink-0">
-            <audio id="audio-player" controls class="w-full h-8"></audio>
+          <!-- Player Persistente — T-29 F3: waveform em canvas, controles e
+               velocidade; a barra fica grudada no topo no mobile enquanto o
+               texto rola (T-12: player fixo) -->
+          <div id="player-bar" class="px-4 lg:px-6 py-3 bg-brand-canvas dark:bg-brand-canvas border-b border-brand-line dark:border-brand-line shrink-0">
+            <div class="flex items-center gap-2 sm:gap-3">
+              <div class="flex items-center gap-0.5 shrink-0">
+                <button onclick="skipAudio(-15)" class="player-ctl" title="Voltar 15 segundos" aria-label="Voltar 15 segundos">
+                  <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+                <button id="btn-play-pause" onclick="togglePlay()" class="play-btn" title="Reproduzir ou pausar" aria-label="Reproduzir ou pausar">
+                  <i data-lucide="play" class="w-5 h-5" id="icon-play-pause"></i>
+                </button>
+                <button onclick="skipAudio(15)" class="player-ctl" title="Avançar 15 segundos" aria-label="Avançar 15 segundos">
+                  <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                </button>
+              </div>
+              <span id="player-time" class="hidden min-[420px]:inline font-mono text-[11px] font-bold text-brand-copy dark:text-brand-copy whitespace-nowrap tabular-nums select-none">0:00 / 0:00</span>
+              <canvas id="waveform-canvas" class="flex-1 h-11 min-w-0 cursor-pointer" title="Clique em um ponto para ir ao trecho"></canvas>
+              <select id="playback-rate" onchange="setPlaybackRate(this.value)" class="shrink-0 bg-brand-raised dark:bg-brand-raised border border-brand-line dark:border-brand-line text-brand-copy dark:text-brand-copy text-[11px] font-bold rounded-lg px-1.5 py-1.5 outline-none cursor-pointer" title="Velocidade de reprodução">
+                <option value="0.75">0.75x</option>
+                <option value="1" selected>1x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x</option>
+              </select>
+            </div>
+            <audio id="audio-player" class="hidden"></audio>
           </div>
 
           <!-- Barra de Modos de Leitura e Controles de Conforto (T-34: enxuta no
@@ -1551,6 +1578,6 @@
   </div>
 
   <script src="/languages.js"></script>
-  <script src="app.js?v=3.15.0"></script>
+  <script src="app.js?v=3.16.0"></script>
 </body>
 </html>

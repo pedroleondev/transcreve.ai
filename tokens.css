@@ -134,3 +134,64 @@
 .chip-action { font-size: 0.75rem; font-weight: 700; color: rgb(var(--accent)); }
 .chip-action:hover { text-decoration: underline; }
 
+/* ==========================================================================
+   Átomos F3 (T-29) — Player persistente, blocos de fala e abas de modo
+   ========================================================================== */
+
+/* Botão play principal — ciano com halo luminescente (o 1 glow da viewport) */
+.play-btn {
+  width: 2.5rem; height: 2.5rem; border-radius: 9999px; flex-shrink: 0;
+  background: rgb(var(--accent)); color: #06080F;
+  display: flex; align-items: center; justify-content: center;
+}
+.play-btn:hover { filter: brightness(0.92); }
+.play-btn:active { transform: scale(0.94); }
+:root.dark .play-btn { box-shadow: var(--glow-cyan); }
+
+/* Controles secundários do player (±15s etc.) */
+.player-ctl {
+  width: 2rem; height: 2rem; border-radius: 0.5rem; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: rgb(var(--muted)); transition: color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.player-ctl:hover { color: rgb(var(--ink)); background: rgb(var(--raised)); }
+.player-ctl:active { transform: scale(0.93); }
+
+/* Blocos de fala — cards de segmento com elevação sutil */
+.speech-block {
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 0.75rem;
+  padding: 0.875rem;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  scroll-margin-top: 7rem; /* não colar no topo/player ao navegar por busca */
+}
+.speech-block:hover { border-color: rgba(0, 242, 254, 0.25); }
+:root:not(.dark) .speech-block:hover { border-color: rgba(0, 166, 176, 0.4); }
+.speech-block.seg-active { border-color: rgba(0, 242, 254, 0.55); }
+:root.dark .speech-block.seg-active { box-shadow: var(--glow-cyan); }
+:root:not(.dark) .speech-block.seg-active { border-color: rgb(var(--accent)); }
+
+/* Chip de tempo — mono, ciano a 10%, borda a 25% (clicável: pula o áudio) */
+.time-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700;
+  padding: 0.125rem 0.5rem; border-radius: 0.375rem;
+  background: rgba(0, 242, 254, 0.1);
+  color: rgb(var(--accent));
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  flex-shrink: 0;
+  transition: background 0.12s ease;
+}
+.time-chip:hover { background: rgba(0, 242, 254, 0.22); }
+:root:not(.dark) .time-chip { background: rgba(0, 166, 176, 0.1); border-color: rgba(0, 166, 176, 0.3); }
+
+/* Aba de modo ativa (Transcrição/Leitura/Resumo IA) */
+.mode-tab-active {
+  background: rgb(var(--surface)) !important;
+  color: rgb(var(--ink)) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+
