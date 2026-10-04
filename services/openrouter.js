@@ -227,6 +227,11 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
       formData.append('model', model);
       if (!autoDetect) formData.append('language', lang);
       formData.append('response_format', 'verbose_json');
+      // Karaoke (precisão real): pede também timestamp por PALAVRA — mesmo
+      // preço por minuto da API, sem custo extra. Sem suporte do modelo, a
+      // resposta simplesmente não vem com `words` e o frontend interpola.
+      formData.append('timestamp_granularities[]', 'segment');
+      formData.append('timestamp_granularities[]', 'word');
       // temperature 0 + prompt reduzem drasticamente alucinações do Whisper em silêncio/ruído
       formData.append('temperature', '0');
       if (promptText) formData.append('prompt', promptText);
@@ -254,6 +259,26 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
           end: seg.end !== undefined ? parseFloat(seg.end) : (idx + 1) * 5,
           text: seg.text ? seg.text.trim() : ''
         }));
+
+        // Karaoke: associa as palavras com tempo real a seus segmentos (cada
+        // palavra vai a exatamente um segmento, na ordem). Se o modelo não
+        // devolveu `words`, os segmentos ficam sem `words` e o frontend cai
+        // na interpolação.
+        const rawWords = Array.isArray(data.words) ? data.words : [];
+        if (rawWords.length && segments.length) {
+          let wi = 0;
+          for (const seg of segments) {
+            const ws = [];
+            while (wi < rawWords.length && (rawWords[wi].start || 0) < seg.end) {
+              const rw = rawWords[wi++];
+              const wStart = parseFloat(rw.start) || 0;
+              if (wStart >= seg.start - 0.05) {
+                ws.push({ w: String(rw.word || '').trim(), s: wStart, e: parseFloat(rw.end) || wStart });
+              }
+            }
+            if (ws.length) seg.words = ws;
+          }
+        }
 
         if (segments.length === 0 && data.text) {
           segments.push({

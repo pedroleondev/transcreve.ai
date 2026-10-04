@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS segments (
   speaker TEXT,
   start_time DOUBLE PRECISION NOT NULL,
   end_time DOUBLE PRECISION NOT NULL,
-  text TEXT NOT NULL
+  text TEXT NOT NULL,
+  words_json TEXT
 );
 CREATE TABLE IF NOT EXISTS transcription_chunks (
   id TEXT PRIMARY KEY,

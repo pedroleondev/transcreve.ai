@@ -142,7 +142,12 @@ async function rescueChunk(task, chunk, firstResult) {
       });
       model = r.model_used || model;
       for (const s of r.segments || []) {
-        merged.push({ speaker: s.speaker, start: s.start + p.offset, end: s.end + p.offset, text: s.text });
+        merged.push({
+          speaker: s.speaker, start: s.start + p.offset, end: s.end + p.offset, text: s.text,
+          words: Array.isArray(s.words) && s.words.length
+            ? s.words.map(w => ({ w: w.w, s: w.s + p.offset, e: w.e + p.offset }))
+            : undefined
+        });
       }
     }
     const before = textDensity(firstResult.segments || [], chunk.duration_sec);
@@ -166,7 +171,9 @@ async function transcribeOneChunk(task, chunk) {
       durationHint: chunk.duration_sec
     });
     let segments = (result.segments || []).map(s => ({
-      speaker: s.speaker, start: s.start, end: s.end, text: s.text
+      speaker: s.speaker, start: s.start, end: s.end, text: s.text,
+      // karaoke: tempos reais por palavra seguem com o chunk (assemble soma o offset)
+      words: Array.isArray(s.words) && s.words.length ? s.words : undefined
     }));
 
     // Guarda de qualidade: pouco texto num bloco longo com som = colapso do modelo?
@@ -265,7 +272,16 @@ async function assemble(task) {
     if (c.status === 'done') {
       const segs = JSON.parse(c.segments_json || '[]');
       for (const s of segs) {
-        segments.push({ speaker: s.speaker, start: s.start + c.offset_sec, end: s.end + c.offset_sec, text: s.text });
+        segments.push({
+          speaker: s.speaker,
+          start: s.start + c.offset_sec,
+          end: s.end + c.offset_sec,
+          text: s.text,
+          // karaoke: palavras com tempo real também deslocam com o chunk
+          words: Array.isArray(s.words) && s.words.length
+            ? s.words.map(w => ({ w: w.w, s: w.s + c.offset_sec, e: w.e + c.offset_sec }))
+            : undefined
+        });
       }
       if (c.model_used) modelUsed = c.model_used;
     } else {
@@ -325,8 +341,9 @@ async function processJob(task) {
   await runAsync(`DELETE FROM segments WHERE transcription_id = ?`, [task.id]);
   for (const seg of segments) {
     await runAsync(
-      `INSERT INTO segments (id, transcription_id, speaker, start_time, end_time, text) VALUES (?, ?, ?, ?, ?, ?)`,
-      [uuidv4(), task.id, seg.speaker || 'Locutor 1', seg.start, seg.end, seg.text]
+      `INSERT INTO segments (id, transcription_id, speaker, start_time, end_time, text, words_json) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), task.id, seg.speaker || 'Locutor 1', seg.start, seg.end, seg.text,
+        Array.isArray(seg.words) && seg.words.length ? JSON.stringify(seg.words) : null]
     );
   }
 

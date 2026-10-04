@@ -311,9 +311,19 @@ async function initDatabaseSqlite() {
         start_time REAL NOT NULL,
         end_time REAL NOT NULL,
         text TEXT NOT NULL,
+        words_json TEXT,
         FOREIGN KEY(transcription_id) REFERENCES transcriptions(id) ON DELETE CASCADE
       )
     `);
+
+    // Karaoke: coluna words_json em bancos SQLite criados antes da feature
+    try {
+      const segCols = await allAsync(`PRAGMA table_info(segments)`);
+      if (segCols && segCols.length && !segCols.some(c => c.name === 'words_json')) {
+        console.log('Adicionando coluna "words_json" na tabela "segments"...');
+        await runAsync(`ALTER TABLE segments ADD COLUMN words_json TEXT`);
+      }
+    } catch (_) { /* driver postgres: schema já completo no PG_DDL */ }
 
     // 7. Blocos de audio de uma transcricao longa: cada bloco e a unidade de
     //    trabalho persistida, o que permite paralelismo, retry e retomada.

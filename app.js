@@ -2002,14 +2002,37 @@ function resetKaraoke() {
 
 function buildKaraokeHtml(group) {
   return group.map(seg => {
+    // Tempos reais por palavra (Whisper timestamp_granularities[]=word) quando
+    // existem; sem eles, interpolação ponderada pelo tamanho da palavra
+    // (palavras longas falam mais devagar) dentro do segmento.
+    let timed = null;
+    try {
+      const raw = typeof seg.words_json === 'string' ? JSON.parse(seg.words_json || 'null') : seg.words;
+      if (Array.isArray(raw) && raw.length) timed = raw;
+    } catch (_) { /* fallback abaixo */ }
+    if (timed) {
+      return timed.map(w => {
+        const ws = parseFloat(w.s) || 0;
+        const we = parseFloat(w.e) || ws;
+        const clean = String(w.w || '').trim();
+        if (!clean) return '';
+        return `<span class="cc-word" data-ws="${ws.toFixed(3)}" data-we="${we.toFixed(3)}">${escapeHtml(clean)}</span>`;
+      }).filter(Boolean).join(' ');
+    }
+
     const words = (seg.text || '').trim().split(/\s+/).filter(Boolean);
     if (!words.length) return '';
     const start = parseFloat(seg.start_time) || 0;
     const end = parseFloat(seg.end_time) || 0;
     const dur = Math.max(0.2, end - start);
+    // Peso = caracteres + 2 (mínimo para monossílabos não virarem estalos)
+    const weights = words.map(w => w.length + 2);
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    let acc = 0;
     return words.map((w, i) => {
-      const ws = start + dur * (i / words.length);
-      const we = start + dur * ((i + 1) / words.length);
+      const ws = start + dur * (acc / totalW);
+      acc += weights[i];
+      const we = start + dur * (acc / totalW);
       return `<span class="cc-word" data-ws="${ws.toFixed(3)}" data-we="${we.toFixed(3)}">${escapeHtml(w)}</span>`;
     }).join(' ');
   }).join(' ');
