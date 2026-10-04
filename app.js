@@ -765,16 +765,16 @@ function renderProjectsSidebar() {
   if (!container) return;
 
   container.innerHTML = state.projects.map(p => `
-    <div class="group/project flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${state.currentProjectId === p.id ? 'bg-slate-800 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'} transition cursor-pointer">
+    <div class="group/project flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${state.currentProjectId === p.id ? 'bg-brand-raised dark:bg-brand-raised text-brand-accent dark:text-brand-accent' : 'text-brand-muted dark:text-brand-muted hover:bg-brand-raised dark:hover:bg-brand-raised hover:text-brand-ink dark:hover:text-brand-ink'} transition cursor-pointer">
       <button onclick="filterByProject('${p.id}')" class="flex items-center space-x-2.5 truncate flex-1 text-left">
-        <i data-lucide="folder" class="w-4 h-4 text-slate-400 shrink-0"></i>
+        <i data-lucide="folder" class="w-4 h-4 text-brand-muted dark:text-brand-muted shrink-0"></i>
         <span class="truncate">${escapeHtml(p.name)}</span>
       </button>
       <div class="flex items-center space-x-1">
-        <button onclick="openEditProjectModal('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-slate-400 hover:text-blue-400 p-1 transition" title="Editar Projeto">
+        <button onclick="openEditProjectModal('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-brand-muted dark:text-brand-muted hover:text-brand-accent dark:hover:text-brand-accent p-1 transition" title="Editar Projeto">
           <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
         </button>
-        <button onclick="deleteProject('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-slate-400 hover:text-red-400 p-1 transition" title="Excluir Projeto">
+        <button onclick="deleteProject('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-brand-muted dark:text-brand-muted hover:text-red-400 p-1 transition" title="Excluir Projeto">
           <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
         </button>
       </div>
@@ -3036,7 +3036,7 @@ function renderApiKeyManagedByAdmin() {
   const text = document.getElementById('apikey-state-text');
   const masked = document.getElementById('apikey-masked');
   if (!dot || !text || !masked) return;
-  dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+  dot.className = 'w-2 h-2 rounded-full bg-brand-muted dark:bg-brand-muted';
   text.textContent = 'gerenciada pelo admin';
   masked.textContent = 'Chave do sistema em uso — fale com o administrador para trocar';
   const btn = document.getElementById('apikey-config-btn');
@@ -3062,7 +3062,7 @@ function renderApiKeyState(status) {
     dot.className = 'w-2 h-2 rounded-full bg-red-500';
     text.textContent = 'inválida';
   } else {
-    dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+    dot.className = 'w-2 h-2 rounded-full bg-brand-muted dark:bg-brand-muted';
     text.textContent = 'não testada';
   }
 }

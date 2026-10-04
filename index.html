@@ -15,7 +15,7 @@
     [data-theme-option] { min-height: 36px; padding: 0.375rem 0.625rem; border-radius: 0.5rem; color: inherit; }
     [data-theme-option][aria-pressed="true"] { background: rgb(var(--surface)); color: rgb(var(--accent)); box-shadow: 0 1px 3px #0003; font-weight: 800; }
     [data-theme-option]:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-    #theme-switcher { display: flex; gap: 0.25rem; padding: 0.25rem; border: 1px solid #ffffff66; border-radius: 0.75rem; background: #0002; }
+    #theme-switcher { display: flex; gap: 0.25rem; padding: 0.25rem; border: 1px solid rgb(var(--line)); border-radius: 0.75rem; background: rgb(var(--raised)); }
     #theme-switcher button { display: inline-flex; align-items: center; gap: 0.25rem; }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; } }
 
@@ -174,9 +174,9 @@
 <body class="h-screen flex flex-col overflow-hidden bg-brand-canvas dark:bg-brand-canvas text-brand-ink dark:text-brand-ink transition-colors duration-150">
 
   <!-- TOP HEADER -->
-  <header id="top-header" class="bg-[#0066FF] text-white min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 z-20 shrink-0 shadow-md">
+  <header id="top-header" class="bg-brand-canvas dark:bg-brand-canvas text-brand-ink dark:text-brand-ink border-b border-brand-line dark:border-brand-line min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 z-20 shrink-0">
     <div class="flex items-center space-x-6">
-      <button onclick="openSidebar()" class="lg:hidden touch-target -ml-1 rounded-lg hover:bg-white/10 transition shrink-0" aria-label="Abrir menu de navegação">
+      <button onclick="openSidebar()" class="lg:hidden touch-target -ml-1 rounded-lg text-brand-ink dark:text-brand-ink hover:bg-brand-raised dark:hover:bg-brand-raised transition shrink-0" aria-label="Abrir menu de navegação">
         <i data-lucide="menu" class="w-5 h-5"></i>
       </button>
       <a href="#" onclick="showView('dashboard')" class="flex items-center space-x-2 font-extrabold text-xl tracking-tight">
@@ -185,10 +185,10 @@
         </div>
         <span>Falou.ai</span>
       </a>
-      <nav class="hidden md:flex space-x-4 text-xs font-bold tracking-wider uppercase opacity-90">
-        <a href="#" onclick="openPlansModal()" class="hover:opacity-100 transition">Preços</a>
-        <a href="#" onclick="openFaqsModal()" class="hover:opacity-100 transition">FAQs</a>
-        <a href="#" onclick="openBlogModal()" class="hover:opacity-100 transition">Blog</a>
+      <nav class="hidden md:flex space-x-4 text-xs font-bold tracking-wider uppercase text-brand-muted dark:text-brand-muted">
+        <a href="#" onclick="openPlansModal()" class="hover:text-brand-accent dark:hover:text-brand-accent transition">Preços</a>
+        <a href="#" onclick="openFaqsModal()" class="hover:text-brand-accent dark:hover:text-brand-accent transition">FAQs</a>
+        <a href="#" onclick="openBlogModal()" class="hover:text-brand-accent dark:hover:text-brand-accent transition">Blog</a>
       </nav>
     </div>
 
@@ -199,7 +199,7 @@
     </div>
 
     <div class="flex items-center gap-2 min-w-0">
-      <div class="flex items-center space-x-1 text-xs font-semibold bg-blue-700/60 px-2.5 py-1 rounded-md">
+      <div class="flex items-center space-x-1 text-xs font-semibold bg-brand-raised dark:bg-brand-raised border border-brand-line dark:border-brand-line text-brand-muted dark:text-brand-muted px-2.5 py-1 rounded-md">
         <span>🇧🇷</span>
         <span>PT</span>
       </div>
@@ -207,7 +207,7 @@
       <!-- Menu do Usuário / Admin — T-29 F3: abre por clique/toque (o
            group-hover puro não funciona em touch); hover continua no desktop -->
       <div class="relative group">
-        <button id="user-menu-btn" onclick="toggleUserMenu(event)" class="flex items-center space-x-2 text-xs font-medium bg-brand-surface/10 dark:bg-brand-surface/10 hover:bg-brand-surface/20 dark:hover:bg-brand-surface/20 px-3 py-1.5 rounded-full transition">
+        <button id="user-menu-btn" onclick="toggleUserMenu(event)" class="flex items-center space-x-2 text-xs font-medium text-brand-ink dark:text-brand-ink bg-brand-raised dark:bg-brand-raised hover:bg-brand-line dark:hover:bg-brand-line px-3 py-1.5 rounded-full transition">
           <i data-lucide="user" class="w-4 h-4"></i>
           <span id="current-user-email" class="hidden lg:inline">pedro.leon23@gmail.com</span>
           <i data-lucide="chevron-down" class="w-3 h-3"></i>
@@ -217,14 +217,14 @@
           <div class="p-3 border-b border-brand-line dark:border-brand-line bg-brand-canvas dark:bg-brand-canvas">
             <p class="font-bold text-xs text-brand-muted dark:text-brand-muted uppercase">Sessão Atual</p>
             <p id="user-dropdown-name" class="font-semibold text-brand-ink dark:text-brand-ink text-sm truncate">Pedro León</p>
-            <span id="user-dropdown-role" class="inline-block mt-1 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">Admin SaaS</span>
+            <span id="user-dropdown-role" class="inline-block mt-1 bg-brand-accentSoft dark:bg-brand-accentSoft text-brand-accent dark:text-brand-accent text-[10px] font-bold px-2 py-0.5 rounded border border-brand-line dark:border-brand-line">Admin SaaS</span>
           </div>
 
           <a href="#" onclick="showView('account')" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-brand-copy dark:text-brand-copy border-b border-brand-line dark:border-brand-line">
             <i data-lucide="user-round" class="w-4 h-4"></i>
             <span>Minha Conta</span>
           </a>
-          <a href="#" onclick="showView('admin')" id="admin-menu-link" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-blue-600 dark:text-blue-300 font-semibold border-b border-brand-line dark:border-brand-line">
+          <a href="#" onclick="showView('admin')" id="admin-menu-link" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-brand-canvas dark:hover:bg-brand-canvas text-brand-accent dark:text-brand-accent font-semibold border-b border-brand-line dark:border-brand-line">
             <i data-lucide="settings" class="w-4 h-4"></i>
             <span>Painel SaaS Admin</span>
           </a>
@@ -244,19 +244,19 @@
   <div class="flex flex-1 overflow-hidden relative">
 
     <!-- SIDEBAR (drawer off-canvas no mobile, fixa no desktop) -->
-    <aside id="app-sidebar" class="fixed lg:static inset-y-0 left-0 z-40 w-64 bg-slate-900 text-slate-200 flex flex-col shrink-0 border-r border-slate-800 transform -translate-x-full lg:translate-x-0 transition-transform duration-200 max-h-screen lg:max-h-none">
+    <aside id="app-sidebar" class="fixed lg:static inset-y-0 left-0 z-40 w-64 bg-brand-canvas dark:bg-brand-canvas text-brand-copy dark:text-brand-copy flex flex-col shrink-0 border-r border-brand-line dark:border-brand-line transform -translate-x-full lg:translate-x-0 transition-transform duration-200 max-h-screen lg:max-h-none">
       <!-- Chave de API (estado + acesso rapido) -->
-      <div class="p-4 border-b border-slate-800">
-        <div class="bg-slate-800/80 rounded-xl p-3.5 border border-slate-700/60 shadow-inner">
-          <div class="flex justify-between items-center text-xs font-semibold text-slate-300 mb-1">
+      <div class="p-4 border-b border-brand-line dark:border-brand-line">
+        <div class="bg-brand-raised dark:bg-brand-raised rounded-xl p-3.5 border border-brand-line dark:border-brand-line shadow-inner">
+          <div class="flex justify-between items-center text-xs font-semibold text-brand-copy dark:text-brand-copy mb-1">
             <span>Chave OpenRouter</span>
-            <span id="apikey-state" class="flex items-center gap-1.5 font-bold text-slate-400">
-              <span id="apikey-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="apikey-state" class="flex items-center gap-1.5 font-bold text-brand-muted dark:text-brand-muted">
+              <span id="apikey-dot" class="w-2 h-2 rounded-full bg-brand-muted dark:bg-brand-muted"></span>
               <span id="apikey-state-text">verificando…</span>
             </span>
           </div>
-          <p id="apikey-masked" class="font-mono text-[11px] text-slate-500 truncate mb-3">—</p>
-          <button id="apikey-config-btn" onclick="openApiKeyModal()" class="w-full bg-slate-100 hover:bg-white text-slate-900 font-bold text-xs py-2 rounded-lg transition shadow-sm tracking-wide flex items-center justify-center gap-1.5">
+          <p id="apikey-masked" class="font-mono text-[11px] text-brand-muted dark:text-brand-muted truncate mb-3">—</p>
+          <button id="apikey-config-btn" onclick="openApiKeyModal()" class="w-full bg-brand-accent hover:opacity-90 text-[#06080F] font-bold text-xs py-2 rounded-lg transition shadow-sm tracking-wide flex items-center justify-center gap-1.5">
             <i data-lucide="key-round" class="w-3.5 h-3.5"></i> CONFIGURAR CHAVE
           </button>
         </div>
@@ -265,14 +265,14 @@
       <!-- Atalhos & Projetos -->
       <div class="flex-1 overflow-y-auto p-3 space-y-6 custom-scrollbar">
         <div>
-          <h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-3">Atalhos</h4>
+          <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-2 px-3">Atalhos</h4>
           <nav class="space-y-1">
-            <button onclick="filterByProject(null)" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-200 hover:bg-slate-800 transition active-shortcut">
-              <i data-lucide="layout-grid" class="w-4 h-4 text-blue-400"></i>
+            <button onclick="filterByProject(null)" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-brand-ink dark:text-brand-ink hover:bg-brand-raised dark:hover:bg-brand-raised transition active-shortcut">
+              <i data-lucide="layout-grid" class="w-4 h-4 text-brand-accent dark:text-brand-accent"></i>
               <span>Arquivos recentes</span>
             </button>
-            <button onclick="filterByProject('uncategorized')" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition">
-              <i data-lucide="file-text" class="w-4 h-4 text-slate-400"></i>
+            <button onclick="filterByProject('uncategorized')" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-brand-muted dark:text-brand-muted hover:bg-brand-raised dark:hover:bg-brand-raised hover:text-brand-ink dark:hover:text-brand-ink transition">
+              <i data-lucide="file-text" class="w-4 h-4 text-brand-muted dark:text-brand-muted"></i>
               <span>Sem projeto</span>
             </button>
           </nav>
@@ -280,8 +280,8 @@
 
         <div>
           <div class="flex items-center justify-between px-3 mb-2">
-            <h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Projetos</h4>
-            <button onclick="openNewProjectModal()" class="text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center space-x-1" title="Criar Novo Projeto">
+            <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted">Projetos</h4>
+            <button onclick="openNewProjectModal()" class="text-brand-accent dark:text-brand-accent hover:opacity-75 text-xs font-bold flex items-center space-x-1" title="Criar Novo Projeto">
               <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -292,20 +292,20 @@
       </div>
 
       <!-- Rodapé Sidebar Admin Shortcut -->
-      <div class="p-3 border-t border-slate-800 space-y-3">
+      <div class="p-3 border-t border-brand-line dark:border-brand-line space-y-3">
         <!-- Tema (só no drawer mobile — no desktop o seletor fica no header) -->
-        <div id="sidebar-theme" class="md:hidden grid grid-cols-3 gap-1 bg-slate-800/80 p-1 rounded-lg" role="group" aria-label="Tema da interface">
-          <button type="button" data-theme-option="light" onclick="setTheme('light')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="sun" class="w-3.5 h-3.5"></i>Claro</button>
-          <button type="button" data-theme-option="dark" onclick="setTheme('dark')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="moon" class="w-3.5 h-3.5"></i>Escuro</button>
-          <button type="button" data-theme-option="system" onclick="setTheme('system')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-slate-300 transition"><i data-lucide="monitor" class="w-3.5 h-3.5"></i>Sistema</button>
+        <div id="sidebar-theme" class="md:hidden grid grid-cols-3 gap-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg" role="group" aria-label="Tema da interface">
+          <button type="button" data-theme-option="light" onclick="setTheme('light')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-brand-muted dark:text-brand-muted transition"><i data-lucide="sun" class="w-3.5 h-3.5"></i>Claro</button>
+          <button type="button" data-theme-option="dark" onclick="setTheme('dark')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-brand-muted dark:text-brand-muted transition"><i data-lucide="moon" class="w-3.5 h-3.5"></i>Escuro</button>
+          <button type="button" data-theme-option="system" onclick="setTheme('system')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-brand-muted dark:text-brand-muted transition"><i data-lucide="monitor" class="w-3.5 h-3.5"></i>Sistema</button>
         </div>
-        <button onclick="showView('admin')" class="w-full flex items-center justify-center space-x-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-bold text-xs py-2.5 rounded-lg border border-blue-500/30 transition">
+        <button onclick="showView('admin')" class="w-full flex items-center justify-center space-x-2 bg-brand-accent/10 dark:bg-brand-accent/10 hover:bg-brand-accent/20 dark:hover:bg-brand-accent/20 text-brand-accent dark:text-brand-accent font-bold text-xs py-2.5 rounded-lg border border-brand-line dark:border-brand-line transition">
           <i data-lucide="shield" class="w-4 h-4"></i>
           <span>PAINEL SAAS ADMIN</span>
         </button>
       </div>
     </aside>
-    <div id="sidebar-overlay" onclick="closeSidebar()" class="hidden fixed inset-0 bg-slate-900/60 z-30 lg:hidden"></div>
+    <div id="sidebar-overlay" onclick="closeSidebar()" class="hidden fixed inset-0 bg-black/60 z-30 lg:hidden"></div>
 
     <!-- ÁREA DE CONTEÚDO PRINCIPAL -->
     <main class="flex-1 flex flex-col bg-brand-surface dark:bg-brand-surface text-brand-ink dark:text-brand-ink overflow-hidden">
