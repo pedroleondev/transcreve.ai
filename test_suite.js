@@ -355,6 +355,10 @@ async function runTestSuite() {
       res.end('not found');
     }
   });
+  // IDs de transcrições criadas pela suíte — deletadas no final para não
+  // poluir o dashboard do admin (acumulavam ~4 arquivos por execução)
+  const createdTranscriptionIds = [];
+
   await new Promise(r => mockServer.listen(8471, '127.0.0.1', r));
 
   try {
@@ -368,6 +372,7 @@ async function runTestSuite() {
     assert(okRes.status === 202 && okData.data && okData.data[0] && okData.data[0].status === 'pending',
       `POST /api/transcribe/url enfileirou o link (status: ${okRes.status})`);
     if (okData.data && okData.data[0]) {
+      createdTranscriptionIds.push(okData.data[0].id);
       const finalStatus = await waitForCompletion(okData.data[0].id, 120000);
       assert(finalStatus === 'completed', `Transcrição por URL concluiu (status: ${finalStatus})`);
       const row = await getAsync(`SELECT file_name, raw_text FROM transcriptions WHERE id = ?`, [okData.data[0].id]);
@@ -385,6 +390,7 @@ async function runTestSuite() {
     assert(failRes.status === 202 && failData.data && failData.data[0] && failData.data[0].status === 'failed' && failData.data[0].error_message,
       `Falha de download virou linha 'failed' com error_message (status: ${failRes.status})`);
     if (failData.data && failData.data[0]) {
+      createdTranscriptionIds.push(failData.data[0].id);
       const frow = await getAsync(`SELECT status, error_message FROM transcriptions WHERE id = ?`, [failData.data[0].id]);
       assert(frow && frow.status === 'failed' && /404/.test(frow.error_message || ''),
         `error_message persiste no banco com a causa (${frow && frow.error_message})`);
@@ -514,8 +520,6 @@ async function runTestSuite() {
     { mode: 'pro', label: 'Nível 2 - Pro' },
     { mode: 'max', label: 'Nível 3 - Max' }
   ];
-
-  const createdTranscriptionIds = [];
 
   for (const m of modes) {
     try {
@@ -914,6 +918,19 @@ async function runTestSuite() {
   try {
     await runAsync(`DELETE FROM users WHERE email = 'suite-user@test.local'`);
   } catch (e) { /* usuário já removido ou ausente */ }
+
+  // Limpar transcrições criadas pela suíte (dashboard do admin fica limpo)
+  for (const tid of createdTranscriptionIds) {
+    try {
+      await fetch(`${BASE_URL}/api/transcriptions/${tid}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+    } catch (_) { /* melhor esforço */ }
+  }
+  if (createdTranscriptionIds.length) {
+    console.log(`🧹 Suíte removeu ${createdTranscriptionIds.length} transcrição(ões) de teste.`);
+  }
 
   console.log('\n=======================================================');
   console.log(`📊 RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`);

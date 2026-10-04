@@ -733,6 +733,21 @@ function renderProjectsSidebar() {
 // HELPERS DE UI — T-29 F2 (Obsidian Wave)
 // uiToast: notificações (ex-alert) · uiPrompt: diálogo de entrada (ex-prompt)
 // ---------------------------------------------------
+// T-29 F3: menu do usuário abre por clique/toque (group-hover não existe em
+// touch); fecha ao clicar fora ou em um item do menu.
+function toggleUserMenu(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('user-menu-panel');
+  if (panel) panel.classList.toggle('hidden');
+}
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('user-menu-panel');
+  if (panel && !panel.classList.contains('hidden') &&
+      !e.target.closest('#user-menu-panel') && !e.target.closest('#user-menu-btn')) {
+    panel.classList.add('hidden');
+  }
+});
+
 function uiToast(message, type) {
   if (typeof document === 'undefined' || !document.body) return;
   let host = document.getElementById('ui-toast-host');
