@@ -666,18 +666,43 @@ function closeSidebar() {
 
 // Busca em Tempo Real (tabela no desktop + cards no mobile)
 function handleSearch() {
-  const query = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+  const input = document.getElementById('search-input');
+  const query = (input?.value || '').toLowerCase().trim();
   const rows = document.querySelectorAll('#transcriptions-tbody tr');
   const cards = document.querySelectorAll('#transcriptions-cards .transcription-card');
 
+  let visible = 0;
   rows.forEach(row => {
     const text = row.innerText.toLowerCase();
-    row.style.display = (!query || text.includes(query)) ? '' : 'none';
+    const show = !query || text.includes(query);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
   });
   cards.forEach(card => {
     const text = card.innerText.toLowerCase();
-    card.style.display = (!query || text.includes(query)) ? '' : 'none';
+    const show = !query || text.includes(query);
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
   });
+
+  // Feedback explícito quando a busca esconde tudo — antes a tabela ficava
+  // em branco sem explicação (usuário achava que os arquivos tinham sumido).
+  const noResults = document.getElementById('search-no-results');
+  if (noResults) {
+    const empty = query && visible === 0;
+    noResults.classList.toggle('hidden', !empty);
+    if (empty) {
+      const txt = document.getElementById('search-no-results-text');
+      if (txt) txt.innerText = `Nenhum arquivo contém "${query}"`;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+// Mobile: rola a tela de detalhes até o painel de ações (fica depois do texto)
+function jumpToDetailActions() {
+  const panel = document.getElementById('detail-actions-panel');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---------------------------------------------------
@@ -1333,6 +1358,12 @@ async function openTranscriptionDetail(id) {
 
     renderCurrentTranscript();
     showView('details');
+    // Mobile: abrir um arquivo tem que mostrar o topo — nome, player e o
+    // início da transcrição. Antes a view abria na posição de scroll anterior
+    // e, com o painel de ações antes do miolo, o usuário via só "PROJETO /
+    // EXPORTAR" e achava que a tela tinha ficado em branco.
+    const view = document.getElementById('view-details');
+    if (view) view.scrollTo({ top: 0, behavior: 'auto' });
   } catch (e) {
     uiToast('Erro ao carregar detalhes: ' + e.message);
   }

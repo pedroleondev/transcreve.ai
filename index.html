@@ -323,7 +323,7 @@
             <!-- Busca -->
             <div class="relative flex-1 min-w-[140px] lg:flex-none lg:min-w-0">
               <i data-lucide="search" class="w-4 h-4 text-brand-muted dark:text-brand-muted absolute left-3 top-3"></i>
-              <input type="text" id="search-input" onkeyup="handleSearch()" placeholder="Buscar arquivos..." class="pl-9 pr-4 py-2 bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 transition">
+              <input type="text" id="search-input" onkeyup="handleSearch()" placeholder="Buscar arquivos..." autocomplete="off" spellcheck="false" class="pl-9 pr-4 py-2 bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink placeholder:text-brand-muted dark:placeholder:text-brand-muted rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 transition">
             </div>
 
             <!-- Gravação direta via Microfone -->
@@ -369,6 +369,13 @@
           </div>
           <!-- Lista em Cards (celular < md) — renderizada via app.js -->
           <div id="transcriptions-cards" class="md:hidden flex-1 overflow-y-auto divide-y divide-brand-line dark:divide-brand-line"></div>
+          <!-- Feedback quando a busca esconde tudo (antes: tabela ficava em
+               branco sem explicação — parecia "lista sumiu") -->
+          <div id="search-no-results" class="hidden p-8 text-center">
+            <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-2 text-brand-muted dark:text-brand-muted opacity-50"></i>
+            <p id="search-no-results-text" class="text-sm font-bold text-brand-copy dark:text-brand-copy">Nenhum resultado</p>
+            <p class="text-xs text-brand-muted dark:text-brand-muted mt-1">A busca filtra os arquivos já carregados. Limpe o campo para ver tudo de novo.</p>
+          </div>
         </div>
       </section>
 
@@ -502,12 +509,19 @@
             <div id="transcript-content" contenteditable="false" class="max-w-prose mx-auto bg-brand-surface dark:bg-brand-surface p-4 sm:p-8 rounded-2xl shadow-sm border border-brand-line/80 dark:border-brand-line/80 leading-relaxed text-sm text-brand-ink dark:text-brand-ink focus:outline-none">
               <!-- Renderizado via app.js -->
             </div>
+            <!-- Atalho mobile para o painel de ações (fica depois do texto no empilhamento) -->
+            <button onclick="jumpToDetailActions()" class="lg:hidden w-full mt-4 mb-2 flex items-center justify-center gap-2 py-3 rounded-xl border border-brand-line dark:border-brand-line text-brand-copy dark:text-brand-copy font-bold text-xs uppercase tracking-wide bg-brand-raised/60 dark:bg-brand-raised/60 active:scale-[0.98] transition">
+              <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+              <span>Recursos &amp; IA · Exportar · Projeto</span>
+            </button>
           </div>
         </div>
 
-        <!-- Painel Lateral de Ações & IA — T-34: no mobile (<1024px) aparece
-             ANTES do miolo (ordem de empilhamento); desktop mantém à direita -->
-        <div class="order-first lg:order-none lg:w-80 bg-brand-canvas dark:bg-brand-canvas flex flex-col p-4 lg:p-5 lg:overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-brand-line dark:border-brand-line shrink-0 space-y-6">
+        <!-- Painel Lateral de Ações & IA — no mobile (<1024px) fica DEPOIS do
+             miolo: abrir um arquivo tem que mostrar o player e o texto primeiro;
+             o painel de ações fica ao final com âncora "Recursos & IA".
+             Desktop mantém à direita. -->
+        <div id="detail-actions-panel" class="lg:w-80 bg-brand-canvas dark:bg-brand-canvas flex flex-col p-4 lg:p-5 lg:overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-brand-line dark:border-brand-line shrink-0 space-y-6 scroll-mt-14">
           <!-- Projeto Associado -->
           <div>
             <h3 class="text-xs font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-3">Projeto</h3>
