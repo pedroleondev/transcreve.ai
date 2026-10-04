@@ -194,4 +194,31 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Karaoke / Closed Captions — modo Leitura (T-29 F3+)
+   Palavra em fala: fundo no acento + texto obsidiana (contraste em ambos os
+   tempos). O parágrafo ativo ganha borda de acento para acompanhar com os olhos. */
+.cc-word {
+  border-radius: 0.3rem;
+  padding: 0 0.12rem;
+  margin: 0 -0.06rem;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+.cc-word.cc-on {
+  background: rgb(var(--accent));
+  color: #06080F;
+  font-weight: 600;
+}
+.cc-para { transition: border-color 0.18s ease; scroll-margin-top: 8.5rem; }
+.cc-para.cc-block-active { border-color: rgb(var(--accent)) !important; }
+:root.dark .cc-para.cc-block-active { box-shadow: var(--glow-cyan); }
+
+/* Toggle "Dados técnicos" (nerd mode) — chip discreto, estado ativo em acento */
+.nerd-toggle { transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease; }
+.nerd-toggle.nerd-on {
+  color: rgb(var(--accent));
+  border-color: rgb(var(--accent));
+  background: rgba(0, 242, 254, 0.08);
+}
+:root:not(.dark) .nerd-toggle.nerd-on { background: rgba(0, 166, 176, 0.1); }
+
 

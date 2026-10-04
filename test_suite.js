@@ -7,6 +7,11 @@ const { getAsync, allAsync, runAsync } = require('./db');
 const secrets = require('./services/secrets');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+// Mock HTTP local (T-11). Quando a API roda em Docker, o container NÃO alcança
+// o loopback do host — nesse caso rode a suíte com MOCK_HOST=host.docker.internal
+// e o mock passa a escutar em 0.0.0.0 (rede local apenas durante a execução).
+const MOCK_HOST = process.env.MOCK_HOST || '127.0.0.1';
+const MOCK_BASE = `http://${MOCK_HOST}:8471`;
 // Arquivo base versionado no repo (voz sintetica TTS, sem dado real de cliente) —
 // nao depende de uploads/ (gitignored) nem de audio de atendimento real.
 // Ver docs/workflow.md #Teste com arquivo base.
@@ -359,14 +364,14 @@ async function runTestSuite() {
   // poluir o dashboard do admin (acumulavam ~4 arquivos por execução)
   const createdTranscriptionIds = [];
 
-  await new Promise(r => mockServer.listen(8471, '127.0.0.1', r));
+  await new Promise(r => mockServer.listen(8471, '0.0.0.0', r));
 
   try {
     // 15. URL direta de arquivo -> baixa, enfileira e conclui
     const okRes = await fetch(`${BASE_URL}/api/transcribe/url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-      body: JSON.stringify({ url: 'http://127.0.0.1:8471/audio.ogg', mode: 'base', language: 'auto' })
+      body: JSON.stringify({ url: `${MOCK_BASE}/audio.ogg`, mode: 'base', language: 'auto' })
     });
     const okData = await okRes.json().catch(() => ({}));
     assert(okRes.status === 202 && okData.data && okData.data[0] && okData.data[0].status === 'pending',
@@ -384,7 +389,7 @@ async function runTestSuite() {
     const failRes = await fetch(`${BASE_URL}/api/transcribe/url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-      body: JSON.stringify({ url: 'http://127.0.0.1:8471/missing.mp3' })
+      body: JSON.stringify({ url: `${MOCK_BASE}/missing.mp3` })
     });
     const failData = await failRes.json().catch(() => ({}));
     assert(failRes.status === 202 && failData.data && failData.data[0] && failData.data[0].status === 'failed' && failData.data[0].error_message,
@@ -406,7 +411,7 @@ async function runTestSuite() {
     const badDom = await fetch(`${BASE_URL}/api/transcribe/url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-      body: JSON.stringify({ url: 'http://127.0.0.1:8471/pagina-sem-extensao' })
+      body: JSON.stringify({ url: `${MOCK_BASE}/pagina-sem-extensao` })
     });
     const badDomData = await badDom.json().catch(() => ({}));
     assert(badDom.status === 400 && /não suportado|n&atilde;o suportado|suportado/i.test(badDomData.error || ''),
@@ -415,7 +420,7 @@ async function runTestSuite() {
     // 18. Sem token -> 401
     const noTok = await fetch(`${BASE_URL}/api/transcribe/url`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'http://127.0.0.1:8471/audio.ogg' })
+      body: JSON.stringify({ url: `${MOCK_BASE}/audio.ogg` })
     });
     assert(noTok.status === 401, `POST /api/transcribe/url sem token retornou 401 (status: ${noTok.status})`);
   } catch (e) {

@@ -22,10 +22,14 @@ const state = {
   // Polling de progresso
   pollingInterval: null,
   activeJobIds: [], // IDs de transcrições em pending/processing para polling
+  transcriptionsSignature: null, // anti-travamento: re-render só se a lista mudou
   // Preferências de Leitura (T-04)
   readingMode: localStorage.getItem('transcreveai_reading_mode') || 'transcript', // 'transcript' | 'reading' | 'summary'
   fontSize: localStorage.getItem('transcreveai_font_size') || 'md', // 'sm' | 'md' | 'lg'
-  columnWidth: localStorage.getItem('transcreveai_column_width') || 'normal' // 'narrow' | 'normal' | 'wide'
+  columnWidth: localStorage.getItem('transcreveai_column_width') || 'normal', // 'narrow' | 'normal' | 'wide'
+  // "Dados técnicos" (modelo de IA, tokens) — desligado por padrão: tela limpa
+  // para o usuário comum; quem quiser nerd mode, liga o chip no cabeçalho.
+  nerdMode: localStorage.getItem('falou_nerd_mode') === '1'
 };
 
 // SEGURANÇA (hotfix 28/09): NUNCA fazer auto-login com credenciais
@@ -55,6 +59,7 @@ async function ensureAuthToken() {
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
+  syncNerdToggle();
   // T-28: deep-link de confirmação de e-mail (/app?confirm_token=...) — a
   // landing manda o link para cá; a confirmação é pública e precede o login.
   const confirmToken = new URLSearchParams(location.search).get('confirm_token');
@@ -733,6 +738,38 @@ function renderProjectsSidebar() {
 // HELPERS DE UI — T-29 F2 (Obsidian Wave)
 // uiToast: notificações (ex-alert) · uiPrompt: diálogo de entrada (ex-prompt)
 // ---------------------------------------------------
+// "Dados técnicos" (nerd mode): o modelo de IA fica escondido por padrão —
+// usuário comum não precisa ver "openai/whisper-large-v3". Quem ligar o chip
+// passa a ver modelo/tokens no meta e no Resumo IA. Preferência persiste.
+function buildDetailMeta(t) {
+  const MODE_NAMES = { base: 'Base', pro: 'Pro', max: 'Max' };
+  const MODE_DEFAULT_MODELS = { base: 'openai/whisper-1', pro: 'openai/whisper-large-v3-turbo', max: 'openai/whisper-large-v3' };
+  const modeName = MODE_NAMES[t.mode] || 'Max';
+  const projectDisplay = t.project_name ? ` • Projeto: ${t.project_name}` : '';
+  let meta = `${new Date(t.created_at).toLocaleString('pt-BR')} • ${formatDuration(t.duration_seconds)} • Modo ${modeName}${projectDisplay}`;
+  if (state.nerdMode) {
+    const modelUsed = state.systemSettings[`${t.mode}_model`] || MODE_DEFAULT_MODELS[t.mode] || 'openai/whisper-large-v3';
+    meta += ` • ${modelUsed}`;
+  }
+  return meta;
+}
+
+function syncNerdToggle() {
+  const btn = document.getElementById('btn-nerd-toggle');
+  if (btn) btn.classList.toggle('nerd-on', state.nerdMode);
+}
+
+function toggleNerdMode() {
+  state.nerdMode = !state.nerdMode;
+  localStorage.setItem('falou_nerd_mode', state.nerdMode ? '1' : '0');
+  syncNerdToggle();
+  // Re-renderiza o meta da tela de detalhes (se houver) com/sem o modelo
+  if (state.activeTranscription) {
+    const metaEl = document.getElementById('detail-meta');
+    if (metaEl) metaEl.innerText = buildDetailMeta(state.activeTranscription);
+    renderCurrentTranscript(); // Resumo IA esconde/mostra model+tokens
+  }
+}
 // T-29 F3: menu do usuário abre por clique/toque (group-hover não existe em
 // touch); fecha ao clicar fora ou em um item do menu.
 function toggleUserMenu(e) {
@@ -953,13 +990,8 @@ async function updateTranscriptionProject() {
       // Atualizar o nome do projeto no meta da visualização de detalhes
       const projectObj = state.projects.find(p => p.id === projectId);
       state.activeTranscription.project_name = projectObj ? projectObj.name : null;
-      
-      const MODE_NAMES = { base: 'Base', pro: 'Pro', max: 'Max' };
-      const MODE_DEFAULT_MODELS = { base: 'openai/whisper-1', pro: 'openai/whisper-large-v3-turbo', max: 'openai/whisper-large-v3' };
-      const modeName = MODE_NAMES[state.activeTranscription.mode] || 'Max';
-      const modelUsed = state.systemSettings[`${state.activeTranscription.mode}_model`] || MODE_DEFAULT_MODELS[state.activeTranscription.mode] || 'openai/whisper-large-v3';
-      const projectDisplay = projectObj ? ` • Projeto: ${projectObj.name}` : '';
-      document.getElementById('detail-meta').innerText = `${new Date(state.activeTranscription.created_at).toLocaleString('pt-BR')} • ${formatDuration(state.activeTranscription.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
+
+      document.getElementById('detail-meta').innerText = buildDetailMeta(state.activeTranscription);
 
       await fetchProjects();
       await fetchTranscriptions();
@@ -982,7 +1014,21 @@ async function fetchTranscriptions() {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const data = await res.json();
-    state.transcriptions = Array.isArray(data) ? data : [];
+    const list = Array.isArray(data) ? data : [];
+
+    // Anti-travamento (T-29 hotfix): o polling re-renderizava a tabela inteira
+    // a cada 3s + lucide.createIcons() no documento — com muitos arquivos isso
+    // congelava a thread principal no meio de um arrasto de scroll e a lista
+    // parecia "sumir". Se nada mudou (status/stage/progress/nomes), não renderiza.
+    const signature = list.map(t =>
+      `${t.id}:${t.status}:${t.stage || ''}:${t.progress || 0}:${t.file_name}:${t.project_id || ''}`
+    ).join('|');
+    if (signature === state.transcriptionsSignature) {
+      state.transcriptions = list;
+      return;
+    }
+    state.transcriptionsSignature = signature;
+    state.transcriptions = list;
     renderTranscriptionsTable();
   } catch (e) {
     console.error('Erro ao buscar transcrições:', e);
@@ -1258,12 +1304,8 @@ async function openTranscriptionDetail(id) {
     const filenameText = document.getElementById('detail-filename-text');
     if (filenameText) filenameText.innerText = data.file_name;
 
-    const MODE_NAMES = { base: 'Base', pro: 'Pro', max: 'Max' };
-    const MODE_DEFAULT_MODELS = { base: 'openai/whisper-1', pro: 'openai/whisper-large-v3-turbo', max: 'openai/whisper-large-v3' };
-    const modeName = MODE_NAMES[data.mode] || 'Max';
-    const modelUsed = state.systemSettings[`${data.mode}_model`] || MODE_DEFAULT_MODELS[data.mode] || 'openai/whisper-large-v3';
-    const projectDisplay = data.project_name ? ` • Projeto: ${data.project_name}` : '';
-    document.getElementById('detail-meta').innerText = `${new Date(data.created_at).toLocaleString('pt-BR')} • ${formatDuration(data.duration_seconds)} • Modo ${modeName} (${modelUsed})${projectDisplay}`;
+    document.getElementById('detail-meta').innerText = buildDetailMeta(data);
+    syncNerdToggle();
 
     // Configurar áudio player — T-13: player passa a usar a rota autenticada
     // dedicada (Range/seek suportado), não mais a URL direta de /uploads.
@@ -1585,6 +1627,8 @@ function renderCurrentTranscript() {
 
   // Toda re-renderização invalida os destaques de pesquisa.
   clearSearchHits();
+  // Toda re-renderização invalida o índice karaoke (palavras-tempo do modo Leitura)
+  resetKaraoke();
 
   applyReadingPreferences();
 
@@ -1610,11 +1654,14 @@ function renderCurrentTranscript() {
     container.contentEditable = "false";
     const enh = state.latestEnhancement;
     if (enh && enh.result_md) {
-      const meta = `${enh.model} • ${(enh.tokens_in || 0) + (enh.tokens_out || 0)} tokens${judgeMetaSuffix(enh)}`;
+      // Nerd mode: model+tokens+juiz só aparecem com "Dados técnicos" ligado
+      const meta = state.nerdMode
+        ? `${enh.model} • ${(enh.tokens_in || 0) + (enh.tokens_out || 0)} tokens${judgeMetaSuffix(enh)}`
+        : '';
       container.innerHTML = `
         <div class="mb-5 pb-3 border-b border-brand-line/60 dark:border-brand-line/60 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <span class="text-xs font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Texto aprimorado</span>
-          <span class="text-[11px] text-brand-muted dark:text-brand-muted">${escapeHtml(meta)}</span>
+          ${meta ? `<span class="text-[11px] text-brand-muted dark:text-brand-muted">${escapeHtml(meta)}</span>` : ''}
         </div>
         ${renderMarkdown(enh.result_md)}
       `;
@@ -1643,11 +1690,10 @@ function renderCurrentTranscript() {
     const paragraphs = buildReadingParagraphs(segments);
     container.innerHTML = paragraphs.map(group => {
       const firstSeg = group[0];
-      const combinedText = group.map(s => s.text.trim()).join(' ');
       const color = getSpeakerColor(firstSeg.speaker);
 
       return `
-        <div class="mb-6 p-4 rounded-xl bg-brand-canvas/80 dark:bg-brand-canvas/80 border border-brand-line/60 dark:border-brand-line/60 hover:border-brand-line dark:hover:border-brand-line transition">
+        <div class="cc-para mb-6 p-4 rounded-xl bg-brand-canvas/80 dark:bg-brand-canvas/80 border border-brand-line/60 dark:border-brand-line/60 hover:border-brand-line dark:hover:border-brand-line transition">
           ${showMeta ? `
           <div class="flex items-center space-x-2 mb-2">
             <button onclick="seekAudio(${firstSeg.start_time})" class="text-xs font-bold text-blue-600 dark:text-blue-300 hover:underline bg-blue-100/80 dark:bg-blue-950/80 hover:bg-blue-200 px-2 py-0.5 rounded-md transition shrink-0">
@@ -1660,10 +1706,12 @@ function renderCurrentTranscript() {
             ` : ''}
           </div>
           ` : ''}
-          <p class="leading-relaxed text-brand-ink dark:text-brand-ink">${escapeHtml(combinedText)}</p>
+          <p class="leading-relaxed text-brand-ink dark:text-brand-ink">${buildKaraokeHtml(group)}</p>
         </div>
       `;
     }).join('');
+    // Karaoke: indexa as palavras com seus tempos para o highlight em play
+    buildKaraokeIndex(container);
     return;
   }
 
@@ -1935,6 +1983,71 @@ function highlightActiveSegment(t) {
   blocks.forEach(b => b.classList.toggle('seg-active', b === active && t > 0));
 }
 
+// ---------------------------------------------------
+// KARAOKE / CLOSED CAPTIONS — modo Leitura
+// Cada palavra vira um span com tempo interpolado dentro do segmento
+// (start→end distribuído igualmente entre as palavras — sem custo de API;
+// o Whisper não devolve tempo por palavra). Em play, a palavra corrente ganha
+// fundo no acento (.cc-on) e o parágrafo ativo acende e rola para o centro.
+// ---------------------------------------------------
+let ccWords = [];        // [{ s: number, el: HTMLElement }] em ordem cronológica
+let ccLastWordEl = null; // span atualmente aceso
+let ccActivePara = null; // parágrafo .cc-para atualmente ativo
+
+function resetKaraoke() {
+  ccWords = [];
+  ccLastWordEl = null;
+  ccActivePara = null;
+}
+
+function buildKaraokeHtml(group) {
+  return group.map(seg => {
+    const words = (seg.text || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    const start = parseFloat(seg.start_time) || 0;
+    const end = parseFloat(seg.end_time) || 0;
+    const dur = Math.max(0.2, end - start);
+    return words.map((w, i) => {
+      const ws = start + dur * (i / words.length);
+      const we = start + dur * ((i + 1) / words.length);
+      return `<span class="cc-word" data-ws="${ws.toFixed(3)}" data-we="${we.toFixed(3)}">${escapeHtml(w)}</span>`;
+    }).join(' ');
+  }).join(' ');
+}
+
+function buildKaraokeIndex(container) {
+  ccWords = [];
+  ccLastWordEl = null;
+  ccActivePara = null;
+  const spans = container.querySelectorAll('.cc-word');
+  spans.forEach(el => ccWords.push({ s: parseFloat(el.dataset.ws) || 0, el }));
+}
+
+function updateKaraoke(t, allowScroll) {
+  if (!ccWords.length) return;
+  // Busca binária: última palavra com início <= t
+  let lo = 0, hi = ccWords.length - 1, idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (ccWords[mid].s <= t) { idx = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  const el = idx >= 0 ? ccWords[idx].el : null;
+  if (el === ccLastWordEl) return;
+  if (ccLastWordEl) ccLastWordEl.classList.remove('cc-on');
+  ccLastWordEl = el;
+  if (!el) return;
+  el.classList.add('cc-on');
+  const para = el.closest('.cc-para');
+  if (para && para !== ccActivePara) {
+    if (ccActivePara) ccActivePara.classList.remove('cc-block-active');
+    ccActivePara = para;
+    para.classList.add('cc-block-active');
+    // Acompanha com os olhos: rola suave só enquanto toca (seek não rola)
+    if (allowScroll) para.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
 function startWaveformLoop() {
   cancelAnimationFrame(waveformRaf);
   const tick = () => {
@@ -1943,6 +2056,7 @@ function startWaveformLoop() {
       drawWaveform(audio.currentTime / audio.duration);
       updatePlayerTime();
       highlightActiveSegment(audio.currentTime);
+      updateKaraoke(audio.currentTime, true); // karaoke segue o play (com auto-scroll)
     }
     if (audio && !audio.paused && !audio.ended) waveformRaf = requestAnimationFrame(tick);
   };
@@ -1962,8 +2076,8 @@ function setupPlayer(data) {
   playerWired = true;
   audio.addEventListener('loadedmetadata', () => { updatePlayerTime(); drawWaveform(0); });
   audio.addEventListener('play', () => { updatePlayIcon(); startWaveformLoop(); });
-  audio.addEventListener('pause', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); });
-  audio.addEventListener('ended', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); drawWaveform(1); highlightActiveSegment(0); });
+  audio.addEventListener('pause', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); updateKaraoke(audio.currentTime, false); });
+  audio.addEventListener('ended', () => { updatePlayIcon(); cancelAnimationFrame(waveformRaf); drawWaveform(1); highlightActiveSegment(0); updateKaraoke(0, false); });
   const canvas = document.getElementById('waveform-canvas');
   if (canvas) canvas.addEventListener('click', (e) => {
     if (!audio.duration) return;
@@ -1973,6 +2087,7 @@ function setupPlayer(data) {
     drawWaveform(ratio);
     updatePlayerTime();
     highlightActiveSegment(audio.currentTime);
+    updateKaraoke(audio.currentTime, false); // seek: move o grifo sem rolar a tela
   });
   window.addEventListener('resize', () => {
     const a = document.getElementById('audio-player');
@@ -1994,6 +2109,7 @@ function skipAudio(seconds) {
   drawWaveform(audio.currentTime / audio.duration);
   updatePlayerTime();
   highlightActiveSegment(audio.currentTime);
+  updateKaraoke(audio.currentTime, false);
 }
 
 function setPlaybackRate(v) {
@@ -2007,6 +2123,7 @@ function seekAudio(seconds) {
     audio.currentTime = seconds;
     drawWaveform(isFinite(audio.duration) && audio.duration ? seconds / audio.duration : 0);
     highlightActiveSegment(seconds);
+    updateKaraoke(seconds, true); // clique no tempo: grifa E rola até o parágrafo
     audio.play();
   }
 }
