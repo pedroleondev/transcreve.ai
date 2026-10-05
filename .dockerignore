@@ -1,5 +1,18 @@
 node_modules
 .git
-.env.local
+.env
+.env.*
 *.log
 npm-debug.log*
+
+# T-32: nada de dados, segredos ou artefatos locais na imagem de producao
+uploads
+*.sqlite
+*.sqlite-*
+docs/screenshots
+certs
+traefik
+.edge-*
+.github
+tests/fixtures/long
+deploy

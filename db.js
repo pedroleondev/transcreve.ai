@@ -501,25 +501,42 @@ async function initDatabasePostgres() {
 
 // Seeds compartilhados pelos dois drivers (idempotentes).
 async function seedCoreData() {
-  // Seed Admin Padrão
-  const adminUser = await getAsync(`SELECT * FROM users WHERE email = ?`, ['admin@turboscribe.local']);
-  if (!adminUser) {
-    const adminId = uuidv4();
-    const passHash = await bcrypt.hash('admin123', 10);
-    await runAsync(
-      `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [adminId, 'Administrador SaaS', 'admin@turboscribe.local', passHash, 'admin', 999999, 'active']
-    );
-    console.log('Usuário Admin criado: admin@turboscribe.local / admin123');
+  // T-32: seed do admin vem de env — em producao a senha default 'admin123'
+  // nunca pode existir. Sem ADMIN_PASSWORD em producao o servidor recusa
+  // subir (mesma filosofia dos guards de JWT_SECRET/APP_SECRET_KEY no server).
+  const isProd = process.env.NODE_ENV === 'production';
+  const adminEmail = String(process.env.ADMIN_EMAIL || 'admin@turboscribe.local').trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
-    // Seed Usuário Padrão de Demonstração
-    const userId = uuidv4();
-    const userPassHash = await bcrypt.hash('user123', 10);
+  // Seed Admin Padrão
+  const adminUser = await getAsync(`SELECT * FROM users WHERE email = ?`, [adminEmail]);
+  if (!adminUser) {
+    // T-32: em producao a senha default 'admin123' nunca pode ser seedada —
+    // o servidor recusa subir (mesma filosofia dos guards de JWT_SECRET no
+    // server). Só exige quando o seed realmente vai acontecer (banco novo);
+    // banco existente nunca passa por aqui.
+    if (isProd && (!process.env.ADMIN_PASSWORD || adminPassword.length < 8)) {
+      throw new Error('ADMIN_PASSWORD obrigatoria em producao (minimo 8 caracteres). Defina no .env/stack do Portainer.');
+    }
+    const adminId = uuidv4();
+    const passHash = await bcrypt.hash(adminPassword, 10);
     await runAsync(
       `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, 'Pedro León', 'pedro.leon23@gmail.com', userPassHash, 'user', 3, 'active']
+      [adminId, 'Administrador SaaS', adminEmail, passHash, 'admin', 999999, 'active']
     );
-    console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
+    console.log(`Usuário Admin criado: ${adminEmail} (senha via ADMIN_PASSWORD${isProd ? '' : ', default admin123'})`);
+
+    // Seed de usuário demo SOMENTE fora de producao — senha conhecida
+    // ('user123') em banco público seria uma conta fantasma aberta.
+    if (!isProd) {
+      const userId = uuidv4();
+      const userPassHash = await bcrypt.hash('user123', 10);
+      await runAsync(
+        `INSERT INTO users (id, name, email, password_hash, role, daily_limit, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [userId, 'Pedro León', 'pedro.leon23@gmail.com', userPassHash, 'user', 3, 'active']
+      );
+      console.log('Usuário Demo criado: pedro.leon23@gmail.com / user123');
+    }
   }
 
   // Garantir que transcrições legado (admin-local) pertençam ao usuário principal (Pedro León)

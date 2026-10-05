@@ -118,26 +118,48 @@ docker compose restart traefik
 
 > **Atenção:** `certs/rootCA-key.pem` é a chave privada da sua CA — quem a tiver pode assinar certificados que o seu navegador confia. Está no `.gitignore` de propósito; nunca committe a pasta `certs/`.
 
-### Traefik próprio (domínio público)
+### Portainer + swarm (KVM2/ORION, rede PegazusNet + Traefik externo) — trilha de produção
 
-Se preferir usar **o seu** Traefik (ex. com Let's Encrypt em domínio real) em vez do embutido: remova o serviço `traefik:` do compose e adicione labels no serviço `transcreveai` apontando para a sua rede/entrypoints:
+É o caminho usado no deploy oficial. A imagem `pedroleondev/falou-ai:latest` é
+publicada automaticamente a cada push na `main` (GitHub Actions,
+`.github/workflows/docker-publish.yml`).
 
-```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.transcreveai.rule=Host(`transcreveai.seudominio.com`)"
-  - "traefik.http.routers.transcreveai.entrypoints=websecure"
-  - "traefik.http.routers.transcreveai.tls.certresolver=SEU_RESOLVER"
-  - "traefik.http.services.transcreveai.loadbalancer.server.port=3000"
+**Uma vez, no GitHub:**
+1. Docker Hub → crie o repositório **público** `pedroleondev/falou-ai`.
+2. Docker Hub → Account Settings → Security → gera um **Access Token**.
+3. GitHub do projeto → Settings → Secrets and variables → Actions →
+   `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` com os dois valores.
+4. Dê push na `main` (ou "Run workflow" manual) — o workflow sobe a imagem.
+
+**Uma vez, no manager do swarm:**
+```bash
+docker volume create falou_uploads
+docker volume create falou_pgdata
+# PegazusNet já existe no ORION; se não existir:
+docker network create --driver overlay PegazusNet
 ```
 
-E conecte o serviço à rede do seu Traefik (`external: true`).
+**No Portainer:** Stacks → Add stack → cole o conteúdo de
+`deploy/portainer-stack.yml` e preencha as variáveis no editor de env:
 
-**Recomendado enquanto T-02 não fechou:** adicione autenticação no próprio Traefik (middleware `basicauth` ou `forwardauth`), já que o sistema não tem isolamento multiusuário nativo ainda:
+| Variável | O que é |
+|---|---|
+| `FALOU_DOMAIN` | domínio público, ex: `falou.pegazus.tech` (A/AAAA apontado pro KVM2) |
+| `JWT_SECRET` / `APP_SECRET_KEY` | aleatórios longos (guarde o `APP_SECRET_KEY` — cifra a chave OpenRouter no banco) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | do primeiro admin (seed único; mín. 8 chars) |
+| `OPENROUTER_API_KEY` | seed da 1ª chave do pool; as demais entram pelo painel admin |
+| `FALOU_DB_PASSWORD` | senha interna do postgres (não exposta fora da rede) |
+| `ASAAS_API_KEY` / `ASAAS_API_URL` / `ASAAS_WEBHOOK_TOKEN` | produção: key de `www.asaas.com` + token configurado no painel Asaas (Webhooks → URL `https://SEU_DOMINIO/api/webhooks/asaas`) |
+| `SMTP_*` | e-mail transacional; sem ele o cadastro público fica fechado (503) |
 
-```yaml
-- "traefik.http.routers.transcreveai.middlewares=transcreveai-auth"
-- "traefik.http.middlewares.transcreveai-auth.basicauth.users=usuario:$$hash_bcrypt_aqui"
+**Depois do deploy:** acesse `https://SEU_DOMINIO/app`, faça login com o admin
+do seed, cadastre as chaves do pool OpenRouter (aba **Chaves OpenRouter API**),
+ajuste o custo unitário em **Uso & Custos** e teste uma transcrição real.
+
+**Backup em produção** (agende no host, ex. cron diário):
+```bash
+docker exec $(docker ps -q -f name=falou_db) pg_dump -U falou -Fc falou > backup_falou_$(date +%F).dump
+docker run --rm -v falou_uploads:/data -v $PWD:/backup alpine tar czf /backup/falou_uploads_$(date +%F).tar.gz -C /data .
 ```
 
 ## 4C. Instalação direta com Node.js (sem Docker)

@@ -189,6 +189,17 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'landing.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
+
+// T-32: healthcheck para orquestradores (Docker/Traefik/Portainer). 200 com o
+// banco respondendo; 503 se o db cair — o swarm drena o tráfego na hora.
+app.get('/api/health', async (req, res) => {
+  try {
+    await getAsync(`SELECT 1 AS ok`);
+    res.json({ ok: true, uptime_seconds: Math.round(process.uptime()) });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
 // Landing: índice para agentes de IA (padrão llms.txt) + mídias das telas
 // reais. Nome de arquivo estrito (basename + extensão whitelisted) para não
 // abrir diretório — mesma cautela dos estáticos um a um.

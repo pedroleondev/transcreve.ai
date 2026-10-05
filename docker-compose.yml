@@ -11,6 +11,11 @@ services:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-transcreveai_docker_jwt_secret_secure_key_2026}
       - APP_SECRET_KEY=${APP_SECRET_KEY:-transcreveai_dev_app_secret_key_32chars_minimum_length!}
+      # T-32: seed do admin por env. Dev: defaults (admin123 / pedro.leon23
+      # demo). Producao: ADMIN_PASSWORD e' obrigatorio (min. 8 chars) — o
+      # servidor recusa subir sem ele e NAO cria o usuario demo.
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@turboscribe.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       # T-08 fase 2: driver swap. sqlite (default) ou postgres (service `db`).
       # Migrar: rode o ETL (scripts/migrate-sqlite-to-postgres.js) e depois
