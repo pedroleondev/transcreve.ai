@@ -5,11 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Falou.ai · Transforme áudio em texto com IA</title>
   <meta name="description" content="Transcreva reuniões, aulas e entrevistas em minutos. Modelos Whisper de alta precisão, aprimoramento por IA e exportação em todos os formatos.">
+
+  <!-- SEO social: ao publicar em domínio próprio, trocar og:image/og:url pelas URLs absolutas -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Falou.ai · Transforme áudio em texto com IA">
+  <meta property="og:description" content="Transcrição em PT-BR com precisão de pontuação, aprimoramento com IA e leitura karaokê. Sem cartão, 3 transcrições por dia grátis.">
+  <meta property="og:image" content="/assets/landing/cena-editor.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2300F2FE'/%3E%3Cpath d='M10.5 16c0-1.9 1.4-3.4 3.1-3.4 2.7 0 3.2 6.8 5.8 6.8 1.7 0 3.1-1.5 3.1-3.4s-1.4-3.4-3.1-3.4c-2.6 0-3.1 6.8-5.8 6.8-1.7 0-3.1-1.5-3.1-3.4z' fill='%2306080F'/%3E%3C/svg%3E">
   <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt: índice para agentes de IA">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Falou.ai",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Web",
+    "description": "Transcrição de áudio e vídeo em texto com IA em português brasileiro, com aprimoramento por modelo de linguagem, dicionário de termos e exportação em PDF, DOCX, SRT e VTT.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" }
+  }
+  </script>
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Jakarta Sans variável: o peso do H1 responde ao scroll (eixo wght) -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200..800&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       theme: {
@@ -35,143 +57,219 @@
     .hero-grad { background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,242,254,0.14), transparent), radial-gradient(ellipse 60% 50% at 80% 10%, rgba(121,40,202,0.18), transparent); }
     .card-hover { transition: transform .15s ease, border-color .15s ease; }
     .card-hover:hover { transform: translateY(-3px); border-color: rgba(0,242,254,0.4); }
-    /* Moldura das telas reais do app: card elevado + fio ciano no topo */
+
+    /* Moldura das telas reais do app */
     .shot-frame { border: 1px solid #212631; border-radius: 1rem; overflow: hidden; background: #0E131F; box-shadow: 0 24px 60px -24px rgba(0,0,0,.7); transition: transform .2s ease, border-color .2s ease; }
     .shot-frame:hover { transform: translateY(-4px); border-color: rgba(0,242,254,.45); }
     .shot-frame img { display: block; width: 100%; height: auto; }
     .shot-glow { position: relative; }
     .shot-glow::before { content: ''; position: absolute; inset: -1px; border-radius: 1.1rem; padding: 1px; background: linear-gradient(135deg, rgba(0,242,254,.5), transparent 40%, transparent 60%, rgba(121,40,202,.5)); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+
+    /* HEADER: blur com gradiente ciano no topo + esconde ao rolar para baixo */
+    #site-header { transition: transform .25s ease; background: linear-gradient(to bottom, rgba(0,242,254,.07), transparent 60%), rgba(6,8,15,.85); backdrop-filter: blur(12.5px); -webkit-backdrop-filter: blur(12.5px); }
+    #site-header.nav-hidden { transform: translateY(-100%); }
+    .nav-link { position: relative; }
+    .nav-link::after { content: ''; position: absolute; left: 0; bottom: -3px; width: 100%; height: 1px; background: #00F2FE; transform: scaleX(0); transform-origin: left; transition: transform .18s ease; }
+    .nav-link:hover::after { transform: scaleX(1); }
+
+    /* BOTÃO PILL: preenchimento circular que sobe no hover */
+    .btn-pill { position: relative; overflow: hidden; border-radius: 999px; isolation: isolate; }
+    .btn-pill > * { position: relative; z-index: 1; }
+    .btn-pill::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 150%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, 100%) scale(.2); transition: transform .35s cubic-bezier(.22,1,.36,1); z-index: 0; }
+    .btn-pill:hover::after { transform: translate(-50%, 30%) scale(1); }
+    .btn-pill-fill::after { background: #00F2FE; }
+    .btn-pill-outline { border: 1px solid #212631; transition: border-color .2s ease, color .2s ease; }
+    .btn-pill-outline::after { background: #00F2FE; }
+    .btn-pill-outline:hover { border-color: #00F2FE; color: #06080F !important; }
+
+    /* ENTRADA EM CASCATA: palavras do H1 sobem de máscara */
+    .mask-line { display: inline-block; overflow: hidden; vertical-align: bottom; }
+    .mask-line > span { display: inline-block; transform: translateY(110%); transition: transform .6s cubic-bezier(.22,1,.36,1); }
+    .in .mask-line > span { transform: translateY(0); }
+
+    /* REVEAL ON SCROLL: fade + deslize com delays em cascata */
+    .rv { opacity: 0; transform: translateY(22px); transition: opacity .55s ease, transform .55s cubic-bezier(.22,1,.36,1); }
+    .rv.in { opacity: 1; transform: none; }
+    .rv-d1 { transition-delay: .08s; } .rv-d2 { transition-delay: .16s; }
+    .rv-d3 { transition-delay: .24s; } .rv-d4 { transition-delay: .32s; }
+    .rv-d5 { transition-delay: .40s; } .rv-d6 { transition-delay: .48s; }
+
+    /* WIPE REVEAL: cortina que desliza e revela a imagem */
+    .wipe { position: relative; }
+    .wipe::after { content: ''; position: absolute; inset: 0; background: #06080F; transform: scaleX(1); transform-origin: right; transition: transform .7s cubic-bezier(.22,1,.36,1) .1s; z-index: 2; }
+    .wipe.in::after { transform: scaleX(0); transform-origin: left; }
+
+    /* Pressão de toque nos botões */
+    .btn-press:active { transform: scale(.97); }
+
+    /* Drawer mobile do header */
+    #nav-drawer { transition: transform .25s ease; }
+    #nav-drawer.open { transform: translateX(0) !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rv, .mask-line > span { transition-duration: 0s !important; transform: none !important; opacity: 1 !important; }
+      .wipe::after { display: none; }
+      .btn-pill::after { transition-duration: 0s; }
+      html { scroll-behavior: auto; }
+    }
   </style>
 </head>
 <body class="bg-obsidian text-mist antialiased">
 
   <!-- HEADER -->
-  <header class="fixed top-0 inset-x-0 z-40 bg-obsidian/85 backdrop-blur-md border-b border-line">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-      <a href="#" class="flex items-center gap-2 font-extrabold text-lg tracking-tight">
-        <span class="bg-cyber text-obsidian p-1.5 rounded-lg flex items-center justify-center"><i data-lucide="infinity" class="w-5 h-5"></i></span>
+  <header id="site-header" class="fixed top-0 inset-x-0 z-40 border-b border-line/70">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
+      <a href="#" class="flex items-center gap-2 font-extrabold text-lg tracking-tight shrink-0">
+        <span class="bg-gradient-to-br from-cyber to-violet text-obsidian p-1.5 rounded-lg flex items-center justify-center"><i data-lucide="infinity" class="w-5 h-5"></i></span>
         <span>Falou.ai</span>
       </a>
       <nav class="hidden md:flex items-center gap-6 text-sm font-semibold text-mist/70">
-        <a href="#telas" class="hover:text-cyber transition">Telas</a>
-        <a href="#recursos" class="hover:text-cyber transition">Recursos</a>
-        <a href="#metricas" class="hover:text-cyber transition">Resultados</a>
-        <a href="#planos" class="hover:text-cyber transition">Planos</a>
-        <a href="#faq" class="hover:text-cyber transition">FAQ</a>
+        <a href="#telas" class="nav-link hover:text-cyber transition">Telas</a>
+        <a href="#recursos" class="nav-link hover:text-cyber transition">Recursos</a>
+        <a href="#metricas" class="nav-link hover:text-cyber transition">Resultados</a>
+        <a href="#planos" class="nav-link hover:text-cyber transition">Planos</a>
+        <a href="#faq" class="nav-link hover:text-cyber transition">FAQ</a>
       </nav>
       <div class="flex items-center gap-2">
         <a href="/app" class="text-sm font-bold text-mist/80 hover:text-cyber transition px-3 py-2">Entrar</a>
-        <button onclick="openRegisterModal()" class="bg-cyber hover:bg-[#00dce6] text-obsidian text-sm font-extrabold px-4 py-2 rounded-lg transition">Criar conta grátis</button>
+        <button onclick="openRegisterModal()" class="btn-press hidden sm:inline-flex bg-cyber hover:bg-[#00dce6] text-obsidian text-sm font-extrabold px-4 py-2 rounded-full transition">Criar conta grátis</button>
+        <button onclick="openRegisterModal()" class="btn-press sm:hidden bg-cyber hover:bg-[#00dce6] text-obsidian text-xs font-extrabold px-3 py-2 rounded-full transition">Criar conta</button>
+        <button onclick="toggleDrawer(true)" class="md:hidden touch-target -mr-1 p-2 rounded-lg text-mist/80 hover:text-cyber transition" aria-label="Abrir menu">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
       </div>
     </div>
   </header>
 
+  <!-- DRAWER MOBILE -->
+  <div id="nav-drawer-overlay" onclick="toggleDrawer(false)" class="hidden fixed inset-0 bg-black/70 z-40 md:hidden"></div>
+  <aside id="nav-drawer" class="fixed inset-y-0 right-0 z-50 w-72 bg-panel border-l border-line p-6 flex flex-col gap-1 md:hidden" style="transform: translateX(100%);">
+    <div class="flex items-center justify-between mb-4">
+      <span class="flex items-center gap-2 font-extrabold"><span class="bg-gradient-to-br from-cyber to-violet text-obsidian p-1.5 rounded-lg flex items-center justify-center"><i data-lucide="infinity" class="w-4 h-4"></i></span>Falou.ai</span>
+      <button onclick="toggleDrawer(false)" class="p-2 text-mist/50 hover:text-mist" aria-label="Fechar menu"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <a href="#telas" onclick="toggleDrawer(false)" class="px-3 py-3 rounded-xl font-bold text-sm hover:bg-raised hover:text-cyber transition">Telas</a>
+    <a href="#recursos" onclick="toggleDrawer(false)" class="px-3 py-3 rounded-xl font-bold text-sm hover:bg-raised hover:text-cyber transition">Recursos</a>
+    <a href="#metricas" onclick="toggleDrawer(false)" class="px-3 py-3 rounded-xl font-bold text-sm hover:bg-raised hover:text-cyber transition">Resultados</a>
+    <a href="#planos" onclick="toggleDrawer(false)" class="px-3 py-3 rounded-xl font-bold text-sm hover:bg-raised hover:text-cyber transition">Planos</a>
+    <a href="#faq" onclick="toggleDrawer(false)" class="px-3 py-3 rounded-xl font-bold text-sm hover:bg-raised hover:text-cyber transition">FAQ</a>
+    <div class="mt-auto space-y-2 pt-4 border-t border-line">
+      <a href="/app" class="block text-center border border-line hover:border-cyber/50 font-bold text-sm py-2.5 rounded-full transition">Entrar</a>
+      <button onclick="toggleDrawer(false); openRegisterModal()" class="btn-press w-full bg-cyber text-obsidian font-extrabold text-sm py-2.5 rounded-full transition">Criar conta grátis</button>
+    </div>
+  </aside>
+
   <!-- HERO -->
-  <section class="hero-grad pt-32 pb-20 px-4 sm:px-6">
+  <section class="hero-grad pt-28 sm:pt-32 pb-20 px-4 sm:px-6 overflow-hidden">
     <div class="max-w-4xl mx-auto text-center">
-      <span class="inline-flex items-center gap-1.5 text-xs font-bold text-cyber bg-cyber/10 border border-cyber/25 px-3 py-1.5 rounded-full mb-6">
+      <span class="rv inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-cyber bg-cyber/10 border border-cyber/25 px-3 py-1.5 rounded-full mb-6">
         <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Transcrição com IA + juiz de validação (JEV)
       </span>
-      <h1 class="text-4xl sm:text-6xl font-extrabold leading-tight tracking-tight">
+      <h1 id="hero-title" class="text-4xl sm:text-6xl font-extrabold leading-tight tracking-tight" style="font-variation-settings: 'wght' 800;">
         Transforme <span class="text-cyber glow-text">áudio</span> em <span class="text-cyber glow-text">texto</span> em minutos
       </h1>
-      <p class="mt-6 text-lg text-mist/70 max-w-2xl mx-auto">
+      <p class="rv rv-d3 mt-6 text-lg text-mist/70 max-w-2xl mx-auto">
         Reuniões, aulas, consultas e entrevistas transcritas com precisão de pontuação em PT-BR.
         Aprimore com IA, corrija termos com seu dicionário e exporte em PDF, DOCX, SRT e mais.
       </p>
-      <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button onclick="openRegisterModal()" class="w-full sm:w-auto bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold px-8 py-3.5 rounded-xl transition text-base">
-          Começar agora, é grátis
+      <div class="rv rv-d4 mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+        <button onclick="openRegisterModal()" class="btn-press btn-pill btn-pill-fill w-full sm:w-auto bg-cyber text-obsidian font-extrabold px-8 py-3.5 text-base">
+          <span class="relative z-10">Começar agora, é grátis</span>
         </button>
-        <a href="/app" class="w-full sm:w-auto text-center border border-line hover:border-cyber/50 text-mist font-bold px-8 py-3.5 rounded-xl transition text-base">
-          Já tenho conta
+        <a href="/app" class="btn-press btn-pill btn-pill-outline w-full sm:w-auto text-center text-mist font-bold px-8 py-3.5 text-base">
+          <span class="relative z-10">Já tenho conta</span>
         </a>
       </div>
-      <p class="mt-4 text-xs text-mist/40">Sem cartão de crédito. 3 transcrições por dia no plano gratuito.</p>
+      <p class="rv rv-d5 mt-4 text-xs text-mist/40">Sem cartão de crédito. 3 transcrições por dia no plano gratuito.</p>
 
-      <!-- Tour real do app: GIF com telas capturadas do sistema em funcionamento -->
-      <div class="mt-14 shot-glow max-w-4xl mx-auto">
-        <div class="shot-frame">
-          <img src="/assets/landing/hero-tour.gif" alt="Tour do Falou.ai: dashboard, editor com player e waveform, e a versão mobile" width="960" height="576" loading="eager">
+      <!-- Tour real do app: GIF por viewport (desktop e mobile) -->
+      <div class="rv rv-d5 mt-14 shot-glow max-w-4xl mx-auto">
+        <div class="shot-frame wipe">
+          <picture>
+            <source media="(max-width: 640px)" srcset="/assets/landing/hero-tour-mobile.gif">
+            <img src="/assets/landing/hero-tour.gif" alt="Tour do Falou.ai: dashboard, editor com player e karaokê, e busca no texto" width="960" height="576" loading="eager">
+          </picture>
         </div>
-        <p class="mt-3 text-[11px] text-mist/40">Telas reais do sistema, capturadas em funcionamento.</p>
+        <p class="mt-3 text-[11px] text-mist/40">Uso real do sistema, capturado em funcionamento.</p>
       </div>
     </div>
   </section>
 
-  <!-- MÉTRICAS REAIS (medidas ao vivo do sistema) -->
+  <!-- MÉTRICAS REAIS (contadores animados, medidas ao vivo) -->
   <section id="metricas" class="px-4 sm:px-6 pb-16">
     <div class="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-transcriptions" class="text-3xl font-extrabold text-cyber">…</p>
-        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Transcrições concluídas</p>
+      <div class="rv bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p class="text-3xl font-extrabold text-cyber tabular-nums"><span class="count" data-count id="metric-transcriptions">0</span></p>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-mist/50 mt-1">Transcrições concluídas</p>
       </div>
-      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-hours" class="text-3xl font-extrabold text-cyber">…</p>
-        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Horas de áudio transcritas</p>
+      <div class="rv rv-d1 bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p class="text-3xl font-extrabold text-cyber tabular-nums"><span class="count" data-count id="metric-hours">0</span><span class="text-lg"> h</span></p>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-mist/50 mt-1">Horas de áudio transcritas</p>
       </div>
-      <div class="bg-panel border border-line rounded-2xl p-6 text-center card-hover">
-        <p id="metric-users" class="text-3xl font-extrabold text-cyber">…</p>
-        <p class="text-xs font-bold uppercase tracking-wider text-mist/50 mt-1">Usuários ativos</p>
+      <div class="rv rv-d2 bg-panel border border-line rounded-2xl p-6 text-center card-hover">
+        <p class="text-3xl font-extrabold text-cyber tabular-nums"><span class="count" data-count id="metric-users">0</span></p>
+        <p class="text-[11px] font-bold uppercase tracking-widest text-mist/50 mt-1">Usuários ativos</p>
       </div>
     </div>
-    <p class="text-center text-[10px] text-mist/30 mt-3">Números reais, medidos nesta instância em tempo real.</p>
+    <p class="rv text-center text-[10px] text-mist/30 mt-3">Números reais, medidos nesta instância em tempo real.</p>
   </section>
 
   <!-- VEJA POR DENTRO (telas reais do sistema) -->
-  <section id="telas" class="px-4 sm:px-6 py-16 border-t border-line">
+  <section id="telas" class="px-4 sm:px-6 py-16 border-t border-line/70">
     <div class="max-w-6xl mx-auto">
-      <h2 class="text-3xl font-extrabold text-center">Veja por dentro do <span class="text-cyber glow-text">Falou.ai</span></h2>
-      <p class="text-center text-mist/60 mt-3 max-w-2xl mx-auto">Nada de mockup: estas são as telas que você usa depois de criar a conta.</p>
+      <p class="rv text-center text-[11px] font-bold uppercase tracking-widest text-cyber">Por dentro</p>
+      <h2 class="rv rv-d1 text-3xl font-extrabold text-center mt-2">Veja o <span class="text-cyber glow-text">Falou.ai</span> em ação</h2>
+      <p class="rv rv-d2 text-center text-mist/60 mt-3 max-w-2xl mx-auto">Nada de mockup: são as telas que você usa depois de criar a conta.</p>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12 items-start">
-        <div class="shot-frame">
-          <img src="/assets/landing/app-dashboard.png" alt="Dashboard do Falou.ai com a lista de transcrições, status e modos Base, Pro e Max" loading="lazy">
-          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">Dashboard.</span> Todos os seus arquivos, status em tempo real e busca instantânea.</p>
+        <div class="rv shot-frame wipe">
+          <img src="/assets/landing/cena-mobile-editor.png" alt="Falou.ai no celular: editor com player e transcrição" loading="lazy" width="720" height="450">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="block text-[10px] font-bold uppercase tracking-widest text-cyber mb-1">No celular</span>Player, karaokê e edição no bolso, com gestos de app nativo.</p>
         </div>
-        <div class="shot-frame">
-          <img src="/assets/landing/app-editor.png" alt="Editor de transcrição do Falou.ai com player, waveform e blocos de fala destacados" loading="lazy">
-          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">Editor.</span> Player com waveform, blocos de fala e leitura karaokê que segue o áudio.</p>
+        <div class="rv rv-d1 shot-frame wipe">
+          <img src="/assets/landing/cena-editor.png" alt="Editor de transcrição com player, waveform e karaokê grifando a palavra falada" loading="lazy" width="720" height="450">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="block text-[10px] font-bold uppercase tracking-widest text-cyber mb-1">Editor</span>Leitura karaokê: cada palavra acende quando o áudio passa por ela.</p>
         </div>
-        <div class="shot-frame max-w-[280px] mx-auto md:max-w-none w-full">
-          <img src="/assets/landing/app-mobile.png" alt="Falou.ai no celular: dashboard mobile com bottom navigation" loading="lazy">
-          <p class="px-4 py-3 text-xs text-mist/60"><span class="font-bold text-mist">No celular.</span> Feito para o S24 e qualquer Android: leve, rápido e com gestos.</p>
+        <div class="rv rv-d2 shot-frame wipe">
+          <img src="/assets/landing/cena-dashboard.png" alt="Dashboard do Falou.ai com lista de transcrições e modos Base, Pro e Max" loading="lazy" width="720" height="450">
+          <p class="px-4 py-3 text-xs text-mist/60"><span class="block text-[10px] font-bold uppercase tracking-widest text-cyber mb-1">Dashboard</span>Todos os arquivos, status em tempo real e busca instantânea.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- RECURSOS -->
-  <section id="recursos" class="px-4 sm:px-6 py-16 border-t border-line">
+  <!-- RECURSOS (sem card aninhado: ícone + título + texto) -->
+  <section id="recursos" class="px-4 sm:px-6 py-16 border-t border-line/70">
     <div class="max-w-6xl mx-auto">
-      <h2 class="text-3xl font-extrabold text-center">Tudo que você precisa para <span class="text-cyber">nunca mais transcrever na mão</span></h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="audio-lines" class="w-8 h-8 text-cyber"></i>
+      <p class="rv text-center text-[11px] font-bold uppercase tracking-widest text-cyber">Recursos</p>
+      <h2 class="rv rv-d1 text-3xl font-extrabold text-center mt-2">Tudo que você precisa para <span class="text-cyber">nunca mais transcrever na mão</span></h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-10 mt-12">
+        <div class="rv py-6 border-t border-line/70">
+          <i data-lucide="audio-lines" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">3 níveis de precisão</h3>
           <p class="text-sm text-mist/60 mt-2">Base (veloz), Pro (balanceado) e Max. Whisper Large v3 com pontuação perfeita em português.</p>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="badge-check" class="w-8 h-8 text-cyber"></i>
+        <div class="rv rv-d1 py-6 border-t border-line/70">
+          <i data-lucide="badge-check" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">Aprimoramento com JEV</h3>
           <p class="text-sm text-mist/60 mt-2">A IA corrige concordância, estrutura e termos do seu dicionário, e um juiz valida o resultado antes de entregar.</p>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="file-down" class="w-8 h-8 text-cyber"></i>
+        <div class="rv rv-d2 py-6 border-t border-line/70">
+          <i data-lucide="file-down" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">Exportação completa</h3>
           <p class="text-sm text-mist/60 mt-2">PDF, DOCX, TXT, SRT, VTT e em massa. Áudios de até 10 horas e 5 GB, 50 arquivos por vez.</p>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="languages" class="w-8 h-8 text-cyber"></i>
+        <div class="rv py-6 border-t border-line/70">
+          <i data-lucide="languages" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">100 idiomas</h3>
           <p class="text-sm text-mist/60 mt-2">Detecção automática de idioma ou escolha manual, de português a japonês.</p>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="book-check" class="w-8 h-8 text-cyber"></i>
+        <div class="rv rv-d1 py-6 border-t border-line/70">
+          <i data-lucide="book-check" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">Dicionário de correções</h3>
           <p class="text-sm text-mist/60 mt-2">Ensine a IA nomes próprios e termos do seu negócio para transcrições sem erro.</p>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
-          <i data-lucide="server" class="w-8 h-8 text-cyber"></i>
+        <div class="rv rv-d2 py-6 border-t border-line/70">
+          <i data-lucide="server" class="w-7 h-7 text-cyber"></i>
           <h3 class="font-bold mt-4">Seus dados, seu servidor</h3>
           <p class="text-sm text-mist/60 mt-2">Self-hosted com Docker: seus áudios e textos ficam no seu banco. Privacidade por arquitetura.</p>
         </div>
@@ -180,11 +278,12 @@
   </section>
 
   <!-- PLANOS -->
-  <section id="planos" class="px-4 sm:px-6 py-16 border-t border-line">
+  <section id="planos" class="px-4 sm:px-6 py-16 border-t border-line/70">
     <div class="max-w-4xl mx-auto">
-      <h2 class="text-3xl font-extrabold text-center">Planos para cada momento</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+      <p class="rv text-center text-[11px] font-bold uppercase tracking-widest text-cyber">Planos</p>
+      <h2 class="rv rv-d1 text-3xl font-extrabold text-center mt-2">Planos para cada momento</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12 items-start">
+        <div class="rv bg-panel border border-line rounded-2xl p-6 card-hover">
           <h3 class="font-bold">Gratuito</h3>
           <p class="text-3xl font-extrabold mt-2">R$ 0<span class="text-sm font-normal text-mist/50">/mês</span></p>
           <ul class="text-sm text-mist/60 space-y-2 mt-4">
@@ -192,53 +291,54 @@
             <li>✓ Todos os níveis de precisão</li>
             <li>✓ Exportação em todos os formatos</li>
           </ul>
-          <button onclick="openRegisterModal()" class="w-full mt-6 border border-line hover:border-cyber/50 font-bold text-sm py-2.5 rounded-xl transition">Criar conta</button>
+          <button onclick="openRegisterModal()" class="btn-press w-full mt-6 border border-line hover:border-cyber/50 hover:text-cyber font-bold text-sm py-2.5 rounded-full transition">Criar conta</button>
         </div>
-        <div class="bg-gradient-to-b from-violet/25 to-panel border-2 border-violet rounded-2xl p-6 relative">
-          <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet text-white text-[10px] font-extrabold px-3 py-1 rounded-full">EM BREVE</span>
+        <div class="rv rv-d1 bg-gradient-to-b from-violet/25 to-panel border-2 border-violet rounded-2xl p-6 relative">
+          <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet text-white text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full">Em breve</span>
           <h3 class="font-bold">Pro</h3>
-          <p class="text-3xl font-extrabold mt-2">Em breve</p>
+          <p class="text-lg font-bold text-mist/50 mt-2">Sob consulta</p>
           <ul class="text-sm text-mist/60 space-y-2 mt-4">
             <li>✓ Mais transcrições por dia</li>
             <li>✓ Prioridade na fila</li>
             <li>✓ Aprimoramento IA + JEV ilimitado</li>
           </ul>
-          <button disabled class="w-full mt-6 bg-line text-mist/40 font-bold text-sm py-2.5 rounded-xl cursor-not-allowed">Cobrança em breve</button>
+          <button disabled class="w-full mt-6 bg-raised text-mist/40 font-bold text-sm py-2.5 rounded-full cursor-not-allowed">Cobrança em breve</button>
         </div>
-        <div class="bg-panel border border-line rounded-2xl p-6 card-hover">
+        <div class="rv rv-d2 bg-panel border border-line rounded-2xl p-6 card-hover">
           <h3 class="font-bold">Max Empresarial</h3>
-          <p class="text-3xl font-extrabold mt-2">Em breve</p>
+          <p class="text-lg font-bold text-mist/50 mt-2">Sob consulta</p>
           <ul class="text-sm text-mist/60 space-y-2 mt-4">
             <li>✓ Transcrições ilimitadas</li>
             <li>✓ Suporte prioritário</li>
             <li>✓ Deploy dedicado</li>
           </ul>
-          <button disabled class="w-full mt-6 bg-line text-mist/40 font-bold text-sm py-2.5 rounded-xl cursor-not-allowed">Cobrança em breve</button>
+          <button disabled class="w-full mt-6 bg-raised text-mist/40 font-bold text-sm py-2.5 rounded-full cursor-not-allowed">Cobrança em breve</button>
         </div>
       </div>
-      <p class="text-center text-xs text-mist/40 mt-6">A cobrança online (cartão, boleto e Pix) será ativada em breve. Enquanto isso, o plano Gratuito está aberto para todos.</p>
+      <p class="rv text-center text-xs text-mist/40 mt-6">A cobrança online (cartão, boleto e Pix) será ativada em breve. Enquanto isso, o plano Gratuito está aberto para todos.</p>
     </div>
   </section>
 
   <!-- FAQ -->
-  <section id="faq" class="px-4 sm:px-6 py-16 border-t border-line">
+  <section id="faq" class="px-4 sm:px-6 py-16 border-t border-line/70">
     <div class="max-w-3xl mx-auto">
-      <h2 class="text-3xl font-extrabold text-center">Perguntas frequentes</h2>
-      <div class="space-y-3 mt-10">
-        <details class="bg-panel border border-line rounded-xl p-4 group">
-          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Quais formatos de arquivo são aceitos? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+      <p class="rv text-center text-[11px] font-bold uppercase tracking-widest text-cyber">FAQ</p>
+      <h2 class="rv rv-d1 text-3xl font-extrabold text-center mt-2">Perguntas frequentes</h2>
+      <div class="mt-10">
+        <details class="rv group border-b border-line/70 py-5">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center gap-4">Quais formatos de arquivo são aceitos? <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-mist/50 group-open:rotate-180 transition-transform duration-200"></i></summary>
           <p class="text-sm text-mist/60 mt-3">MP3, M4A, WAV, OGG, OPUS, MP4, MOV, AAC, WMA, WMV e MPEG: até 5 GB e 10 horas por arquivo, 50 arquivos por envio.</p>
         </details>
-        <details class="bg-panel border border-line rounded-xl p-4 group">
-          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Como funciona o aprimoramento por IA? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+        <details class="rv rv-d1 group border-b border-line/70 py-5">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center gap-4">Como funciona o aprimoramento por IA? <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-mist/50 group-open:rotate-180 transition-transform duration-200"></i></summary>
           <p class="text-sm text-mist/60 mt-3">Após transcrever, um modelo de linguagem corrige concordância, estrutura o texto e aplica seu dicionário de termos. O JEV (juiz de validação) revisa o resultado e rejeita o que não está bom: você recebe só texto aprovado.</p>
         </details>
-        <details class="bg-panel border border-line rounded-xl p-4 group">
-          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Meus dados ficam seguros? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+        <details class="rv rv-d2 group border-b border-line/70 py-5">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center gap-4">Meus dados ficam seguros? <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-mist/50 group-open:rotate-180 transition-transform duration-200"></i></summary>
           <p class="text-sm text-mist/60 mt-3">Sim. O Falou.ai é self-hosted: seus áudios e transcrições ficam no seu próprio banco de dados e servidor, não em serviços de terceiros.</p>
         </details>
-        <details class="bg-panel border border-line rounded-xl p-4 group">
-          <summary class="font-bold cursor-pointer list-none flex justify-between items-center">Preciso de cartão para começar? <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i></summary>
+        <details class="rv rv-d3 group border-b border-line/70 py-5">
+          <summary class="font-bold cursor-pointer list-none flex justify-between items-center gap-4">Preciso de cartão para começar? <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-mist/50 group-open:rotate-180 transition-transform duration-200"></i></summary>
           <p class="text-sm text-mist/60 mt-3">Não. O plano Gratuito é aberto: crie a conta, confirme o e-mail e comece a transcrever na hora.</p>
         </details>
       </div>
@@ -246,17 +346,17 @@
   </section>
 
   <!-- CTA FINAL -->
-  <section class="px-4 sm:px-6 py-20 hero-grad border-t border-line">
+  <section class="px-4 sm:px-6 py-20 hero-grad border-t border-line/70">
     <div class="max-w-2xl mx-auto text-center">
-      <h2 class="text-3xl sm:text-4xl font-extrabold">Pare de transcrever na mão <span class="text-cyber glow-text">hoje</span></h2>
-      <button onclick="openRegisterModal()" class="mt-8 bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold px-10 py-4 rounded-xl transition text-base">
-        Criar conta gratuita
+      <h2 class="rv text-3xl sm:text-4xl font-extrabold">Pare de transcrever na mão <span class="text-cyber glow-text">hoje</span></h2>
+      <button onclick="openRegisterModal()" class="rv rv-d2 btn-press btn-pill btn-pill-fill mt-8 bg-cyber text-obsidian font-extrabold px-10 py-4 text-base">
+        <span class="relative z-10">Criar conta gratuita</span>
       </button>
     </div>
   </section>
 
   <!-- FOOTER -->
-  <footer class="border-t border-line px-4 sm:px-6 py-8">
+  <footer class="border-t border-line/70 px-4 sm:px-6 py-8">
     <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-mist/40">
       <p>© 2026 Falou.ai · Transcrição com IA, self-hosted.</p>
       <div class="flex items-center gap-4">
@@ -289,7 +389,7 @@
             <input id="reg-password" type="password" required minlength="8" autocomplete="new-password" placeholder="Mín. 8 caracteres, com letra e número" class="w-full bg-obsidian border border-line rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyber outline-none">
           </div>
           <p id="reg-error" class="text-xs text-red-400 hidden"></p>
-          <button type="submit" id="reg-submit" class="w-full bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold text-sm py-3 rounded-xl transition">Criar conta grátis</button>
+          <button type="submit" id="reg-submit" class="btn-press w-full bg-cyber hover:bg-[#00dce6] text-obsidian font-extrabold text-sm py-3 rounded-full transition">Criar conta grátis</button>
           <p class="text-[11px] text-mist/40 text-center">Já tem conta? <a href="/app" class="text-cyber font-bold hover:underline">Entrar</a></p>
         </form>
       </div>
@@ -300,7 +400,7 @@
         </div>
         <h3 class="text-lg font-extrabold mt-4">Quase lá!</h3>
         <p id="reg-success-msg" class="text-sm text-mist/60 mt-2">Enviamos um link de confirmação para o seu e-mail. Ele vale por 30 minutos. Confira também a caixa de spam.</p>
-        <a href="/app" class="inline-block mt-6 border border-line hover:border-cyber/50 font-bold text-sm px-6 py-2.5 rounded-xl transition">Ir para o login</a>
+        <a href="/app" class="inline-block mt-6 border border-line hover:border-cyber/50 font-bold text-sm px-6 py-2.5 rounded-full transition">Ir para o login</a>
       </div>
     </div>
   </div>
@@ -315,7 +415,6 @@
 
     (function initMarketing() {
       if (FACEBOOK_PIXEL_ID) {
-        // Facebook/Meta Pixel (snippet oficial, f)
         const fbq = window.fbq = function () { fbq.queue.push(arguments); };
         fbq.queue = fbq.queue || []; fbq.loaded = true; fbq.version = '2.0';
         const s = document.createElement('script');
@@ -325,7 +424,6 @@
         fbq('track', 'PageView');
       }
       if (GOOGLE_TAG_ID) {
-        // Google tag (gtag.js)
         const g = document.createElement('script');
         g.async = true; g.src = 'https://www.googletagmanager.com/gtag/js?id=' + GOOGLE_TAG_ID;
         document.head.appendChild(g);
@@ -336,27 +434,136 @@
       }
     })();
 
-    // Conversão de cadastro (dispara só se algum pixel estiver ativo)
     function trackRegisterSuccess() {
       if (window.fbq) fbq('track', 'CompleteRegistration');
       if (window.gtag) gtag('event', 'sign_up', { method: 'landing' });
     }
 
-    if (window.lucide) lucide.createIcons();
+    // ---------- Animações (vanilla, sem libs) ----------
+
+    // H1: split em palavras mascaradas, entrada em cascata ao carregar
+    (function splitHeroTitle() {
+      const h1 = document.getElementById('hero-title');
+      if (!h1) return;
+      const wrapWords = (node) => {
+        [...node.childNodes].forEach(child => {
+          if (child.nodeType === Node.TEXT_NODE) {
+            const frag = document.createDocumentFragment();
+            child.textContent.split(/(\s+)/).forEach(part => {
+              if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(' ')); return; }
+              if (!part) return;
+              const mask = document.createElement('span');
+              mask.className = 'mask-line';
+              const inner = document.createElement('span');
+              inner.textContent = part;
+              mask.appendChild(inner);
+              frag.appendChild(mask);
+            });
+            node.replaceChild(frag, child);
+          } else if (child.nodeType === Node.ELEMENT_NODE) {
+            wrapWords(child);
+          }
+        });
+      };
+      wrapWords(h1);
+      // cascata: cada palavra atrasa 55ms a anterior
+      h1.querySelectorAll('.mask-line > span').forEach((s, i) => {
+        s.style.transitionDelay = (0.15 + i * 0.055) + 's';
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => h1.classList.add('in')));
+    })();
+
+    // Reveal on scroll (tudo com .rv e .wipe)
+    (function revealOnScroll() {
+      const els = document.querySelectorAll('.rv, .wipe');
+      if (!('IntersectionObserver' in window)) { els.forEach(el => el.classList.add('in')); return; }
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+      els.forEach(el => io.observe(el));
+    })();
+
+    // Header: esconde ao rolar para baixo, reaparece ao rolar para cima
+    (function headerHideShow() {
+      const header = document.getElementById('site-header');
+      let lastY = 0, ticking = false;
+      window.addEventListener('scroll', () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          const y = window.scrollY;
+          if (y > 140 && y > lastY + 6) header.classList.add('nav-hidden');
+          else if (y < lastY - 6 || y < 140) header.classList.remove('nav-hidden');
+          lastY = y;
+          ticking = false;
+        });
+      }, { passive: true });
+    })();
+
+    // H1: peso variável responde ao scroll (Jakarta variável, eixo wght)
+    (function heroWeight() {
+      const h1 = document.getElementById('hero-title');
+      if (!h1) return;
+      let ticking = false;
+      window.addEventListener('scroll', () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          const p = Math.min(1, window.scrollY / 420);
+          h1.style.fontVariationSettings = "'wght' " + Math.round(800 - p * 280);
+          ticking = false;
+        });
+      }, { passive: true });
+    })();
+
+    // Contadores animados das métricas reais
+    function animateCount(el, target, decimals) {
+      const dur = 1200, t0 = performance.now();
+      const fmt = (v) => v.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      const step = (t) => {
+        const p = Math.min(1, (t - t0) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(target * eased);
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+
+    // Drawer mobile do header
+    function toggleDrawer(open) {
+      const d = document.getElementById('nav-drawer');
+      const o = document.getElementById('nav-drawer-overlay');
+      d.classList.toggle('open', open);
+      o.classList.toggle('hidden', !open);
+    }
 
     // Métricas reais, medidas nesta instância (nada inventado).
     fetch('/api/public/metrics')
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(m => {
-        document.getElementById('metric-transcriptions').textContent = m.transcriptions_completed.toLocaleString('pt-BR');
-        document.getElementById('metric-hours').textContent = m.audio_hours.toLocaleString('pt-BR') + ' h';
-        document.getElementById('metric-users').textContent = m.active_users.toLocaleString('pt-BR');
+        const setup = (id, value, decimals) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const run = () => animateCount(el, value, decimals);
+          if ('IntersectionObserver' in window) {
+            const io = new IntersectionObserver((es) => {
+              es.forEach(e => { if (e.isIntersecting) { run(); io.disconnect(); } });
+            }, { threshold: 0.4 });
+            io.observe(el);
+          } else run();
+        };
+        setup('metric-transcriptions', m.transcriptions_completed, 0);
+        setup('metric-hours', m.audio_hours, 1);
+        setup('metric-users', m.active_users, 0);
       })
       .catch(() => {
         ['metric-transcriptions', 'metric-hours', 'metric-users'].forEach(id => {
-          document.getElementById(id).textContent = '…';
+          const el = document.getElementById(id);
+          if (el) el.textContent = '…';
         });
       });
+
+    if (window.lucide) lucide.createIcons();
 
     function openRegisterModal() {
       document.getElementById('register-modal').classList.remove('hidden');
