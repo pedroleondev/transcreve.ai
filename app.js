@@ -60,6 +60,11 @@ async function ensureAuthToken() {
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) lucide.createIcons();
   syncNerdToggle();
+  // T-29 F3 (workspace): estado persistido da sidebar + listener único do
+  // mini-player (progresso/relógio/ícone de play).
+  applySidebarCollapse();
+  const audioEl = document.getElementById('audio-player');
+  if (audioEl) audioEl.addEventListener('timeupdate', miniPlayerTimeUpdate);
   // Anti-autofill da busca (incidente 04/10): o Chrome insiste em escrever o
   // e-mail da sessão no campo de busca — mesmo com autocomplete=off — e a
   // lista inteira ficava invisível (parecia "arquivos sumiram"). O campo é
@@ -915,9 +920,9 @@ function renderProjectsSidebar() {
     <div class="group/project flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${state.currentProjectId === p.id ? 'bg-brand-raised dark:bg-brand-raised text-brand-accent dark:text-brand-accent' : 'text-brand-muted dark:text-brand-muted hover:bg-brand-raised dark:hover:bg-brand-raised hover:text-brand-ink dark:hover:text-brand-ink'} transition cursor-pointer">
       <button onclick="filterByProject('${p.id}')" class="flex items-center space-x-2.5 truncate flex-1 text-left">
         <i data-lucide="folder" class="w-4 h-4 text-brand-muted dark:text-brand-muted shrink-0"></i>
-        <span class="truncate">${escapeHtml(p.name)}</span>
+        <span class="truncate sidebar-text">${escapeHtml(p.name)}</span>
       </button>
-      <div class="flex items-center space-x-1">
+      <div class="flex items-center space-x-1 sidebar-hide-when-collapsed">
         <button onclick="openEditProjectModal('${p.id}', '${escapeHtml(p.name)}'); event.stopPropagation();" class="opacity-0 group-hover/project:opacity-100 text-brand-muted dark:text-brand-muted hover:text-brand-accent dark:hover:text-brand-accent p-1 transition" title="Editar Projeto">
           <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
         </button>
@@ -1261,6 +1266,8 @@ function renderTranscriptionsTable() {
         </div>`;
     }
     if (window.lucide) lucide.createIcons();
+    renderDashboardStats();
+    renderActiveJobs(null, null);
     return;
   }
 
@@ -1350,6 +1357,7 @@ function renderTranscriptionsTable() {
         <td class="p-4"><input type="checkbox" value="${item.id}" onchange="handleRowCheckboxChange()" class="row-checkbox rounded text-blue-600 dark:text-blue-300 focus:ring-blue-500"></td>
         <td class="p-4 font-bold text-brand-ink dark:text-brand-ink">
           <div class="flex items-center space-x-2">
+            ${item.status === 'completed' ? `<button onclick="event.stopPropagation(); playFromList('${item.id}', '${escapeHtml(item.file_name).replace(/'/g, "\\'")}')" class="player-ctl shrink-0" title="Ouvir áudio" aria-label="Ouvir ${escapeHtml(item.file_name)}"><i data-lucide="play-circle" class="w-5 h-5"></i></button>` : ''}
             <button onclick="openTranscriptionDetail('${item.id}')" class="hover:text-blue-600 dark:hover:text-blue-300 text-left truncate max-w-xs">
               ${item.project_name ? `<span class="text-[10px] text-brand-muted dark:text-brand-muted block font-normal">📁 ${escapeHtml(item.project_name)}</span>` : ''}
               <span class="font-bold">${escapeHtml(item.file_name)}</span>
@@ -1389,6 +1397,8 @@ function renderTranscriptionsTable() {
     `;
   }).join('');
 
+  renderDashboardStats();
+  renderActiveJobs(buildModeBadge, buildStatusBadge);
   renderTranscriptionsCards(buildModeBadge, buildStatusBadge);
 
   if (window.lucide) lucide.createIcons();
@@ -1435,6 +1445,7 @@ function renderTranscriptionsCards(buildModeBadge, buildStatusBadge) {
             <span class="font-bold text-sm text-brand-ink dark:text-brand-ink break-words">${escapeHtml(item.file_name)}</span>
             <span class="block text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">${dateFormatted} · ${durationFormatted}</span>
           </button>
+          ${item.status === 'completed' ? `<button onclick="playFromList('${item.id}', '${escapeHtml(item.file_name).replace(/'/g, "\\'")}')" class="touch-target p-2 text-brand-accent dark:text-brand-accent hover:bg-brand-raised dark:hover:bg-brand-raised rounded-lg shrink-0" title="Ouvir áudio" aria-label="Ouvir ${escapeHtml(item.file_name)}"><i data-lucide="play-circle" class="w-5 h-5"></i></button>` : ''}
           <button onclick="deleteTranscription('${item.id}')" class="touch-target p-2 text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950 rounded-lg shrink-0" title="Excluir arquivo" aria-label="Excluir ${escapeHtml(item.file_name)}">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
@@ -1445,6 +1456,170 @@ function renderTranscriptionsCards(buildModeBadge, buildStatusBadge) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ---------------------------------------------------
+// T-29 F3 (WORKSPACE): métricas reais, card de job ativo,
+// mini-player persistente da lista e sidebar colapsável
+// ---------------------------------------------------
+
+// Métricas do workspace — só dados que já estão em state.transcriptions
+// (nada fictício): total de arquivos, tempo total transcrito e andamento.
+function renderDashboardStats() {
+  const el = document.getElementById('dashboard-stats');
+  if (!el) return;
+  const list = state.transcriptions || [];
+  const total = list.length;
+  const seconds = list.reduce((acc, t) => acc + (t.duration_seconds || 0), 0);
+  const active = list.filter(t => t.status === 'pending' || t.status === 'processing').length;
+
+  const parts = [
+    `<span class="inline-flex items-center gap-1.5"><i data-lucide="file-audio" class="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent"></i>${total} ${total === 1 ? 'áudio' : 'áudios'}</span>`,
+    `<span class="inline-flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent"></i>${formatDuration(Math.round(seconds))} transcritos</span>`
+  ];
+  if (active > 0) {
+    parts.push(`<span class="inline-flex items-center gap-1.5 text-wave-amber"><i data-lucide="loader" class="w-3.5 h-3.5"></i>${active} ${active === 1 ? 'em andamento' : 'em andamento'}</span>`);
+  }
+  el.innerHTML = parts.join('<span class="opacity-30">·</span>');
+  if (window.lucide) lucide.createIcons();
+}
+
+// Card de job ativo — destaque acima da lista para pending/processing.
+// buildModeBadge/buildStatusBadge vêm do renderTranscriptionsTable; quando
+// a lista está vazia (null) o card fica escondido, pois não há jobs.
+function renderActiveJobs(buildModeBadge, buildStatusBadge) {
+  const container = document.getElementById('active-jobs');
+  if (!container) return;
+  const jobs = (state.transcriptions || []).filter(t => t.status === 'pending' || t.status === 'processing');
+
+  if (!jobs.length || !buildStatusBadge) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  const stageLabel = {
+    preprocessing: 'Normalizando áudio', splitting: 'Fatiando em blocos',
+    transcribing: 'Transcrevendo com IA', assembling: 'Montando texto', analyzing: 'Resumindo'
+  };
+  container.classList.remove('hidden');
+  container.innerHTML = jobs.map(item => {
+    const progress = item.progress || 0;
+    const stage = stageLabel[item.stage] || 'Processando';
+    const pos = item.queue_position ? `<span class="text-[10px] font-bold text-brand-muted dark:text-brand-muted">${item.queue_position}º na fila</span>` : '';
+    return `
+      <button onclick="openTranscriptionDetail('${item.id}')" class="job-card w-full text-left bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl p-4 transition hover:border-brand-accent/40 dark:hover:border-brand-accent/40">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="job-spinner shrink-0" aria-hidden="true"></span>
+            <div class="min-w-0">
+              <p class="font-bold text-sm text-brand-ink dark:text-brand-ink truncate">${escapeHtml(item.file_name)}</p>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">${stage}${pos ? ' · ' + pos.replace(/<[^>]+>/g, '') : ''}</p>
+            </div>
+          </div>
+          <span class="font-mono text-xs font-bold text-brand-accent dark:text-brand-accent shrink-0">${progress}%</span>
+        </div>
+        <div class="mt-3 h-1.5 rounded-full bg-brand-raised dark:bg-brand-raised overflow-hidden">
+          <div class="job-progress h-1.5 rounded-full" style="width: ${Math.max(progress, 4)}%"></div>
+        </div>
+      </button>`;
+  }).join('');
+}
+
+// --- Mini-player persistente da lista (dock flutuante) ---
+// Usa o mesmo <audio id="audio-player"> do editor; ao abrir uma transcrição
+// o editor assume o elemento e o dock fecha (ver openTranscriptionDetail).
+function playFromList(id, fileName) {
+  const audio = document.getElementById('audio-player');
+  if (!audio) return;
+  state.miniPlayer = { id, fileName };
+  audio.src = `/api/transcriptions/${id}/audio?token=` + encodeURIComponent(state.token);
+  audio.play().catch(() => uiToast('Não foi possível reproduzir o áudio.'));
+  const dock = document.getElementById('mini-player');
+  if (dock) {
+    dock.classList.remove('hidden');
+    const title = document.getElementById('mini-title');
+    if (title) title.textContent = fileName;
+  }
+  miniSyncPlayIcon(true);
+}
+
+function miniTogglePlay() {
+  const audio = document.getElementById('audio-player');
+  if (!audio || !audio.src) return;
+  if (audio.paused) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+function miniSeek(value) {
+  const audio = document.getElementById('audio-player');
+  if (!audio || !audio.duration) return;
+  audio.currentTime = (value / 1000) * audio.duration;
+}
+
+function closeMiniPlayer() {
+  const audio = document.getElementById('audio-player');
+  if (audio && state.miniPlayer) {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  state.miniPlayer = null;
+  const dock = document.getElementById('mini-player');
+  if (dock) dock.classList.add('hidden');
+}
+
+function miniSyncPlayIcon(playing) {
+  const icon = document.getElementById('mini-icon-play');
+  if (!icon) return;
+  icon.setAttribute('data-lucide', playing ? 'pause' : 'play');
+  if (window.lucide) lucide.createIcons();
+}
+
+// Atualização do dock (progresso + relógio) — listener único, registrado
+// no boot. Só age quando o dock está visível; o editor tem seu próprio loop.
+function miniPlayerTimeUpdate() {
+  const dock = document.getElementById('mini-player');
+  if (!dock || dock.classList.contains('hidden')) return;
+  const audio = document.getElementById('audio-player');
+  if (!audio) return;
+  const seek = document.getElementById('mini-seek');
+  if (seek && audio.duration) seek.value = Math.round((audio.currentTime / audio.duration) * 1000);
+  const time = document.getElementById('mini-time');
+  if (time) {
+    const cur = formatDuration(Math.floor(audio.currentTime || 0));
+    const tot = audio.duration ? formatDuration(Math.floor(audio.duration)) : '--:--';
+    time.textContent = `${cur}/${tot}`;
+  }
+  miniSyncPlayIcon(!audio.paused && !audio.ended);
+}
+
+// --- Sidebar colapsável (desktop lg+) — estado persiste ---
+function toggleSidebarCollapse() {
+  const sidebar = document.getElementById('app-sidebar');
+  if (!sidebar) return;
+  const collapsed = sidebar.classList.toggle('sidebar-collapsed');
+  try { localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0'); } catch (_) {}
+  const label = document.getElementById('sidebar-collapse-label');
+  if (label) label.textContent = collapsed ? 'Expandir menu' : 'Recolher menu';
+  const icon = document.getElementById('sidebar-collapse-icon');
+  if (icon) {
+    icon.setAttribute('data-lucide', collapsed ? 'panel-left-open' : 'panel-left-close');
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function applySidebarCollapse() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('sidebar-collapsed') === '1'; } catch (_) {}
+  if (!collapsed) return;
+  const sidebar = document.getElementById('app-sidebar');
+  if (!sidebar) return;
+  sidebar.classList.add('sidebar-collapsed');
+  const label = document.getElementById('sidebar-collapse-label');
+  if (label) label.textContent = 'Expandir menu';
+  const icon = document.getElementById('sidebar-collapse-icon');
+  if (icon) icon.setAttribute('data-lucide', 'panel-left-open');
 }
 
 // ---------------------------------------------------
@@ -1491,6 +1666,9 @@ async function retryTranscription(id) {
 
 async function openTranscriptionDetail(id) {
   try {
+    // T-29 F3: o editor assume o <audio> — o mini-player da lista fecha.
+    // Sem isso o dock ficaria visível em cima do editor com src trocado.
+    if (state.miniPlayer) closeMiniPlayer();
     const res = await fetch(`/api/transcriptions/${id}`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });

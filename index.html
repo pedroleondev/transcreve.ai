@@ -253,18 +253,18 @@
     <!-- SIDEBAR (drawer off-canvas no mobile, fixa no desktop) -->
     <aside id="app-sidebar" class="fixed lg:static inset-y-0 left-0 z-40 w-64 bg-brand-canvas dark:bg-brand-canvas text-brand-copy dark:text-brand-copy flex flex-col shrink-0 border-r border-brand-line dark:border-brand-line transform -translate-x-full lg:translate-x-0 transition-transform duration-200 max-h-screen lg:max-h-none">
       <!-- Chave de API (estado + acesso rapido) -->
-      <div class="p-4 border-b border-brand-line dark:border-brand-line">
+      <div class="p-4 border-b border-brand-line dark:border-brand-line sidebar-pad">
         <div class="bg-brand-raised dark:bg-brand-raised rounded-xl p-3.5 border border-brand-line dark:border-brand-line shadow-inner">
           <div class="flex justify-between items-center text-xs font-semibold text-brand-copy dark:text-brand-copy mb-1">
-            <span>Chave OpenRouter</span>
-            <span id="apikey-state" class="flex items-center gap-1.5 font-bold text-brand-muted dark:text-brand-muted">
+            <span class="sidebar-text">Chave OpenRouter</span>
+            <span id="apikey-state" class="flex items-center gap-1.5 font-bold text-brand-muted dark:text-brand-muted sidebar-hide-when-collapsed">
               <span id="apikey-dot" class="w-2 h-2 rounded-full bg-brand-muted dark:bg-brand-muted"></span>
               <span id="apikey-state-text">verificando…</span>
             </span>
           </div>
           <p id="apikey-masked" class="font-mono text-[11px] text-brand-muted dark:text-brand-muted truncate mb-3">—</p>
           <button id="apikey-config-btn" onclick="openApiKeyModal()" class="w-full bg-brand-accent hover:opacity-90 text-[#06080F] font-bold text-xs py-2 rounded-lg transition shadow-sm tracking-wide flex items-center justify-center gap-1.5">
-            <i data-lucide="key-round" class="w-3.5 h-3.5"></i> CONFIGURAR CHAVE
+            <i data-lucide="key-round" class="w-3.5 h-3.5"></i> <span class="sidebar-text">CONFIGURAR CHAVE</span>
           </button>
         </div>
       </div>
@@ -272,23 +272,23 @@
       <!-- Atalhos & Projetos -->
       <div class="flex-1 overflow-y-auto p-3 space-y-6 custom-scrollbar">
         <div>
-          <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-2 px-3">Atalhos</h4>
+          <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted mb-2 px-3 sidebar-text">Atalhos</h4>
           <nav class="space-y-1">
             <button onclick="filterByProject(null)" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-brand-ink dark:text-brand-ink hover:bg-brand-raised dark:hover:bg-brand-raised transition active-shortcut">
               <i data-lucide="layout-grid" class="w-4 h-4 text-brand-accent dark:text-brand-accent"></i>
-              <span>Arquivos recentes</span>
+              <span class="sidebar-text">Arquivos recentes</span>
             </button>
             <button onclick="filterByProject('uncategorized')" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-brand-muted dark:text-brand-muted hover:bg-brand-raised dark:hover:bg-brand-raised hover:text-brand-ink dark:hover:text-brand-ink transition">
               <i data-lucide="file-text" class="w-4 h-4 text-brand-muted dark:text-brand-muted"></i>
-              <span>Sem projeto</span>
+              <span class="sidebar-text">Sem projeto</span>
             </button>
           </nav>
         </div>
 
         <div>
           <div class="flex items-center justify-between px-3 mb-2">
-            <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted">Projetos</h4>
-            <button onclick="openNewProjectModal()" class="text-brand-accent dark:text-brand-accent hover:opacity-75 text-xs font-bold flex items-center space-x-1" title="Criar Novo Projeto">
+            <h4 class="text-[11px] font-bold uppercase tracking-wider text-brand-muted dark:text-brand-muted sidebar-text">Projetos</h4>
+            <button onclick="openNewProjectModal()" class="text-brand-accent dark:text-brand-accent hover:opacity-75 text-xs font-bold flex items-center space-x-1 sidebar-hide-when-collapsed" title="Criar Novo Projeto">
               <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -300,6 +300,12 @@
 
       <!-- Rodapé Sidebar Admin Shortcut -->
       <div class="p-3 border-t border-brand-line dark:border-brand-line space-y-3">
+        <!-- T-29 F3 (workspace): recolher sidebar no desktop — ganha uma coluna
+             de conteúdo; estado persiste em localStorage -->
+        <button onclick="toggleSidebarCollapse()" class="hidden lg:flex w-full items-center justify-center gap-2 text-[11px] font-bold text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink hover:bg-brand-raised dark:hover:bg-brand-raised py-2 rounded-lg transition" title="Recolher menu lateral">
+          <i data-lucide="panel-left-close" class="w-4 h-4" id="sidebar-collapse-icon"></i>
+          <span id="sidebar-collapse-label" class="sidebar-text">Recolher menu</span>
+        </button>
         <!-- Tema (só no drawer mobile — no desktop o seletor fica no header) -->
         <div id="sidebar-theme" class="md:hidden grid grid-cols-3 gap-1 bg-brand-raised dark:bg-brand-raised p-1 rounded-lg" role="group" aria-label="Tema da interface">
           <button type="button" data-theme-option="light" onclick="setTheme('light')" aria-pressed="false" class="flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-md text-brand-muted dark:text-brand-muted transition"><i data-lucide="sun" class="w-3.5 h-3.5"></i>Claro</button>
@@ -308,7 +314,7 @@
         </div>
         <button onclick="showView('admin')" class="w-full flex items-center justify-center space-x-2 bg-brand-accent/10 dark:bg-brand-accent/10 hover:bg-brand-accent/20 dark:hover:bg-brand-accent/20 text-brand-accent dark:text-brand-accent font-bold text-xs py-2.5 rounded-lg border border-brand-line dark:border-brand-line transition">
           <i data-lucide="shield" class="w-4 h-4"></i>
-          <span>PAINEL SAAS ADMIN</span>
+          <span class="sidebar-text">PAINEL SAAS ADMIN</span>
         </button>
       </div>
     </aside>
@@ -353,6 +359,16 @@
             </span>
           </div>
         </div>
+
+        <!-- T-29 F3 (workspace): métricas reais da lista — total de áudios,
+             tempo transcrito e jobs em andamento. Preenchido por
+             renderDashboardStats() a partir dos dados já carregados. -->
+        <div id="dashboard-stats" class="flex flex-wrap items-center gap-x-5 gap-y-1.5 mb-5 text-[11px] font-bold text-brand-muted dark:text-brand-muted"></div>
+
+        <!-- T-29 F3 (workspace): card de job ativo — destaque acima da lista
+             para quem está processando/na fila. Renderizado por
+             renderActiveJobs(); fica vazio (hidden) quando não há jobs. -->
+        <div id="active-jobs" class="hidden space-y-3 mb-5"></div>
 
         <!-- Tabela de Arquivos Recentes (desktop/tablet) -->
         <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
@@ -1036,6 +1052,27 @@
         <span class="text-[10px] font-bold">Menu</span>
       </button>
     </nav>
+
+    <!-- T-29 F3 (workspace): PLAYER PERSISTENTE DA LISTA — dock flutuante
+         que aparece ao tocar em "Ouvir" numa linha do dashboard; permite
+         continuar navegando/ouvindo sem abrir o editor. Fecha sozinho ao
+         abrir uma transcrição (o editor assume o mesmo elemento <audio>).
+         Glassmorphism permitido aqui: elemento fixo (regra do DESIGN). -->
+    <div id="mini-player" class="hidden fixed z-40 inset-x-3 bottom-[4.5rem] lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:w-[540px] lg:bottom-6 rounded-2xl border border-brand-line dark:border-brand-line bg-brand-surface/95 dark:bg-brand-surface/95 backdrop-blur-md shadow-2xl shadow-black/40 px-3.5 py-2.5" style="padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px))">
+      <div class="flex items-center gap-2.5">
+        <button id="mini-play-btn" onclick="miniTogglePlay()" class="play-btn !w-9 !h-9 shrink-0" aria-label="Reproduzir ou pausar">
+          <i data-lucide="play" class="w-4 h-4" id="mini-icon-play"></i>
+        </button>
+        <div class="flex-1 min-w-0">
+          <p id="mini-title" class="text-[11px] font-bold text-brand-ink dark:text-brand-ink truncate">—</p>
+          <input type="range" id="mini-seek" min="0" max="1000" value="0" oninput="miniSeek(this.value)" class="w-full h-1 mt-1 accent-cyan-400 cursor-pointer" aria-label="Posição do áudio">
+        </div>
+        <span id="mini-time" class="font-mono text-[10px] font-bold text-brand-muted dark:text-brand-muted shrink-0">0:00</span>
+        <button onclick="closeMiniPlayer()" class="player-ctl" aria-label="Fechar player">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL: TRANSCREVER ARQUIVOS -->

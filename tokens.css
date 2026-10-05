@@ -221,4 +221,56 @@
 }
 :root:not(.dark) .nerd-toggle.nerd-on { background: rgba(0, 166, 176, 0.1); }
 
+/* ==========================================================================
+   Átomos F3 — WORKSPACE (T-29): job ativo, mini-player, sidebar colapsável
+   ========================================================================== */
+
+/* Card de job ativo — barra de progresso em gradiente acento→violeta
+   (o job é ação viva da tela; sem glow para respeitar 1-glow/viewport —
+   o glow do dashboard fica no FAB de transcrever do mobile). */
+.job-progress {
+  background: linear-gradient(90deg, rgb(var(--accent)), rgb(var(--wave-violet)));
+  transition: width 0.7s ease;
+}
+:root:not(.dark) .job-progress { background: linear-gradient(90deg, #00A6B0, #7928CA); }
+
+/* Spinner do job: anel ciano girando (CSS puro, zero custo) */
+.job-spinner {
+  width: 1.25rem; height: 1.25rem; border-radius: 9999px;
+  border: 2px solid rgb(var(--accent) / 0.2);
+  border-top-color: rgb(var(--accent));
+  animation: jobSpin 0.9s linear infinite;
+}
+@keyframes jobSpin { to { transform: rotate(360deg); } }
+
+/* Mini-player da lista (dock fixo): glassmorphism permitido — elemento fixo.
+   O ícone de play herda .play-btn (halo luminescente = o 1 glow permitido
+   quando o dock está visível). */
+
+/* Sidebar colapsável (desktop): w-64 → w-16, só ícones; labels e textos
+   escondidos via .sidebar-text; transição suave de largura. */
+#app-sidebar { transition: width 0.2s ease, transform 0.2s ease; }
+#app-sidebar.sidebar-collapsed { width: 4rem; }
+#app-sidebar.sidebar-collapsed .sidebar-text { display: none; }
+#app-sidebar.sidebar-collapsed .sidebar-pad { padding-left: 0.5rem; padding-right: 0.5rem; }
+#app-sidebar.sidebar-collapsed #apikey-masked,
+#app-sidebar.sidebar-collapsed .sidebar-hide-when-collapsed { display: none; }
+/* Itens de nav continuam clicáveis e centralizados quando recolhidos */
+#app-sidebar.sidebar-collapsed nav button { justify-content: center; }
+
+/* ==========================================================================
+   F4 — POLIMENTO (T-29): movimento reduzido, acessibilidade
+   ========================================================================== */
+
+/* prefers-reduced-motion: calma total — nada de pulse, spin, parallax ou
+   transições longas para quem pede menos movimento no sistema. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 
