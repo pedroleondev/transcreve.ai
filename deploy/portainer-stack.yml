@@ -29,7 +29,7 @@ services:
   ## --------------------------- FALOU.APP --------------------------- ##
 
   falou_app:
-    image: pedroleondev/falou-ai:latest
+    image: ghcr.io/pedroleondev/falou-ai:latest
     volumes:
       - falou_uploads:/app/uploads
     networks:

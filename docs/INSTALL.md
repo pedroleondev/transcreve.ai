@@ -120,16 +120,23 @@ docker compose restart traefik
 
 ### Portainer + swarm (KVM2/ORION, rede PegazusNet + Traefik externo) — trilha de produção
 
-É o caminho usado no deploy oficial. A imagem `pedroleondev/falou-ai:latest` é
-publicada automaticamente a cada push na `main` (GitHub Actions,
-`.github/workflows/docker-publish.yml`).
+É o caminho usado no deploy oficial. A imagem
+`ghcr.io/pedroleondev/falou-ai:latest` (GitHub Container Registry — privada,
+só sua conta puxa) é publicada automaticamente a cada push na `main`
+(GitHub Actions, `.github/workflows/docker-publish.yml`). Autenticação é
+automática via `GITHUB_TOKEN`: **nenhuma conta externa, nenhum secret manual**.
 
-**Uma vez, no GitHub:**
-1. Docker Hub → crie o repositório **público** `pedroleondev/falou-ai`.
-2. Docker Hub → Account Settings → Security → gera um **Access Token**.
-3. GitHub do projeto → Settings → Secrets and variables → Actions →
-   `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` com os dois valores.
-4. Dê push na `main` (ou "Run workflow" manual) — o workflow sobe a imagem.
+**Uma vez, no GitHub (para o Portainer puxar a imagem privada):**
+1. GitHub → seu avatar → Settings → Developer settings → Personal access
+   tokens → Tokens (classic) → Generate new token → marque **somente**
+   `read:packages` → Generate → **copie o token** (só aparece 1x).
+2. Portainer → Registries → Add registry → **Custom**:
+   - Name: `ghcr`
+   - Registry URL: `ghcr.io`
+   - Username: `pedroleondev`
+   - Password: o token do passo 1
+
+Pronto — o Portainer agora autentica no depósito privado do GitHub.
 
 **Uma vez, no manager do swarm:**
 ```bash
