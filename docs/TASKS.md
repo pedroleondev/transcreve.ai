@@ -39,7 +39,7 @@
 | T-26 | MinIO/S3 para arquivos (camada de storage isolada) | 🟡 P2 | TODO |
 | T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | DONE |
 | T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | DONE |
-| T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | TODO |
+| T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | DOING |
 | T-30 | API pública + webhooks (tool para LLMs) | 🟡 P2 | TODO |
 | T-31 | MCP server / skills sobre a API | 🟢 P3 | TODO |
 | T-32 | Deploy one-click (compose prod, `.env` documentado, INSTALL) | 🟠 P1 | TODO |
@@ -746,7 +746,7 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 **Fases (uma por sessão, cada uma commitável):**
 - **F1 — Tokens:** `tokens.css` (variáveis das duas paletas, escuro + claro) + tailwind.config estendido (paleta, raios, Jakarta Sans). Aceite: app escuro inteiro na nova paleta, zero mudança estrutural. Tema claro com cores sombreadas (ciano puro falha contraste em fundo branco — usar `#00A6B0`), glow desligado no claro. ✅ **DONE 03/10/2026** (ver evidência)
 - **F2 — Componentes atômicos:** botões (press 0.97), inputs, chips de status (cor a 12% opacidade), badges de tier, cards, drawer/bottom sheet, **helper único de modal** (Esc, backdrop, foco, sem `prompt()` — fecha o escopo da T-14). ✅ **DONE 03/10/2026** (ver evidência)
-- **F3 — Telas, nesta ordem:** (1) **Editor de transcrição** primeiro (tela de maior retenção): blocos de fala, player com waveform em canvas, **player fixo/barra persistente** (fecha o escopo da T-12), toolbar unificada; (2) **Workspace/lista**: 3 colunas desktop, card de job ativo, painel player persistente, sidebar colapsável, empilhamento mobile; (3) **Landing** por último (menor risco, identidade pública). ◐ **Parcial (editor) 04/10/2026** (ver evidência)
+- **F3 — Telas, nesta ordem:** (1) **Editor de transcrição** primeiro (tela de maior retenção): blocos de fala, player com waveform em canvas, **player fixo/barra persistente** (fecha o escopo da T-12), toolbar unificada; (2) **Workspace/lista**: 3 colunas desktop, card de job ativo, painel player persistente, sidebar colapsável, empilhamento mobile; (3) **Landing**: ✅ **DONE 05/10/2026** — hero animado, reveal, contadores, telas reais 2x, mobile-first, SEO/llms.txt/pixels. ◐ **Parcial (editor + landing) — falta o workspace/lista** (ver evidência)
 - **F4 — Polimento:** glow em no máximo 1 elemento por viewport, `prefers-reduced-motion`, auditoria de contraste AA no claro, passada do Avaliador UX/UI nos fluxos-chave.
 
 **Regras de ouro do redesign (decididas na análise):**
