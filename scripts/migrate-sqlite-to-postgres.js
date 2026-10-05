@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS transcriptions (
   error_message TEXT,
   ai_summary TEXT,
   stage TEXT,
+  callback_url TEXT,
+  api_key_id TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   worker_attempts INTEGER NOT NULL DEFAULT 0,
@@ -146,6 +148,17 @@ CREATE TABLE IF NOT EXISTS api_keys (
   last_check_at TIMESTAMP,
   last_check_ok BOOLEAN,
   last_check_info TEXT
+);
+CREATE TABLE IF NOT EXISTS user_api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  webhook_secret TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TIMESTAMP,
+  revoked_at TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS system_settings (
   key TEXT PRIMARY KEY,

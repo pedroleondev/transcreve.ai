@@ -1310,8 +1310,16 @@ app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) 
     const model = (settingsMap.analysis_model || '').trim() || 'openai/gpt-4o-mini';
     // T-25 (JEV): juiz de validação — modelos configuráveis no painel admin.
     // Desligado explicitamente com judge_enabled='0' (fluxo T-18 puro).
-    const judgeEnabled = (settingsMap.judge_enabled || '1').trim() !== '0';
+    const judgeSettingEnabled = (settingsMap.judge_enabled || '1').trim() !== '0';
     const judgeModel = (settingsMap.judge_model || '').trim() || 'openai/gpt-4o-mini';
+
+    // T-35: o JEV é o diferencial do plano Ouro. Demais planos (e o legado
+    // 'gratuito') recebem o aprimoramento puro T-18 sem juiz; a resposta marca
+    // jev_skipped para a UI sinalizar. Admin sempre roda com juiz.
+    const userRow = await getAsync(`SELECT plan, role FROM users WHERE id = ?`, [req.user.id]);
+    const userPlan = (userRow && userRow.plan) || 'gratuito';
+    const jevSkipped = judgeSettingEnabled && userPlan !== 'ouro' && (!userRow || userRow.role !== 'admin') ? 'plano' : null;
+    const judgeEnabled = judgeSettingEnabled && !jevSkipped;
 
     const glossary = await allAsync(`SELECT wrong, correct FROM glossary ORDER BY wrong`);
     const glossaryJson = JSON.stringify(glossary);
@@ -1337,7 +1345,7 @@ app.post('/api/transcriptions/:id/enhance', authenticateToken, async (req, res) 
        judgeEnabled ? judgeModel : null, judge ? !!judge.approved : null,
        judge && judge.issues.length ? JSON.stringify(judge.issues) : null, attempts]
     );
-    res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION, attempts, judge } });
+    res.json({ success: true, analysis: { id: analysisId, model, result_md: resultText, tokens_in: tokensIn, tokens_out: tokensOut, prompt_version: PROMPT_VERSION, attempts, judge }, jev_skipped: jevSkipped });
   } catch (e) {
     console.error('[T-18 Enhance Error]', e);
     // Sem texto inventado: falha de API/LLM retorna erro explícito, nada é persistido.
@@ -1526,12 +1534,13 @@ app.get('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res) 
   }
 });
 
-// Estado da chave ativa, para o indicador da sidebar (nunca inclui a chave).
+// Estado do pool de chaves, para o indicador da sidebar (nunca inclui a chave).
+// T-35: com o pool, o status passa a ser "quantas chaves estão ativas".
 app.get('/api/admin/apikeys/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const active = await getAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE LIMIT 1`);
-    if (!active) return res.json({ configured: false });
-    res.json({ configured: true, ...publicKeyRow(active) });
+    const actives = await allAsync(`SELECT * FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE ORDER BY created_at DESC`);
+    if (!actives.length) return res.json({ configured: false, pool_size: 0 });
+    res.json({ configured: true, pool_size: actives.length, ...publicKeyRow(actives[0]) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1586,7 +1595,9 @@ app.post('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res)
     keyAuthFailures.delete(ip);
 
     const keyId = uuidv4();
-    await runAsync(`UPDATE api_keys SET is_active = FALSE WHERE provider = 'openrouter'`);
+    // T-35 (pool): a chave nova ENTRA no pool ativo — as demais continuam
+    // ativas. O balanceamento (round-robin + circuit breaker) passa a
+    // distribuir o load entre todas.
     await runAsync(
       `INSERT INTO api_keys (id, provider, name, key_value, is_active, last_check_at, last_check_ok, last_check_info)
        VALUES (?, 'openrouter', ?, ?, TRUE, CURRENT_TIMESTAMP, TRUE, ?)`,
@@ -1599,12 +1610,16 @@ app.post('/api/admin/apikeys', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
+// T-35 (pool): ativa/desativa UMA chave independentemente das demais
+// (toggle). O pool usa todas com is_active = TRUE.
 app.put('/api/admin/apikeys/:id/activate', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await runAsync(`UPDATE api_keys SET is_active = FALSE WHERE provider = 'openrouter'`);
-    await runAsync(`UPDATE api_keys SET is_active = TRUE WHERE id = ?`, [req.params.id]);
-    await logAction(req.user.id, 'ADMIN_APIKEY_ACTIVATED', { key_id: req.params.id }, req.ip);
-    res.json({ success: true });
+    const row = await getAsync(`SELECT id, is_active FROM api_keys WHERE id = ?`, [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Chave não encontrada.' });
+    const next = !row.is_active;
+    await runAsync(`UPDATE api_keys SET is_active = ? WHERE id = ?`, [next, req.params.id]);
+    await logAction(req.user.id, next ? 'ADMIN_APIKEY_ACTIVATED' : 'ADMIN_APIKEY_DEACTIVATED', { key_id: req.params.id }, req.ip);
+    res.json({ success: true, is_active: next });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1696,6 +1711,246 @@ app.get('/api/transcriptions/:id/status', authenticateToken, async (req, res) =>
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// T-30: API PÚBLICA V1 — chave API pessoal por usuário (n8n, automações, LLMs)
+// Modelo "cartão da OpenRouter ao contrário": o usuário gera UMA chave
+// fk_live_..., cola na automação dele e o consumo cai na própria cota/limites
+// dele. Sem BYOK — tudo sai das chaves centrais do dono (T-35).
+// ---------------------------------------------------------------------------
+const crypto = require('crypto');
+
+// T-30: um usuário tem no máximo UMA chave ativa (regenerar revoga a anterior).
+async function authenticateApiKey(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const match = header.match(/^Bearer (fk_live_[A-Za-z0-9]{32,})$/);
+    if (!match) {
+      return res.status(401).json({ error: 'Chave de API ausente ou malformada. Use: Authorization: Bearer fk_live_...' });
+    }
+    const keyHash = crypto.createHash('sha256').update(match[1]).digest('hex');
+    const row = await getAsync(
+      `SELECT k.id AS key_id, k.webhook_secret, k.revoked_at, u.id, u.role, u.status, u.plan, u.name, u.email
+       FROM user_api_keys k JOIN users u ON u.id = k.user_id WHERE k.key_hash = ?`,
+      [keyHash]
+    );
+    if (!row || row.revoked_at) {
+      return res.status(401).json({ error: 'Chave de API inválida ou revogada.' });
+    }
+    if (row.status !== 'active') {
+      return res.status(403).json({ error: 'Conta suspensa. Regularize sua assinatura para usar a API.' });
+    }
+    req.user = { id: row.id, role: row.role, plan: row.plan, name: row.name, email: row.email };
+    req.apiKey = { id: row.key_id, webhook_secret: row.webhook_secret };
+    await runAsync(`UPDATE user_api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.key_id]);
+    next();
+  } catch (e) { next(e); }
+}
+
+// Headers de cota nas respostas v1 (o middleware de quota já recusa com 429;
+// aqui o usuário enxerga o saldo em toda resposta).
+async function v1QuotaHeaders(req, res, next) {
+  try {
+    const quota = await getQuotaState(req.user.id);
+    if (quota) {
+      res.setHeader('X-RateLimit-Limit', String(quota.limit));
+      res.setHeader('X-RateLimit-Used', String(quota.used));
+      res.setHeader('X-RateLimit-Remaining', String(quota.exempt ? quota.limit : Math.max(quota.limit - quota.used, 0)));
+    }
+    next();
+  } catch (e) { next(e); }
+}
+
+// Multer só quando vem multipart; JSON {url} passa direto.
+const v1Upload = (req, res, next) => {
+  if (String(req.headers['content-type'] || '').includes('multipart/form-data')) {
+    return uploadWithDynamicLimits(req, res, next);
+  }
+  next();
+};
+
+const V1_KEY_PREFIX = 'fk_live_';
+function generateApiKeyPair() {
+  const raw = V1_KEY_PREFIX + crypto.randomBytes(24).toString('hex'); // 48 hex + prefix
+  return {
+    raw,
+    hash: crypto.createHash('sha256').update(raw).digest('hex'),
+    prefix: raw.slice(0, 14) + '…' + raw.slice(-4),
+    webhook_secret: crypto.randomBytes(16).toString('hex')
+  };
+}
+
+// Criação de chave (uma por usuário; ?rotate=1 revoga a anterior e emite nova)
+app.post('/api/account/apikey', authenticateToken, async (req, res) => {
+  try {
+    const rotate = req.query.rotate === '1';
+    const existing = await getAsync(`SELECT id FROM user_api_keys WHERE user_id = ? AND revoked_at IS NULL`, [req.user.id]);
+    if (existing && !rotate) {
+      return res.status(409).json({ error: 'Você já tem uma chave ativa. Use rotate=1 para revogar e gerar outra.', rotate_hint: true });
+    }
+    if (existing) {
+      await runAsync(`UPDATE user_api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?`, [existing.id]);
+      await logAction(req.user.id, 'API_KEY_ROTATED', { key_id: existing.id }, req.ip);
+    }
+    const pair = generateApiKeyPair();
+    const id = uuidv4();
+    await runAsync(
+      `INSERT INTO user_api_keys (id, user_id, name, prefix, key_hash, webhook_secret) VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, req.user.id, (req.body && req.body.name || '').slice(0, 60) || 'Chave padrão', pair.prefix, pair.hash, pair.webhook_secret]
+    );
+    await logAction(req.user.id, 'API_KEY_CREATED', { key_id: id }, req.ip);
+    // A chave integral aparece SÓ desta vez; no banco vai o hash.
+    res.json({ success: true, api_key: pair.raw, webhook_secret: pair.webhook_secret, prefix: pair.prefix, warning: 'Guarde agora: a chave não será exibida novamente.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/account/apikey', authenticateToken, async (req, res) => {
+  try {
+    const keys = await allAsync(
+      `SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM user_api_keys WHERE user_id = ? ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ active: keys.find(k => !k.revoked_at) || null, history: keys });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/account/apikey/:id', authenticateToken, async (req, res) => {
+  try {
+    const r = await runAsync(`UPDATE user_api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND revoked_at IS NULL`, [req.params.id, req.user.id]);
+    if (!r.changes) return res.status(404).json({ error: 'Chave não encontrada ou já revogada.' });
+    await logAction(req.user.id, 'API_KEY_REVOKED', { key_id: req.params.id }, req.ip);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/v1/transcriptions — multipart (campo "files", como na UI) ou JSON
+// { url, mode?, language?, callback_url? }. Consome a cota do dono da chave.
+app.post('/api/v1/transcriptions', authenticateApiKey, checkDailyQuota, v1Upload, uploadErrorHandler, v1QuotaHeaders, async (req, res) => {
+  const rawMode = (req.body && req.body.mode) || 'max';
+  const modelId = (req.body && req.body.model_id) || null;
+  const languageRaw = String((req.body && req.body.language) || 'auto').toLowerCase();
+  const language = languageRaw === 'auto' ? 'auto' : languageRaw;
+  if (language !== 'auto' && !isValidLanguage(language)) {
+    return res.status(400).json({ error: `Idioma inválido: '${language}'. Use 'auto' ou um código ISO-639-1 (pt, en, es, ja...).` });
+  }
+  const LEGACY = { chita: 'base', golfinho: 'pro', baleia: 'max' };
+  const mode = LEGACY[rawMode] || rawMode;
+  const effectiveModel = modelId || mode;
+  const callbackUrl = String((req.body && req.body.callback_url) || '').trim() || null;
+  if (callbackUrl && !/^https?:\/\//.test(callbackUrl)) {
+    return res.status(400).json({ error: 'callback_url deve começar com http:// ou https://' });
+  }
+
+  // Caminho 1: JSON com {url}
+  if (!req.files || !req.files.length) {
+    const rawUrl = String((req.body && req.body.url) || '').trim();
+    if (!rawUrl) return res.status(400).json({ error: 'Envie um arquivo (multipart, campo "files") ou um JSON com { url }.' });
+    const quota = await getQuotaState(req.user.id);
+    if (quota && !quota.exempt && quota.used + 1 > quota.limit) {
+      return res.status(429).json({ error: `Limite diário: ${quota.used} de ${quota.limit} transcrições nas últimas 24 h.` });
+    }
+    const { maxFileSizeMb } = await getLimitSettings();
+    const transcriptionId = uuidv4();
+    let downloaded;
+    try {
+      downloaded = await downloadFromUrl(rawUrl, uploadsDir, maxFileSizeMb * 1024 * 1024);
+    } catch (e) {
+      if (e.statusHint === 400) return res.status(400).json({ error: e.message });
+      await runAsync(
+        `INSERT INTO transcriptions (id, user_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, progress, error_message, callback_url, api_key_id)
+         VALUES (?, ?, ?, '', 0, 0, ?, ?, 'failed', '', 0, ?, ?, ?)`,
+        [transcriptionId, req.user.id, rawUrl, language, effectiveModel, e.message, callbackUrl, req.apiKey.id]
+      );
+      return res.status(202).json({ id: transcriptionId, file_name: rawUrl, status: 'failed', error_message: e.message });
+    }
+    let probe;
+    try {
+      probe = await probeMedia(downloaded.filePath);
+    } catch (_) {
+      await fs.promises.unlink(downloaded.filePath).catch(() => {});
+      return res.status(400).json({ error: 'O conteúdo do link não foi reconhecido como áudio/vídeo.' });
+    }
+    await runAsync(
+      `INSERT INTO transcriptions (id, user_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, progress, callback_url, api_key_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', 0, ?, ?)`,
+      [transcriptionId, req.user.id, downloaded.name || rawUrl, '/uploads/' + path.basename(downloaded.filePath), downloaded.size || 0, probe.duration, language, effectiveModel, callbackUrl, req.apiKey.id]
+    );
+    return res.status(202).json({ id: transcriptionId, file_name: downloaded.name || rawUrl, status: 'pending', progress: 0, duration_seconds: probe.duration });
+  }
+
+  // Caminho 2: multipart com arquivo(s) — valida cota do lote e cada mídia.
+  const quota = await getQuotaState(req.user.id);
+  if (quota && !quota.exempt && quota.used + req.files.length > quota.limit) {
+    await Promise.all(req.files.map(f => fs.promises.unlink(f.path).catch(() => {})));
+    return res.status(429).json({ error: `Limite diário: restam ${Math.max(quota.limit - quota.used, 0)} de ${quota.limit} e você enviou ${req.files.length} arquivo(s).` });
+  }
+  const { maxDurationHours } = await getLimitSettings();
+  const results = [];
+  const errors = [];
+  for (const file of req.files) {
+    const displayName = decodeOriginalName(file.originalname);
+    try {
+      let probe;
+      try { probe = await probeMedia(file.path); }
+      catch (_) {
+        errors.push({ file_name: displayName, error: 'Arquivo não reconhecido como áudio/vídeo.' });
+        await fs.promises.unlink(file.path).catch(() => {});
+        continue;
+      }
+      if (!probe.hasAudio) {
+        errors.push({ file_name: displayName, error: 'O arquivo não contém trilha de áudio.' });
+        await fs.promises.unlink(file.path).catch(() => {});
+        continue;
+      }
+      if (probe.duration > maxDurationHours * 3600) {
+        errors.push({ file_name: displayName, error: `Duração excede o limite de ${maxDurationHours} h.` });
+        await fs.promises.unlink(file.path).catch(() => {});
+        continue;
+      }
+      const transcriptionId = uuidv4();
+      await runAsync(
+        `INSERT INTO transcriptions (id, user_id, file_name, file_path, file_size, duration_seconds, language, mode, status, raw_text, progress, callback_url, api_key_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', 0, ?, ?)`,
+        [transcriptionId, req.user.id, displayName, '/uploads/' + file.filename, file.size, probe.duration, language, effectiveModel, callbackUrl, req.apiKey.id]
+      );
+      results.push({ id: transcriptionId, file_name: displayName, status: 'pending', progress: 0, duration_seconds: probe.duration });
+    } catch (err) {
+      errors.push({ file_name: displayName, error: err.message });
+      await fs.promises.unlink(file.path).catch(() => {});
+    }
+  }
+  res.status(results.length ? 202 : 400).json({ count: results.length, data: results, errors });
+});
+
+// Status de um job (só o dono da chave vê o que criou).
+app.get('/api/v1/transcriptions/:id', authenticateApiKey, v1QuotaHeaders, async (req, res) => {
+  try {
+    const row = await getAsync(`SELECT id, file_name, status, stage, progress, duration_seconds, error_message, mode, language, created_at FROM transcriptions WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id]);
+    if (!row) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    const prog = await getJobProgress(req.params.id);
+    res.json({ ...row, queue_position: prog.queue_position ?? null, eta_seconds: prog.eta_seconds ?? null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Texto final (só quando concluída).
+app.get('/api/v1/transcriptions/:id/text', authenticateApiKey, v1QuotaHeaders, async (req, res) => {
+  try {
+    const row = await getAsync(`SELECT id, file_name, status, raw_text, ai_summary, duration_seconds, error_message FROM transcriptions WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id]);
+    if (!row) return res.status(404).json({ error: 'Transcrição não encontrada.' });
+    if (row.status !== 'completed' && row.status !== 'completed_with_errors') {
+      return res.status(409).json({ error: `Transcrição ainda em '${row.status}'. Consulte /api/v1/transcriptions/${row.id} até status=completed.`, status: row.status });
+    }
+    res.json({ id: row.id, file_name: row.file_name, status: row.status, text: row.raw_text || '', summary: row.ai_summary || null, duration_seconds: row.duration_seconds, error_message: row.error_message || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Saldo/cota do dono da chave (o n8n decide se desvia o fluxo antes de gastar).
+app.get('/api/v1/account', authenticateApiKey, v1QuotaHeaders, async (req, res) => {
+  try {
+    const quota = await getQuotaState(req.user.id);
+    res.json({ name: req.user.name, email: req.user.email, plan: req.user.plan || 'gratuito', role: req.user.role, quota: quota ? { limit: quota.limit, used: quota.used, remaining: quota.exempt ? quota.limit : Math.max(quota.limit - quota.used, 0), exempt: !!quota.exempt } : null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Iniciar Servidor Express

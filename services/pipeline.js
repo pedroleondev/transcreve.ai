@@ -5,6 +5,7 @@ const { runAsync, getAsync, allAsync, logAction, isPostgres } = require('../db')
 const { createQueueWorker, positiveNumber, queuePositionSql } = require('./queue');
 const { jobSleep } = require('./job-context');
 const { transcribeAudioFile, generateChatCompletion } = require('./openrouter');
+const { deliverWebhook } = require('./webhooks');
 const { preprocessAudio, splitAudioSmart, filterHallucinations, measureMeanVolume, splitFixed } = require('./audio');
 
 const ROOT = path.join(__dirname, '..');
@@ -328,6 +329,34 @@ async function cleanup(task, chunks) {
 }
 
 // ---------------------------------------------------------------------------
+// T-30: webhook de conclusão — se o job nasceu pela API v1 com callback_url,
+// avisa a automação do usuário (n8n etc.). Fire-and-forget: nunca segura o
+// worker; retry com backoff vive dentro do deliverWebhook.
+// ---------------------------------------------------------------------------
+function notifyTranscriptionWebhook(task, status, errorMessage) {
+  if (!task.callback_url) return;
+  getAsync(`SELECT webhook_secret FROM user_api_keys WHERE id = ?`, [task.api_key_id])
+    .then(row => {
+      if (!row || !row.webhook_secret) return;
+      deliverWebhook({
+        callbackUrl: task.callback_url,
+        webhookSecret: row.webhook_secret,
+        payload: {
+          event: status === 'failed' ? 'transcription.failed' : 'transcription.completed',
+          id: task.id,
+          file_name: task.file_name,
+          status,
+          duration_seconds: task.duration_seconds || 0,
+          error_message: errorMessage || null,
+          completed_at: new Date().toISOString()
+        },
+        onLog: (ok, detail) => logAction(task.user_id, ok ? 'WEBHOOK_DELIVERED' : 'WEBHOOK_FAILED', { transcription_id: task.id, detail }, '127.0.0.1')
+      });
+    })
+    .catch(() => { /* webhook é best-effort; falha já vai pro log */ });
+}
+
+// ---------------------------------------------------------------------------
 // Job completo. Cada etapa e idempotente, entao rodar de novo apos uma queda
 // retoma de onde parou.
 // ---------------------------------------------------------------------------
@@ -374,6 +403,7 @@ async function processJob(task) {
   await logAction(task.user_id, 'TRANSCRIPTION_CREATED_ASYNC', {
     file_name: task.file_name, duration, model: modelUsed, chunks: chunks.length, failed: failed.length
   }, '127.0.0.1');
+  notifyTranscriptionWebhook(task, status, errorMessage);
   console.log(`[Pipeline] ${task.id}: ${status} (${chunks.length} bloco(s), ${failed.length} falha(s)).`);
 }
 
@@ -395,7 +425,7 @@ async function startQueueWorker() {
   const concurrency = positiveNumber('WORKER_CONCURRENCY', 2, true, 32);
   const timeoutMs = positiveNumber('WORKER_TIMEOUT_MINUTES', 30, false) * 60000;
   const maxAttempts = positiveNumber('WORKER_MAX_ATTEMPTS', 3, true, 10);
-  const queue = createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency, timeoutMs, maxAttempts, pollMs: POLL_INTERVAL_MS});
+  const queue = createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency, timeoutMs, maxAttempts, pollMs: POLL_INTERVAL_MS, onJobFailed: (task, message) => notifyTranscriptionWebhook(task, 'failed', message)});
   console.log('[Pipeline] Worker ativo: ' + concurrency + ' jobs, ' + CHUNK_CONCURRENCY + ' blocos/job, timeout ' + timeoutMs / 60000 + ' min, ate ' + maxAttempts + ' tentativas/job.');
   await queue.start();
   return queue;

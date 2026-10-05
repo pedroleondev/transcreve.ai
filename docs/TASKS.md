@@ -40,11 +40,12 @@
 | T-27 | Asaas: assinaturas, webhook de pagamento, suspensão automática | 🔴 P0 | DONE |
 | T-28 | Landing page + auto-cadastro + confirmação de e-mail | 🔴 P0 | DONE |
 | T-29 | Reformulação UX/UI "Obsidian Wave" (4 fases; absorve T-12/T-14) | 🟠 P1 | DONE |
-| T-30 | API pública + webhooks (tool para LLMs) | 🟡 P2 | TODO |
+| T-30 | API pública + webhooks: chave API pessoal por usuário (n8n, automações, LLMs) | 🟡 P2 | DONE |
 | T-31 | MCP server / skills sobre a API | 🟢 P3 | TODO |
 | T-32 | Deploy one-click (compose prod, `.env` documentado, INSTALL) | 🟠 P1 | TODO |
 | T-33 | Gravador de voz (waveform, pausar, idioma) | 🟢 P3 | TODO |
 | T-34 | Mobile da tela de detalhe: painel lateral antes do miolo, Fonte/Coluna adaptados, toolbar enxuta | 🟡 P2 | DONE |
+| T-35 | Pool de chaves OpenRouter do dono (balanceamento + circuit breaker) + JEV só no plano Ouro + remoção final do BYOK | 🔴 P0 | DONE |
 
 **Ordeiro de execução (remodelado 28/09 — virada SaaS):** **T-08** (Postgres, fundação) → T-07 (cotas) → T-13 (export em massa) → T-28 (landing/cadastro) → T-27 (Asaas) → T-32 (deploy) → T-29 (UX/UI, pode correr em paralelo desde a Fase 1) → T-09 · T-11 · T-30 → T-26 → T-21 · T-22 · T-31 · T-33.
 Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, deploy em KVM2/Portainer. T-08 vai primeiro porque billing, cadastro e API pública todos escrevem no banco — em SQLite seriam `SQLITE_BUSY` na primeira campanha.
@@ -780,19 +781,22 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 ---
 
 ### T-30 — API pública + webhooks (tool para LLMs)
-**Estado:** TODO · **Prioridade:** 🟡 P2 · **Depende de:** T-08 (fase 2), T-07 (cotas — API consome cota)
-**Por quê:** o próximo canal de aquisição de usuários não é humano: é LLM. Quando alguém monta um agente que precisa transcrever, a TranscreveAI precisa ser callable por máquina — endpoint estável, auth por API key, webhook de conclusão. É também a base do MCP (T-31).
+**Estado:** DONE (05/10/2026) · **Prioridade:** 🟡 P2 · **Depende de:** T-08 (fase 2), T-07 (cotas — API consome cota)
+**Por quê:** cada usuário pode gerar uma chave API pessoal (`fk_live_...`) e usar o Falou.ai de dentro das próprias automações (n8n, Make, scripts) — o cartão da OpenRouter ao contrário: quem integra consome a própria cota e os próprios limites, e o dono do SaaS fatura sobre o custo dele (R$ ~0,04/transcrição, margem 10x+ nas cotas). É também a base do MCP (T-31). Decisão de produto (05/10): **não existe mais BYOK de usuário** — todo o consumo passa pelas chaves centrais do dono (T-35).
 **Contexto:** `server.js` (rotas `/api/*`), `db.js`
 **Toca:** `server.js` (novas rotas sob `/v1/`), `db.js` (`api_tokens` por usuário), `docs/` (API reference), `.env.example`
 **Aceite:**
-- [ ] `POST /v1/transcriptions` (URL ou multipart) autenticado por `Authorization: Bearer tk_...` — o token é do usuário (não da OpenRouter); tokens armazenados em hash, prefixo visível
-- [ ] `GET /v1/transcriptions/:id` com status e resultado; escopo: só vê o que o dono do token criou
-- [ ] Webhook de conclusão: usuário registra URL + secret; a app POSTa `{event, id, status}` assinado com HMAC-SHA256 do secret; retry com backoff em falha (5 tentativas)
-- [ ] Cota de API = mesma `daily_limit` da UI (T-07); headers `X-RateLimit-*` nas respostas
-- [ ] API reference em `docs/API.md` com exemplos curl; versão no path (`/v1/`)
-- [ ] `test_suite.js` cobre auth, escopo e assinatura do webhook (sem chamadas externas)
+- [x] `POST /api/v1/transcriptions` (URL ou multipart) autenticado por `Authorization: Bearer fk_live_...` — o token é do usuário (não da OpenRouter); tokens armazenados em hash SHA-256, prefixo visível, mostrado integralmente só na criação; revogação imediata
+- [x] `GET /api/v1/transcriptions/:id` com status e resultado; escopo: só vê o que o dono do token criou
+- [x] Webhook de conclusão: `callback_url` no POST; a app POSTa `{event, id, status}` assinado com HMAC-SHA256; retry com backoff em falha (5 tentativas)
+- [x] Cota de API = mesma `daily_limit` da UI (T-07); headers `X-RateLimit-*` nas respostas; chave de usuário suspenso não autentica
+- [x] Página Conta (T-09) ganha seção "Chave de API": gerar (mostra 1x com copiar), listar prefixos, revogar
+- [x] Workflow n8n de exemplo versionado (`docs/n8n/falou-transcricao-flow.json`) + validação ponta a ponta simulando as mesmas chamadas
+- [x] API reference em `docs/API.md` com exemplos curl; versão no path (`/api/v1/`)
+- [x] `tests/t30_api_flow.js` cobre auth, escopo e assinatura do webhook (27 asserts, provedor mock, zero chamadas externas)
 
-**Evidência:** _(preencher)_
+**Evidência:**
+- **05/10/2026:** chave `fk_live_` (48 hex) por usuário, uma ativa por conta (409 sem rotate; `?rotate=1` revoga e emite nova); hash SHA-256 em `user_api_keys` (só hash + prefixo no banco; chave integral e `webhook_secret` exibidos 1x na criação). Rotas v1: `POST /api/v1/transcriptions` (multipart campo `files` ou JSON `{url, mode, language, callback_url}`), `GET .../:id` (com `queue_position`/`eta_seconds`), `GET .../:id/text` (409 até `completed`), `GET /api/v1/account` (saldo para o n8n desviar antes de gastar). Escopo: dono da chave só lê os próprios jobs (404); chave v1 não autentica em rotas JWT/admin (403 do `authenticateToken`). Quota: mesma `daily_limit` da UI, headers `X-RateLimit-Limit/Used/Remaining`, 429 sem consumir. Webhook: `services/webhooks.js` — POST no `callback_url` ao concluir/falhar, headers `X-Falou-Event` + `X-Falou-Signature` (HMAC-SHA256 do body com o segredo da chave), 5 tentativas backoff 0/1/3/7/15 s fire-and-forget (não trava o worker; falha final → log `WEBHOOK_DELIVERED`/`WEBHOOK_FAILED`). UI: seção "Chave de API" na aba Conta (`index.html` + `app.js`) com gerar/copiar/regenerar/revogar. Docs: `docs/API.md` (reference completa com validação de assinatura em Node) e `docs/n8n/falou-transcricao-flow.json` (workflow importável: webhook → cria → wait → poll → IF → texto → responde). Migração: colunas `webhook_secret` (user_api_keys) e `callback_url`/`api_key_id` (transcriptions) com guards SQLite PRAGMA + PG information_schema, também em `scripts/migrate-sqlite-to-postgres.js`. **Testes:** `tests/t30_api_flow.js` 27/27 (auth 401/403, uma chave por usuário, rotate, escopo 404, quota 429/headers, job completo, webhook recebido com assinatura HMAC válida, revogação); `test_suite.js` 130/130; `tests/ui_regressions.js` 13/13.
 
 ---
 
@@ -871,3 +875,22 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
   1. Fonte removida do mobile (Aₐ some; mobile fica só lupa + copiar) e barra de pesquisa mobile sticky — setas mantêm foco no campo e cada hit alinha abaixo da barra (`tests/check_t34_search.js`, screenshots `after2/`, commit validado pelo dono no celular).
   2. Espaçamento das setas anterior/próxima da busca aumentado para facilitar o toque (`after3/`).
   3. **CTA "Transcrever Arquivos" do dashboard**: o texto saindo do box azul no mobile foi corrigido com `flex-wrap` na linha de controles, busca com `min-w-[140px]`, botão em linha própria full-width no mobile (`order-3 lg:order-none flex-1 min-w-full sm:min-w-[220px] lg:flex-none`) e `whitespace-nowrap` no rótulo. Validação headless CDP 375px (`tests/check_dashboard_cta.js`): `textoDentroDoBox=true`, `scrollHorizontal=false`. Screenshot: `docs/screenshots/t-34/after4/1-dashboard-cta.png`. Commit `924cd46`.
+
+
+---
+
+### T-35 — Pool de chaves OpenRouter do dono + JEV só no plano Ouro + fim do BYOK
+**Estado:** DONE (05/10/2026) · **Prioridade:** 🔴 P0 · **Levantada 05/10/2026** (decisão do dono na concepção da T-30)
+**Por quê:** três decisões de negócio do dono: (1) **não existe mais BYOK** — o usuário não traz chave nenhuma; todo o consumo de IA sai das chaves centrais do dono, que fatura ~10x o custo (R$ ~0,04 por transcrição de referência) via cotas dos planos; (2) **uma conexão só não sustenta o load** — o sistema precisa aceitar N chaves OpenRouter ativas com balanceamento (round-robin) e circuit breaker por chave (429/5xx abre o disjuntor daquela chave por alguns minutos e o tráfego migra); (3) **o JEV é o diferencial foda** — Juiz de Validação só no plano Ouro (o mais caro); planos menores continuam recebendo o aprimoramento puro T-18, sem juiz.
+**Contexto:** `services/openrouter.js` (`getActiveOpenRouterKey`, 4 call sites), rotas `/api/admin/apikeys` em `server.js`, aba de chaves do painel admin, rota `/api/transcriptions/:id/enhance` (JEV)
+**Toca:** `services/openrouter.js`, `server.js`, `index.html` (aba admin de chaves), `app.js` (estado do JEV no Resumo IA)
+**Aceite:**
+- [x] `api_keys` aceita múltiplas chaves `is_active = TRUE`; seleção em round-robin com estado em memória (sem coluna de contador — reinício do processo reseta a rotação, sem problema)
+- [x] Circuit breaker por chave: 3 falhas 429/5xx em 2 min → chave em cooldown de 2 min; com todas em cooldown, erro explícito (sem fallback silencioso — regra anti-mascaramento do T-15)
+- [x] Admin pode ativar/desativar cada chave independentemente (toggle por chave, sem desativar as outras); painel mostra saúde por chave (`last_check_ok` + cooldown ativo)
+- [x] `POST /api/transcriptions/:id/enhance`: plano `ouro` (ou admin) roda com JEV; demais planos rodam sem juiz e a resposta marca `jev_skipped: 'plano'` para a UI sinalizar
+- [x] Zero referência a "traga sua chave" para usuário comum na UI (o card da sidebar já é admin-only desde a T-23 — conferir textos)
+- [x] `test_suite.js` verde; mock de 429 em uma chave do pool prova a rotação
+
+**Evidência:**
+- **05/10/2026:** `services/openrouter.js` ganhou `acquireOpenRouterKey()` (round-robin entre `is_active=TRUE`, estado do cursor em memória) e `releaseOpenRouterKey(id, error)` (sucesso limpa o histórico da chave; regex `HTTP (429|5\d\d)` ou erro de rede conta falha — 3 em 2 min → cooldown de 2 min; pool esgotado = erro explícito). Os 4 call sites convertidos (`transcribeAudioFile`, `generateChatCompletion`, `runAnalysisChat`, `translateTranscript`) com release em todos os caminhos (ok/HTTP erro/exception). Rotas admin: `POST /api/admin/apikeys` não desativa mais as demais (pool, não chave única); `PUT …/:id/activate` virou toggle independente retornando `{is_active}`; `GET …/status` expõe `pool_size`. UI admin (`app.js loadAdminApiKeys`): badge "No pool/Fora do pool", "último teste falhou" e botão toggle por chave; estado da sidebar mostra `(pool: N)`. JEV no Ouro: a rota enhance lê `plan, role` do usuário — `judgeSettingEnabled && plan !== 'ouro' && role !== 'admin'` → roda sem juiz e responde `jev_skipped: 'plano'`; o frontend (`app.js`) exibe toast "JEV é exclusivo do plano Ouro" quando recebe essa marca. Admin nunca é afetado pelo gate. **Testes:** `test_suite.js` 130/130 (reexecução após restart — o limiter de senha admin do T-15 é em memória e a própria suíte o satura; rodar 1x por janela de 10 min), `tests/t30_api_flow.js` 27/27, `tests/ui_regressions.js` 13/13, boot 200 após restart com migrações das colunas novas.

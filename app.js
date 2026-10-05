@@ -561,6 +561,110 @@ async function loadAccountData() {
   await renderAccountSubscription();
 
   loadAccountUsage();
+
+  // T-30: chave de API pessoal (integração n8n/webhooks)
+  loadAccountApiKey();
+}
+
+// T-30 (API pessoal): carrega/gera/regenera/revoga a chave fk_live_* do usuário.
+async function loadAccountApiKey() {
+  const stateEl = document.getElementById('account-apikey-state');
+  const detail = document.getElementById('account-apikey-detail');
+  const fresh = document.getElementById('account-apikey-new');
+  const once = document.getElementById('account-apikey-once');
+  const docsWrap = document.getElementById('apikey-docs-link-wrap');
+  if (!stateEl) return;
+  try {
+    const res = await fetch('/api/account/apikey', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    if (!res.ok) { stateEl.textContent = 'Erro ao carregar a chave.'; return; }
+    const data = await res.json();
+    if (docsWrap) docsWrap.classList.remove('hidden');
+    if (data.api_key) {
+      stateEl.textContent = 'Sua chave está ativa. Use no header Authorization: Bearer <sua chave>.';
+      if (detail) {
+        detail.classList.remove('hidden');
+        document.getElementById('account-apikey-prefix').textContent = data.api_key.prefix + '…';
+        document.getElementById('account-apikey-created').textContent = 'Criada em ' + new Date(data.api_key.created_at).toLocaleDateString('pt-BR');
+        document.getElementById('account-apikey-lastused').textContent = data.api_key.last_used_at
+          ? 'Último uso: ' + new Date(data.api_key.last_used_at).toLocaleString('pt-BR')
+          : 'Ainda não utilizada';
+      }
+      if (fresh) fresh.classList.add('hidden');
+    } else {
+      stateEl.textContent = 'Você ainda não tem uma chave de API.';
+      if (detail) detail.classList.add('hidden');
+      if (fresh) fresh.classList.remove('hidden');
+    }
+    if (once) once.classList.add('hidden');
+  } catch (_) { stateEl.textContent = 'Erro ao carregar a chave.'; }
+}
+
+function showApiKeyOnce(raw, webhookSecret, msg) {
+  const once = document.getElementById('account-apikey-once');
+  const msgEl = document.getElementById('account-apikey-msg');
+  if (raw) {
+    document.getElementById('account-apikey-raw').textContent = raw;
+    document.getElementById('account-webhook-secret').textContent = webhookSecret || '';
+    once.classList.remove('hidden');
+  }
+  if (msgEl && msg) {
+    msgEl.textContent = msg;
+    msgEl.classList.remove('hidden');
+    msgEl.className = 'text-xs font-semibold mt-3 text-emerald-600 dark:text-emerald-300';
+  }
+  loadAccountApiKey();
+}
+
+async function generateAccountApiKey() {
+  try {
+    const res = await fetch('/api/account/apikey', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Chave padrão' })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Não foi possível gerar a chave.'); return; }
+    showApiKeyOnce(data.api_key, data.webhook_secret, 'Chave gerada. Guarde-a agora — não será exibida novamente.');
+  } catch (_) { showToast('Erro de rede ao gerar a chave.'); }
+}
+
+async function regenerateAccountApiKey() {
+  if (!confirm('Regenerar a chave? A atual para de funcionar imediatamente.')) return;
+  try {
+    const res = await fetch('/api/account/apikey', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Chave padrão', rotate: true })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Não foi possível regenerar.'); return; }
+    showApiKeyOnce(data.api_key, data.webhook_secret, 'Chave regenerada. Atualize suas integrações.');
+  } catch (_) { showToast('Erro de rede ao regenerar a chave.'); }
+}
+
+async function revokeAccountApiKey() {
+  if (!confirm('Revogar a chave? Integrações que usam ela vão parar de funcionar.')) return;
+  try {
+    const res = await fetch('/api/account/apikey', { headers: { 'Authorization': `Bearer ${state.token}` } });
+    const cur = await res.json();
+    if (!cur.api_key) return;
+    const del = await fetch(`/api/account/apikey/${cur.api_key.id}`, {
+      method: 'DELETE', headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    if (!del.ok) { showToast('Não foi possível revogar.'); return; }
+    showToast('Chave revogada.');
+    loadAccountApiKey();
+  } catch (_) { showToast('Erro de rede ao revogar.'); }
+}
+
+function copyAccountApiKey() {
+  const el = document.getElementById('account-apikey-raw');
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showToast('Chave copiada.'));
+}
+
+function copyWebhookSecret() {
+  const el = document.getElementById('account-webhook-secret');
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showToast('Segredo copiado.'));
 }
 
 // T-27 (Asaas): renderiza plano, quota e assinatura Asaas na aba Conta.
@@ -3325,9 +3429,12 @@ async function loadAdminApiKeys() {
         <td class="p-4 font-bold text-purple-700 dark:text-purple-300 uppercase text-[11px]">${k.provider}</td>
         <td class="p-4 text-brand-ink dark:text-brand-ink font-semibold">${escapeHtml(k.name || 'Sem nome')}</td>
         <td class="p-4 font-mono text-brand-copy dark:text-brand-copy">${k.masked_key}</td>
-        <td class="p-4"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${k.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${k.is_active ? 'Ativa' : 'Inativa'}</span></td>
+        <td class="p-4">
+          <span class="px-2 py-0.5 text-[10px] font-bold rounded ${k.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy'}">${k.is_active ? 'No pool' : 'Fora do pool'}</span>
+          ${k.is_active && k.last_check_ok === false ? `<span class="ml-1 px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300" title="Último teste falhou — o circuit breaker pode suspender esta chave em caso de falhas repetidas">último teste falhou</span>` : ''}
+        </td>
         <td class="p-4 text-right">
-          ${!k.is_active ? `<button onclick="activateApiKey('${k.id}')" class="text-blue-600 dark:text-blue-300 hover:underline font-semibold text-xs mr-3">Tornar Ativa</button>` : ''}
+          <button onclick="activateApiKey('${k.id}')" class="text-blue-600 dark:text-blue-300 hover:underline font-semibold text-xs mr-3">${k.is_active ? 'Tirar do pool' : 'Colocar no pool'}</button>
           <button onclick="deleteApiKey('${k.id}')" class="text-red-600 dark:text-red-300 hover:underline font-semibold text-xs">Excluir</button>
         </td>
       </tr>
@@ -3381,15 +3488,16 @@ function renderApiKeyState(status) {
     return;
   }
   masked.textContent = status.masked_key || '—';
+  const poolLabel = status.pool_size > 1 ? ` (pool: ${status.pool_size})` : '';
   if (status.last_check_ok === true) {
     dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-    text.textContent = 'válida';
+    text.textContent = 'válida' + poolLabel;
   } else if (status.last_check_ok === false) {
     dot.className = 'w-2 h-2 rounded-full bg-red-500';
-    text.textContent = 'inválida';
+    text.textContent = 'inválida' + poolLabel;
   } else {
     dot.className = 'w-2 h-2 rounded-full bg-brand-muted dark:bg-brand-muted';
-    text.textContent = 'não testada';
+    text.textContent = 'não testada' + poolLabel;
   }
 }
 
@@ -3603,6 +3711,11 @@ async function enhanceTranscription() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
+    // T-35: planos abaixo do Ouro rodam sem JEV — avisa para não parecer que
+    // o juiz "faltou" por bug.
+    if (data.jev_skipped === 'plano') {
+      uiToast('Aprimoramento concluído SEM o Juiz de Validação — o JEV é exclusivo do plano Ouro.', 'info');
+    }
     // Resultado vai para o miolo: aba "Resumo IA" em largura de leitura.
     state.latestEnhancement = data.analysis;
     setReadingMode('summary');

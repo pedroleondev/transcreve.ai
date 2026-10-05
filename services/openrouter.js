@@ -3,7 +3,7 @@ const { getJobSignal, jobSleep } = require('./job-context');
 const fetch = (url, options = {}) => nodeFetch(url, { ...options, signal: getJobSignal() || options.signal });
 const FormData = require('form-data');
 const fs = require('fs');
-const { getAsync } = require('../db');
+const { getAsync, allAsync } = require('../db');
 const secrets = require('./secrets');
 
 // ---------------------------------------------------------------------------
@@ -118,19 +118,80 @@ function getAvailableOpenRouterModels() {
 }
 
 /**
- * Obtém a chave ativa do OpenRouter no banco de dados SQLite
+ * T-35: POOL de chaves OpenRouter do dono — N chaves ativas com round-robin
+ * e circuit breaker por chave. Falhas 429/5xx/de rede abrem o disjuntor da
+ * chave por POOL_COOLDOWN_MS e o tráfego migra para as chaves saudáveis.
+ *
+ * acquireOpenRouterKey() devolve { id, key } — o id é devolvido em
+ * releaseOpenRouterKey(id, error) para o breaker aprender com o resultado.
+ *
+ * Regra anti-mascaramento do T-15 mantida: sem chave ativa E sem ambiente,
+ * erro EXPLICITO (nunca fallback silencioso). Pool esgotado (todas em
+ * cooldown) também é erro explícito — o dono precisa saber, não dormir no erro.
  */
-// Unico ponto do sistema que decifra a chave — e so no momento da chamada.
+const POOL_MAX_FAILURES = 3;
+const POOL_FAILURE_WINDOW_MS = 2 * 60 * 1000;
+const POOL_COOLDOWN_MS = 2 * 60 * 1000;
+const keyHealth = new Map(); // key_id -> { failures: [ts], cooldownUntil: 0 }
+let poolCursor = 0;
+
+function poolRegisterFailure(id) {
+  const now = Date.now();
+  const h = keyHealth.get(id) || { failures: [], cooldownUntil: 0 };
+  h.failures = [...h.failures.filter(t => now - t < POOL_FAILURE_WINDOW_MS), now];
+  if (h.failures.length >= POOL_MAX_FAILURES) {
+    h.cooldownUntil = now + POOL_COOLDOWN_MS;
+    h.failures = [];
+    console.warn(`[Pool] Chave ${id} em cooldown por ${POOL_COOLDOWN_MS / 60000} min após ${POOL_MAX_FAILURES} falhas.`);
+  }
+  keyHealth.set(id, h);
+}
+
+function poolRegisterSuccess(id) {
+  keyHealth.delete(id); // saudável de novo — histórico zera
+}
+
+function isKeyCoolingDown(id) {
+  const h = keyHealth.get(id);
+  return !!h && Date.now() < h.cooldownUntil;
+}
+
+async function acquireOpenRouterKey() {
+  const rows = await allAsync(
+    `SELECT id, key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE ORDER BY created_at ASC`
+  );
+  if (!rows.length) {
+    // Compat: banco ainda sem chave — usa o ambiente. No boot, o seed one-shot
+    // grava essa chave cifrada no banco e ela passa a ser a fonte de verdade.
+    const envKey = process.env.OPENROUTER_API_KEY || '';
+    if (!envKey) {
+      throw new Error('Nenhuma chave OpenRouter ativa no pool. Cadastre uma no painel admin (Chaves de API).');
+    }
+    return { id: null, key: envKey };
+  }
+  const available = rows.filter(r => !isKeyCoolingDown(r.id));
+  if (!available.length) {
+    throw new Error('Pool de chaves OpenRouter temporariamente indisponível: todas em cooldown após falhas 429/5xx. Aguarde alguns minutos ou cadastre outra chave.');
+  }
+  poolCursor = (poolCursor + 1) % available.length;
+  const chosen = available[poolCursor];
+  return { id: chosen.id, key: secrets.decrypt(chosen.key_value) };
+}
+
+function releaseOpenRouterKey(id, error) {
+  if (!id) return;
+  if (!error) return poolRegisterSuccess(id);
+  // Só falha DE POOL: 429/5xx da API ou quebra de rede. Erro 400 de um
+  // modelo específico (ex.: modelo sem suporte a palavra) não contamina a chave.
+  if (/HTTP (429|5\d\d)/.test(error.message) || /fetch failed|timeout|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(error.message)) {
+    poolRegisterFailure(id);
+  }
+}
+
+// Mantido para compatibilidade com o status/test das rotas admin (leitura única).
 async function getActiveOpenRouterKey() {
   const row = await getAsync(`SELECT key_value FROM api_keys WHERE provider = 'openrouter' AND is_active = TRUE LIMIT 1`);
-  if (row && row.key_value) {
-    // O banco e a fonte de verdade: falha de decifragem (APP_SECRET_KEY trocada
-    // ou registro adulterado) e erro EXPLICITO — sem fallback silencioso para
-    // a chave do ambiente, que poderia mascarar a perda do segredo.
-    return secrets.decrypt(row.key_value);
-  }
-  // Compat: banco ainda sem chave — usa o ambiente. No boot, o seed one-shot
-  // grava essa chave cifrada no banco e ela passa a ser a fonte de verdade.
+  if (row && row.key_value) return secrets.decrypt(row.key_value);
   return process.env.OPENROUTER_API_KEY || '';
 }
 
@@ -204,7 +265,8 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
 
   if (MOCK_ENABLED) return mockTranscribe(filePath, { ...opts, languageHint: autoDetect ? null : lang });
 
-  const apiKey = await getActiveOpenRouterKey();
+  const poolKey = await acquireOpenRouterKey();
+  const apiKey = poolKey.key;
   const primaryModel = await resolveWhisperModel(modeOrModelId);
   const promptText = opts.prompt || (autoDetect || lang === 'pt' ? DEFAULT_PROMPT_PTBR : '');
 
@@ -289,6 +351,7 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
           });
         }
 
+        releaseOpenRouterKey(poolKey.id, null);
         return {
           model_used: model,
           text: data.text ? data.text.trim() : '',
@@ -300,10 +363,12 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
         const errText = await response.text();
         console.warn(`[OpenRouter Warning] Modelo ${model} retornou HTTP ${response.status}: ${errText}`);
         lastError = new Error(`OpenRouter HTTP ${response.status}: ${errText}`);
+        releaseOpenRouterKey(poolKey.id, lastError);
       }
     } catch (err) {
       console.warn(`[OpenRouter Error] Erro ao tentar modelo ${model}: ${err.message}`);
       lastError = err;
+      releaseOpenRouterKey(poolKey.id, err);
     }
   }
 
@@ -316,7 +381,8 @@ async function transcribeAudioFile(filePath, language = 'pt', modeOrModelId = 'o
 async function generateChatCompletion(transcriptText, prompt) {
   if (MOCK_ENABLED) return `[MOCK] resposta simulada para: ${String(prompt).slice(0, 80)}`;
 
-  const apiKey = await getActiveOpenRouterKey();
+  const poolKey = await acquireOpenRouterKey();
+  const apiKey = poolKey.key;
 
   const systemMessage = {
     role: 'system',
@@ -346,12 +412,15 @@ async function generateChatCompletion(transcriptText, prompt) {
 
     if (response.ok) {
       const data = await response.json();
+      releaseOpenRouterKey(poolKey.id, null);
       return data.choices && data.choices[0] ? data.choices[0].message.content : 'Sem resposta do modelo.';
     } else {
       const errText = await response.text();
+      releaseOpenRouterKey(poolKey.id, new Error(`HTTP ${response.status}`));
       throw new Error(`OpenRouter Chat HTTP ${response.status}: ${errText}`);
     }
   } catch (error) {
+    releaseOpenRouterKey(poolKey.id, error);
     console.error('[OpenRouter Chat Error]', error);
     throw error;
   }
@@ -373,7 +442,8 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
     };
   }
 
-  const apiKey = await getActiveOpenRouterKey();
+  const poolKey = await acquireOpenRouterKey();
+  const apiKey = poolKey.key;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -398,6 +468,7 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
       const data = await response.json();
       const content = data.choices && data.choices[0] ? data.choices[0].message.content : '';
       if (!content) throw new Error('Modelo retornou conteúdo vazio.');
+      releaseOpenRouterKey(poolKey.id, null);
       return {
         content,
         tokens_in: data.usage ? data.usage.prompt_tokens : 0,
@@ -405,9 +476,11 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
       };
     } else {
       const errText = await response.text();
+      releaseOpenRouterKey(poolKey.id, new Error(`HTTP ${response.status}`));
       throw new Error(`OpenRouter Chat HTTP ${response.status}: ${errText}`);
     }
   } catch (error) {
+    releaseOpenRouterKey(poolKey.id, error);
     console.error('[OpenRouter Analysis Error]', error);
     throw error;
   }
@@ -416,7 +489,8 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
 /**
  * Tradução de Transcrição via OpenRouter
  */async function translateTranscript(transcriptText, targetLanguage = 'English') {
-  const apiKey = await getActiveOpenRouterKey();
+  const poolKey = await acquireOpenRouterKey();
+  const apiKey = poolKey.key;
 
   const systemMessage = {
     role: 'system',
@@ -441,12 +515,15 @@ async function runAnalysisChat({ systemPrompt, userContent, model }) {
 
     if (response.ok) {
       const data = await response.json();
+      releaseOpenRouterKey(poolKey.id, null);
       return data.choices && data.choices[0] ? data.choices[0].message.content : 'Falha na tradução.';
     } else {
       const errText = await response.text();
+      releaseOpenRouterKey(poolKey.id, new Error(`HTTP ${response.status}`));
       throw new Error(`OpenRouter Translate HTTP ${response.status}: ${errText}`);
     }
   } catch (error) {
+    releaseOpenRouterKey(poolKey.id, error);
     console.error('[OpenRouter Translate Error]', error);
     throw error;
   }
@@ -458,5 +535,8 @@ module.exports = {
   transcribeAudioFile,
   generateChatCompletion,
   runAnalysisChat,
-  translateTranscript
+  translateTranscript,
+  acquireOpenRouterKey,
+  releaseOpenRouterKey,
+  isKeyCoolingDown
 };

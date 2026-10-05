@@ -9,7 +9,7 @@ function positiveNumber(name, fallback, integer = true, max = Infinity) {
 const queuePositionSql = "CASE WHEN t.status = 'pending' THEN (SELECT COUNT(*) FROM transcriptions q WHERE q.status = 'pending' AND (q.created_at < t.created_at OR (q.created_at = t.created_at AND q.id <= t.id))) ELSE NULL END";
 
 // Um supervisor por banco; slots locais + claim condicional impedem duplo processamento.
-function createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency = 2, timeoutMs = 30 * 60000, maxAttempts = 3, pollMs = 5000}) {
+function createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrency = 2, timeoutMs = 30 * 60000, maxAttempts = 3, pollMs = 5000, onJobFailed = null}) {
   const activeJobIds = new Set();
   const running = new Map();
   let ticking = false, stopped = false, interval;
@@ -32,6 +32,7 @@ function createQueueWorker({runAsync, getAsync, allAsync, processJob, concurrenc
         const retry = controller.signal.aborted && task.worker_attempts < maxAttempts;
         const message = String(controller.signal.aborted ? controller.signal.reason.message : error.message || error).slice(0, 500);
         await runAsync("UPDATE transcriptions SET status = ?, stage = NULL, worker_started_at = NULL, error_message = ? WHERE id = ? AND status = 'processing'", [retry ? 'pending' : 'failed', message, task.id]);
+        if (!retry && onJobFailed) await Promise.resolve().then(() => onJobFailed(task, message)).catch(() => {});
         console.warn('[Queue] ' + task.id + ': ' + message + (retry ? ' — reenfileirado' : ''));
       })
       .catch(error => console.error('[Queue] Falha ao registrar resultado:', error.message))

@@ -1002,6 +1002,46 @@
             </div>
           </div>
 
+          <!-- CHAVE DE API (T-30: integração n8n/webhooks) -->
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-emerald-600 dark:text-emerald-300"></i> Chave de API</h3>
+                <p class="text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">Use sua chave em n8n, Make ou scripts para criar transcrições consumindo sua cota. <span id="apikey-docs-link-wrap" class="hidden">Documentação: <code class="text-brand-ink dark:text-brand-ink">docs/API.md</code>.</span></p>
+              </div>
+              <button onclick="loadAccountApiKey()" class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink font-bold text-[11px] px-3 py-2 rounded-lg transition">Atualizar</button>
+            </div>
+            <div id="account-apikey-state" class="text-xs text-brand-muted dark:text-brand-muted mb-3">Carregando…</div>
+            <div id="account-apikey-detail" class="hidden space-y-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <code id="account-apikey-prefix" class="bg-brand-canvas dark:bg-brand-canvas border border-brand-line dark:border-brand-line rounded-lg px-3 py-2 text-[11px] font-mono text-brand-ink dark:text-brand-ink"></code>
+                <span id="account-apikey-created" class="text-[11px] text-brand-muted dark:text-brand-muted"></span>
+              </div>
+              <div class="flex flex-wrap items-center gap-3">
+                <button onclick="regenerateAccountApiKey()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">Regenerar chave</button>
+                <button onclick="revokeAccountApiKey()" class="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">Revogar</button>
+                <span id="account-apikey-lastused" class="text-[11px] text-brand-muted dark:text-brand-muted"></span>
+              </div>
+            </div>
+            <div id="account-apikey-new" class="hidden space-y-3">
+              <button onclick="generateAccountApiKey()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">Gerar chave de API</button>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted">Uma chave ativa por usuário. Se regenerar, a anterior para de funcionar imediatamente.</p>
+            </div>
+            <div id="account-apikey-once" class="hidden mt-4 border-2 border-amber-400 dark:border-amber-500 rounded-xl p-4 bg-amber-50 dark:bg-amber-950/40">
+              <p class="text-xs font-bold text-amber-800 dark:text-amber-200 mb-2">Guarde agora — a chave não será exibida novamente:</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <code id="account-apikey-raw" class="flex-1 min-w-[200px] break-all bg-white dark:bg-brand-canvas border border-amber-300 dark:border-amber-700 rounded-lg px-3 py-2 text-[11px] font-mono text-brand-ink dark:text-brand-ink"></code>
+                <button onclick="copyAccountApiKey()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition">Copiar</button>
+              </div>
+              <p class="text-[11px] text-amber-700 dark:text-amber-300 mt-2">Segredo de webhook (para validar a assinatura <code>X-Falou-Signature</code>):</p>
+              <div class="flex flex-wrap items-center gap-2 mt-1">
+                <code id="account-webhook-secret" class="flex-1 min-w-[200px] break-all bg-white dark:bg-brand-canvas border border-amber-300 dark:border-amber-700 rounded-lg px-3 py-2 text-[11px] font-mono text-brand-ink dark:text-brand-ink"></code>
+                <button onclick="copyWebhookSecret()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition">Copiar</button>
+              </div>
+            </div>
+            <p id="account-apikey-msg" class="text-xs font-semibold hidden mt-3"></p>
+          </div>
+
           <!-- LOGS DE USO -->
           <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm p-5">
             <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink flex items-center gap-2 mb-4"><i data-lucide="history" class="w-4 h-4 text-amber-600 dark:text-amber-300"></i> Logs de uso</h3>

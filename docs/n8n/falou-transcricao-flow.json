@@ -1,0 +1,130 @@
+{
+  "name": "Falou.ai - Transcricao ponta a ponta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "falou-transcrever",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook Recebe Audio",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "falou-transcrever"
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.FALOU_BASE_URL || 'http://localhost:3000'}}/api/v1/transcriptions",
+        "responseFormat": "json",
+        "headerParametersJson": "=[{\"name\":\"Authorization\",\"value\":\"Bearer {{$env.FALOU_API_KEY}}\"}]",
+        "bodyParametersJson": "={\"url\": \"{{$json.body.url}}\", \"mode\": \"{{$json.body.mode || 'max'}}\", \"language\": \"{{$json.body.language || 'auto'}}\", \"callback_url\": \"{{$json.body.callback_url || ''}}\"}",
+        "options": {}
+      },
+      "name": "Cria Transcricao",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "name": "Aguarda 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "webhookId": "falou-wait"
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.FALOU_BASE_URL || 'http://localhost:3000'}}/api/v1/transcriptions/{{$('Cria Transcricao').first().json.data[0].id}}",
+        "responseFormat": "json",
+        "headerParametersJson": "=[{\"name\":\"Authorization\",\"value\":\"Bearer {{$env.FALOU_API_KEY}}\"}]",
+        "options": {}
+      },
+      "name": "Consulta Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "operation": "equals",
+              "value2": "completed"
+            },
+            {
+              "value1": "={{$json.status}}",
+              "operation": "equals",
+              "value2": "failed"
+            }
+          ],
+          "options": { "conditionCombinator": "OR" }
+        }
+      },
+      "name": "Concluida ou Falhou",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.FALOU_BASE_URL || 'http://localhost:3000'}}/api/v1/transcriptions/{{$json.id}}/text",
+        "responseFormat": "json",
+        "headerParametersJson": "=[{\"name\":\"Authorization\",\"value\":\"Bearer {{$env.FALOU_API_KEY}}\"}]",
+        "options": {}
+      },
+      "name": "Busca Texto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ id: $json.id, file_name: $json.file_name, status: $json.status, text: $json.text })}}",
+        "options": {}
+      },
+      "name": "Responde Resultado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Recebe Audio": {
+      "main": [[{ "node": "Cria Transcricao", "type": "main", "index": 0 }]]
+    },
+    "Cria Transcricao": {
+      "main": [[{ "node": "Aguarda 10s", "type": "main", "index": 0 }]]
+    },
+    "Aguarda 10s": {
+      "main": [[{ "node": "Consulta Status", "type": "main", "index": 0 }]]
+    },
+    "Consulta Status": {
+      "main": [[{ "node": "Concluida ou Falhou", "type": "main", "index": 0 }]]
+    },
+    "Concluida ou Falhou": {
+      "main": [
+        [{ "node": "Busca Texto", "type": "main", "index": 0 }],
+        [{ "node": "Aguarda 10s", "type": "main", "index": 0 }]
+      ]
+    },
+    "Busca Texto": {
+      "main": [[{ "node": "Responde Resultado", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "pinData": {}
+}

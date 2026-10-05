@@ -245,6 +245,24 @@ async function initDatabaseSqlite() {
       )
     `);
 
+    // 2.1 Tabela de Chaves de API dos usuários (T-30): cada usuário gera uma
+    // chave pessoal (fk_live_...) para integrar o Falou.ai em automações
+    // (n8n, Make, scripts). Só o hash fica no banco; prefixo é identificação.
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS user_api_keys (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT,
+        prefix TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        webhook_secret TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_used_at DATETIME,
+        revoked_at DATETIME,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     // 3. Tabela de Configurações Globais
     await runAsync(`
       CREATE TABLE IF NOT EXISTS system_settings (
@@ -295,6 +313,8 @@ async function initDatabaseSqlite() {
         error_message TEXT,
         ai_summary TEXT,
         stage TEXT,
+        callback_url TEXT,
+        api_key_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -455,6 +475,26 @@ async function initDatabasePostgres() {
     console.log('Adicionando coluna "cpf_cnpj" na tabela "users" (PostgreSQL)...');
     await runAsync(`ALTER TABLE users ADD COLUMN cpf_cnpj TEXT`);
   }
+  // T-30: webhook_secret por chave de API (assinatura HMAC dos webhooks) e
+  // callback_url/api_key_id em transcriptions (mesmo padrao).
+  for (const col of ['webhook_secret']) {
+    const pgCols = await allAsync(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'user_api_keys' AND column_name = '${col}'`
+    );
+    if (!pgCols.length) {
+      console.log(`Adicionando coluna "${col}" na tabela "user_api_keys" (PostgreSQL)...`);
+      await runAsync(`ALTER TABLE user_api_keys ADD COLUMN ${col} TEXT`);
+    }
+  }
+  for (const col of ['callback_url', 'api_key_id']) {
+    const pgCols = await allAsync(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'transcriptions' AND column_name = '${col}'`
+    );
+    if (!pgCols.length) {
+      console.log(`Adicionando coluna "${col}" na tabela "transcriptions" (PostgreSQL)...`);
+      await runAsync(`ALTER TABLE transcriptions ADD COLUMN ${col} TEXT`);
+    }
+  }
   console.log('Tabelas PostgreSQL verificadas/criadas com sucesso.');
   await seedCoreData();
 }
@@ -495,6 +535,21 @@ async function seedCoreData() {
     for (const [col, type] of [['last_check_at', 'DATETIME'], ['last_check_ok', 'INTEGER'], ['last_check_info', 'TEXT']]) {
       if (!keyCols.some(c => c.name === col)) {
         await runAsync(`ALTER TABLE api_keys ADD COLUMN ${col} ${type}`);
+      }
+    }
+    // T-30: callback_url (webhooks) e api_key_id (qual chave criou o job) em
+    // bancos SQLite legados.
+    const tCols = await allAsync(`PRAGMA table_info(transcriptions)`);
+    for (const col of ['callback_url', 'api_key_id']) {
+      if (!tCols.some(c => c.name === col)) {
+        await runAsync(`ALTER TABLE transcriptions ADD COLUMN ${col} TEXT`);
+      }
+    }
+    // T-30: webhook_secret por chave de API em bancos SQLite legados.
+    const ukCols = await allAsync(`PRAGMA table_info(user_api_keys)`);
+    for (const col of ['webhook_secret']) {
+      if (!ukCols.some(c => c.name === col)) {
+        await runAsync(`ALTER TABLE user_api_keys ADD COLUMN ${col} TEXT`);
       }
     }
   }
