@@ -46,6 +46,7 @@
 | T-33 | Gravador de voz (waveform, pausar, idioma) | 🟢 P3 | TODO |
 | T-34 | Mobile da tela de detalhe: painel lateral antes do miolo, Fonte/Coluna adaptados, toolbar enxuta | 🟡 P2 | DONE |
 | T-35 | Pool de chaves OpenRouter do dono (balanceamento + circuit breaker) + JEV só no plano Ouro + remoção final do BYOK | 🔴 P0 | DONE |
+| T-36 | Observabilidade admin: consumo de cota por usuário + visão financeira (receita × custo IA × margem) | 🟡 P2 | DONE |
 
 **Ordeiro de execução (remodelado 28/09 — virada SaaS):** **T-08** (Postgres, fundação) → T-07 (cotas) → T-13 (export em massa) → T-28 (landing/cadastro) → T-27 (Asaas) → T-32 (deploy) → T-29 (UX/UI, pode correr em paralelo desde a Fase 1) → T-09 · T-11 · T-30 → T-26 → T-21 · T-22 · T-31 · T-33.
 Métrica de escala assumida: 35 mil usuários em 6 meses, billing via Asaas, deploy em KVM2/Portainer. T-08 vai primeiro porque billing, cadastro e API pública todos escrevem no banco — em SQLite seriam `SQLITE_BUSY` na primeira campanha.
@@ -894,3 +895,20 @@ Recomendação: **A agora** (uma sessão, resolve 80% para reunião/ligação co
 
 **Evidência:**
 - **05/10/2026:** `services/openrouter.js` ganhou `acquireOpenRouterKey()` (round-robin entre `is_active=TRUE`, estado do cursor em memória) e `releaseOpenRouterKey(id, error)` (sucesso limpa o histórico da chave; regex `HTTP (429|5\d\d)` ou erro de rede conta falha — 3 em 2 min → cooldown de 2 min; pool esgotado = erro explícito). Os 4 call sites convertidos (`transcribeAudioFile`, `generateChatCompletion`, `runAnalysisChat`, `translateTranscript`) com release em todos os caminhos (ok/HTTP erro/exception). Rotas admin: `POST /api/admin/apikeys` não desativa mais as demais (pool, não chave única); `PUT …/:id/activate` virou toggle independente retornando `{is_active}`; `GET …/status` expõe `pool_size`. UI admin (`app.js loadAdminApiKeys`): badge "No pool/Fora do pool", "último teste falhou" e botão toggle por chave; estado da sidebar mostra `(pool: N)`. JEV no Ouro: a rota enhance lê `plan, role` do usuário — `judgeSettingEnabled && plan !== 'ouro' && role !== 'admin'` → roda sem juiz e responde `jev_skipped: 'plano'`; o frontend (`app.js`) exibe toast "JEV é exclusivo do plano Ouro" quando recebe essa marca. Admin nunca é afetado pelo gate. **Testes:** `test_suite.js` 130/130 (reexecução após restart — o limiter de senha admin do T-15 é em memória e a própria suíte o satura; rodar 1x por janela de 10 min), `tests/t30_api_flow.js` 27/27, `tests/ui_regressions.js` 13/13, boot 200 após restart com migrações das colunas novas.
+
+---
+
+### T-36 — Observabilidade admin: cota por usuário + visão financeira
+**Estado:** DONE (05/10/2026) · **Prioridade:** 🟡 P2 · **Levantada 05/10/2026** (pergunta do dono: "tenho visão de quanto de cota cada usuário usou e se estou tendo lucro ou prejuízo?")
+**Por quê:** sem números o dono opera no escuro — não sabe quem consome, se o custo de IA está correndo mais rápido que a receita, nem quando um usuário está prestes a estourar a cota (momento de oferecer upgrade).
+**Contexto:** rotas `/api/admin/*` em `server.js`, abas do painel admin em `index.html`, `app.js` (`switchAdminTab`)
+**Toca:** `server.js` (rota nova), `index.html` (aba nova), `app.js` (render), `.env.example` (documentação do limiter T-15)
+**Aceite:**
+- [x] `GET /api/admin/usage` (admin-only, 401 sem token): por usuário — plano, cota usada em 24h × limite (admin marca "ilimitado"), total de transcrições, horas transcritas, última atividade, status; e bloco financeiro — receita recorrente estimada (assinaturas ativas × preço do catálogo T-27, anuais ÷12), transcrições concluídas em 30 dias, custo IA estimado (transcrições 30d × custo unitário), margem (receita − custo)
+- [x] Custo unitário configurável pelo admin na própria aba (setting `cost_per_transcription`, default R$ 0,04) — sem deploy para recalibrar a conta
+- [x] Aba "📈 Uso & Custos" no painel admin com 4 cards financeiros + tabela de usuários
+- [x] Limiter do T-15 normalizado: `KEY_AUTH_MAX_FAILURES` / `KEY_AUTH_WINDOW_MINUTES` configuráveis por env (defaults 5/10 inalterados), documentado em `.env.example` — reexecução da suíte em sequência não gera mais 429 falso-positivo (usar janela de 1 min nos testes)
+- [x] `test_suite.js` verde; endpoint validado com dados reais
+
+**Evidência:**
+- **05/10/2026:** rota `GET /api/admin/usage` em `server.js` (cutoff de 24h/30d calculado em JS — comparável lexicamente no SQLite e coercível no Postgres, mesmo padrão do `getQuotaState` T-08; MRR via `billing.getPlanCatalog()`; suspenso não conta receita). Aba nova entre "Chaves OpenRouter API" e "Modos & Modelos IA" (`index.html` + `loadAdminUsage`/`saveUnitCost` no `app.js`). Limiter do T-15 agora lê `KEY_AUTH_MAX_FAILURES`/`KEY_AUTH_WINDOW_MINUTES` do env com defaults idênticos ao contrato original. **Testes:** `test_suite.js` 130/130 (valida o bloqueio de 6ª tentativa — comprova a normalização), `tests/ui_regressions.js` 13/13, endpoint validado com login real (financial + 4 usuários + 401 anônimo), screenshot `docs/screenshots/admin-usage/1-admin-usage.png` (`tests/shot_admin_usage.js`, Edge headless CDP, perfil temporário removido).

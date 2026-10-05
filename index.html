@@ -676,6 +676,9 @@
           <button onclick="switchAdminTab('apikeys')" id="tab-btn-apikeys" class="px-4 py-2.5 text-xs font-bold text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink transition">
             🔑 Chaves OpenRouter API
           </button>
+          <button onclick="switchAdminTab('usage')" id="tab-btn-usage" class="px-4 py-2.5 text-xs font-bold text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink transition">
+            📈 Uso & Custos
+          </button>
           <button onclick="switchAdminTab('settings')" id="tab-btn-settings" class="px-4 py-2.5 text-xs font-bold text-brand-muted dark:text-brand-muted hover:text-brand-ink dark:hover:text-brand-ink transition">
             ⚙️ Modos & Modelos IA
           </button>
@@ -728,6 +731,63 @@
               </thead>
               <tbody id="admin-users-tbody" class="divide-y divide-brand-line dark:divide-brand-line">
                 <!-- Renderizado via app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CONTEÚDO DA ABA: USO & CUSTOS (observabilidade) -->
+        <div id="admin-tab-usage" class="hidden space-y-4">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-bold text-brand-ink dark:text-brand-ink">Uso & Custos</h3>
+              <p class="text-[11px] text-brand-muted dark:text-brand-muted mt-0.5">Consumo de cota por usuário e visão financeira (receita recorrente × custo estimado de IA).</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-[11px] text-brand-muted dark:text-brand-muted">Custo unitário R$</label>
+              <input type="number" id="admin-usage-unit-cost" min="0" step="0.01" class="w-24 bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line text-brand-ink dark:text-brand-ink rounded-lg px-2 py-1.5 text-xs font-mono">
+              <button onclick="saveUnitCost()" class="btn-primary btn-press font-bold text-xs px-3 py-1.5 rounded-lg shadow transition">Salvar</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-brand-surface dark:bg-brand-surface p-4 rounded-2xl border border-brand-line dark:border-brand-line shadow-sm">
+              <p class="text-[10px] font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wider">Receita Recorrente</p>
+              <p id="usage-mrr" class="text-2xl font-black text-emerald-600 dark:text-emerald-300 mt-1">—</p>
+              <p id="usage-subs" class="text-[10px] text-brand-muted dark:text-brand-muted mt-0.5">—</p>
+            </div>
+            <div class="bg-brand-surface dark:bg-brand-surface p-4 rounded-2xl border border-brand-line dark:border-brand-line shadow-sm">
+              <p class="text-[10px] font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wider">Custo IA (30 dias)</p>
+              <p id="usage-cost" class="text-2xl font-black text-amber-600 dark:text-amber-300 mt-1">—</p>
+              <p id="usage-count" class="text-[10px] text-brand-muted dark:text-brand-muted mt-0.5">—</p>
+            </div>
+            <div class="bg-brand-surface dark:bg-brand-surface p-4 rounded-2xl border border-brand-line dark:border-brand-line shadow-sm">
+              <p class="text-[10px] font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wider">Margem (30 dias)</p>
+              <p id="usage-margin" class="text-2xl font-black text-blue-600 dark:text-blue-300 mt-1">—</p>
+              <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-0.5">receita − custo estimado</p>
+            </div>
+            <div class="bg-brand-surface dark:bg-brand-surface p-4 rounded-2xl border border-brand-line dark:border-brand-line shadow-sm">
+              <p class="text-[10px] font-bold text-brand-muted dark:text-brand-muted uppercase tracking-wider">Transcrições (30 dias)</p>
+              <p id="usage-transcriptions" class="text-2xl font-black text-purple-600 dark:text-purple-300 mt-1">—</p>
+              <p class="text-[10px] text-brand-muted dark:text-brand-muted mt-0.5">concluídas</p>
+            </div>
+          </div>
+
+          <div class="bg-brand-surface dark:bg-brand-surface border border-brand-line dark:border-brand-line rounded-2xl shadow-sm overflow-hidden overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-brand-canvas dark:bg-brand-canvas text-brand-muted dark:text-brand-muted font-bold uppercase border-b border-brand-line dark:border-brand-line">
+                <tr>
+                  <th class="p-3">Usuário</th>
+                  <th class="p-3">Plano</th>
+                  <th class="p-3">Cota 24h</th>
+                  <th class="p-3 text-right">Transcrições</th>
+                  <th class="p-3 text-right">Horas</th>
+                  <th class="p-3">Última atividade</th>
+                  <th class="p-3">Status</th>
+                </tr>
+              </thead>
+              <tbody id="admin-usage-tbody" class="divide-y divide-brand-line dark:divide-brand-line">
+                <tr><td colspan="7" class="p-4 text-center text-brand-muted dark:text-brand-muted">Carregando…</td></tr>
               </tbody>
             </table>
           </div>

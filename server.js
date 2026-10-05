@@ -1486,11 +1486,15 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 // ---------------------------------------------------------------------------
 // Chaves de API (OpenRouter). A chave e cifrada em repouso (services/secrets.js)
 // e NUNCA sai do servidor: as rotas devolvem so a versao mascarada.
-// Salvar/trocar exige a senha do admin; 5 falhas em 10 min bloqueiam o IP.
+// Salvar/trocar exige a senha do admin; N falhas na janela bloqueiam o IP.
+// Limite e janela sao configuraveis por env (defaults preservam o contrato do
+// T-15: 5 falhas / 10 min). A suíte de testes consome as 5 tentativas de
+// propósito para validar o bloqueio — rodá-la 2x na mesma janela gera 429
+// falso-positivo. Para rerodar em sequência, use KEY_AUTH_WINDOW_MINUTES=1.
 // ---------------------------------------------------------------------------
 const keyAuthFailures = new Map(); // ip -> [timestamps]
-const KEY_AUTH_MAX_FAILURES = 5;
-const KEY_AUTH_WINDOW_MS = 10 * 60 * 1000;
+const KEY_AUTH_MAX_FAILURES = Math.max(1, Number(process.env.KEY_AUTH_MAX_FAILURES || 5));
+const KEY_AUTH_WINDOW_MS = Math.max(1, Number(process.env.KEY_AUTH_WINDOW_MINUTES || 10)) * 60 * 1000;
 
 function keyAuthBlocked(ip) {
   const now = Date.now();
@@ -1641,6 +1645,65 @@ app.get('/api/admin/logs', authenticateToken, requireAdmin, async (req, res) => 
       `SELECT l.*, u.email as user_email FROM system_logs l LEFT JOIN users u ON l.user_id = u.id ORDER BY l.timestamp DESC LIMIT 100`
     );
     res.json(logs);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Observabilidade (T-36): consumo por usuário + visão financeira para o dono
+// saber se está no lucro. Custo unitário é um setting (cost_per_transcription,
+// default R$ 0,04) — o admin ajusta conforme sua média real na OpenRouter.
+app.get('/api/admin/usage', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const monthCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+
+    const users = await allAsync(
+      `SELECT u.id, u.name, u.email, u.role, u.status, u.plan, u.daily_limit, u.created_at,
+         (SELECT COUNT(*) FROM transcriptions t WHERE t.user_id = u.id) AS total_transcriptions,
+         (SELECT COALESCE(SUM(t.duration_seconds), 0) FROM transcriptions t WHERE t.user_id = u.id) AS total_seconds,
+         (SELECT MAX(t.created_at) FROM transcriptions t WHERE t.user_id = u.id) AS last_activity,
+         (SELECT COUNT(*) FROM transcriptions t WHERE t.user_id = u.id AND t.created_at >= ?) AS used_24h
+       FROM users u ORDER BY u.created_at DESC`,
+      [cutoff]
+    );
+
+    // Assinaturas ativas de usuários ativos (suspenso não gera receita).
+    const subs = await allAsync(
+      `SELECT s.plan, s.cycle FROM subscriptions s JOIN users u ON u.id = s.user_id
+       WHERE s.status = 'active' AND u.status = 'active'`
+    );
+    const catalog = await billing.getPlanCatalog();
+    let mrr = 0;
+    for (const s of subs) {
+      const p = catalog[s.plan];
+      if (!p) continue;
+      mrr += s.cycle === 'annual' ? p.annual / 12 : p.monthly;
+    }
+
+    const unitRow = await getAsync(`SELECT value FROM system_settings WHERE key = 'cost_per_transcription'`);
+    const unitCost = Math.max(0, Number(unitRow && unitRow.value) || 0.04);
+    const last30 = await getAsync(
+      `SELECT COUNT(*) AS n FROM transcriptions WHERE created_at >= ? AND status IN ('completed', 'completed_with_errors')`,
+      [monthCutoff]
+    );
+    const transcriptions30d = last30 ? Number(last30.n) : 0;
+    const cost30d = transcriptions30d * unitCost;
+
+    res.json({
+      users: users.map(u => ({
+        ...u,
+        quota_exempt: u.role === 'admin' || Number(u.daily_limit) >= 999999
+      })),
+      financial: {
+        unit_cost: unitCost,
+        active_subscriptions: subs.length,
+        mrr_estimate: +mrr.toFixed(2),
+        transcriptions_30d: transcriptions30d,
+        cost_estimate_30d: +cost30d.toFixed(2),
+        margin_estimate_30d: +(mrr - cost30d).toFixed(2)
+      }
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

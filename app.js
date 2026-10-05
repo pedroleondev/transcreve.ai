@@ -3231,7 +3231,7 @@ function openTranslateModal() {
 // ---------------------------------------------------
 
 function switchAdminTab(tabName) {
-  ['metrics', 'users', 'apikeys', 'settings', 'logs'].forEach(t => {
+  ['metrics', 'users', 'apikeys', 'usage', 'settings', 'logs'].forEach(t => {
     const tabContent = document.getElementById(`admin-tab-${t}`);
     const tabBtn = document.getElementById(`tab-btn-${t}`);
     if (tabContent && tabBtn) {
@@ -3247,6 +3247,7 @@ function switchAdminTab(tabName) {
 
   if (tabName === 'users') loadAdminUsers();
   else if (tabName === 'apikeys') loadAdminApiKeys();
+  else if (tabName === 'usage') loadAdminUsage();
   else if (tabName === 'settings') loadAdminSettingsForm();
   else if (tabName === 'logs') loadAdminLogs();
   else if (tabName === 'metrics') loadAdminMetrics();
@@ -3265,6 +3266,74 @@ async function loadAdminMetrics() {
     document.getElementById('metric-apikeys').innerText = data.active_api_keys ?? '—';
   } catch (e) {
     console.error('Erro ao carregar métricas:', e);
+  }
+}
+
+// Observabilidade (T-36): cota por usuário + financeiro (MRR × custo IA).
+async function loadAdminUsage() {
+  const tbody = document.getElementById('admin-usage-tbody');
+  try {
+    const res = await fetch('/api/admin/usage', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const f = data.financial || {};
+    const brl = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('usage-mrr', brl(f.mrr_estimate));
+    setText('usage-subs', `${f.active_subscriptions || 0} assinatura(s) ativa(s)`);
+    setText('usage-cost', brl(f.cost_estimate_30d));
+    setText('usage-count', `${f.unit_cost != null ? brl(f.unit_cost) : '—'} por transcrição`);
+    setText('usage-margin', brl(f.margin_estimate_30d));
+    setText('usage-transcriptions', String(f.transcriptions_30d ?? '—'));
+    const unitInput = document.getElementById('admin-usage-unit-cost');
+    if (unitInput && document.activeElement !== unitInput) unitInput.value = f.unit_cost ?? '0.04';
+
+    const planLabels = { gratuito: 'Gratuito', bronze: 'Bronze', prata: 'Prata', ouro: 'Ouro' };
+    const rows = (data.users || []).map(u => {
+      const quota = u.quota_exempt
+        ? '<span class="text-brand-muted dark:text-brand-muted">ilimitado</span>'
+        : `<b>${u.used_24h ?? 0}</b><span class="text-brand-muted dark:text-brand-muted"> / ${u.daily_limit}</span>`;
+      const plan = planLabels[u.plan] || u.plan || 'Gratuito';
+      const planColor = { Gratuito: 'bg-brand-raised dark:bg-brand-raised text-brand-copy dark:text-brand-copy', Bronze: 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300', Prata: 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300', Ouro: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300' }[plan] || '';
+      const last = u.last_activity ? new Date(String(u.last_activity).replace(' ', 'T')).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+      return `
+      <tr class="hover:bg-brand-canvas dark:hover:bg-brand-canvas">
+        <td class="p-3">
+          <div class="font-bold text-brand-ink dark:text-brand-ink">${escapeHtml(u.name)}${u.role === 'admin' ? ' <span class="text-[9px] text-purple-600 dark:text-purple-300 font-black uppercase">admin</span>' : ''}</div>
+          <div class="text-[10px] text-brand-muted dark:text-brand-muted">${escapeHtml(u.email)}</div>
+        </td>
+        <td class="p-3"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${planColor}">${plan}</span></td>
+        <td class="p-3 text-brand-copy dark:text-brand-copy">${quota}</td>
+        <td class="p-3 text-right text-brand-copy dark:text-brand-copy font-semibold">${u.total_transcriptions ?? 0}</td>
+        <td class="p-3 text-right text-brand-copy dark:text-brand-copy font-semibold">${((Number(u.total_seconds) || 0) / 3600).toFixed(1)}h</td>
+        <td class="p-3 text-brand-muted dark:text-brand-muted">${last}</td>
+        <td class="p-3"><span class="px-2 py-0.5 text-[10px] font-bold rounded ${u.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'}">${u.status}</span></td>
+      </tr>`;
+    }).join('');
+    tbody.innerHTML = rows || '<tr><td colspan="7" class="p-4 text-center text-brand-muted dark:text-brand-muted">Nenhum usuário.</td></tr>';
+  } catch (e) {
+    console.error('Erro ao carregar uso & custos:', e);
+    tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-brand-muted dark:text-brand-muted">Erro ao carregar.</td></tr>';
+  }
+}
+
+async function saveUnitCost() {
+  const input = document.getElementById('admin-usage-unit-cost');
+  const value = Number(input && input.value);
+  if (!(value >= 0)) { uiToast('Informe um custo unitário válido (ex.: 0.04).'); return; }
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { cost_per_transcription: String(value) } })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    uiToast('Custo unitário salvo.');
+    loadAdminUsage();
+  } catch (e) {
+    uiToast('Erro ao salvar: ' + e.message);
   }
 }
 
