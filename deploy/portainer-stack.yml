@@ -1,32 +1,37 @@
 # ============================================================================
-# Falou.ai — Stack de producao para Portainer (KVM2 / PegazusNet)
-# Modelo: swarm + Traefik externo (labels) + Let's Encrypt, no padrao dos
-# stacks ja rodando no ORION. Subir via Portainer -> Stacks -> Add stack,
-# colando este arquivo e preenchendo as env vars abaixo no editor de
-# variaveis do Portainer (ou copie deploy/portainer-stack.env de exemplo).
+# Falou.ai - Stack de producao para Portainer (KVM2 / PegazusNet)
+# Modelo: swarm + Traefik externo (labels) + Let's Encrypt.
+# Subir via Portainer -> Stacks -> Add stack, colar este arquivo e
+# preencher as env vars no editor de variaveis do Portainer.
 #
-# Pre-requisitos (uma vez, no manager):
-#   docker network create --driver overlay PegazusNet   # ja existe no seu caso
+# PRE-REQUISITOS (uma vez, no terminal do manager):
 #   docker volume create falou_uploads
 #   docker volume create falou_pgdata
+#   (A rede PegazusNet ja existe no seu caso)
 #
-# Variaveis obrigatorias (editor de env do Portainer):
+# VARIAVEIS OBRIGATORIAS no Portainer:
 #   FALOU_DOMAIN        ex: falou.pegazus.tech
-#   JWT_SECRET          aleatorio longo (node -e "crypto.randomBytes(48).toString('hex')")
-#   APP_SECRET_KEY      aleatorio >= 32 chars — GUARDE: cifra a chave OpenRouter no banco
-#   ADMIN_EMAIL         ex: pedro.leon23@gmail.com
-#   ADMIN_PASSWORD      minimo 8 chars — usada UMA vez no seed do admin
-#   OPENROUTER_API_KEY  seed da primeira chave do pool (o restante entra pelo painel admin)
-#   FALOU_DB_PASSWORD   senha do postgres (somente interna, nao exposta)
-#   ASAAS_API_KEY       producao: $aact_... de www.asaas.com
-#   ASAAS_WEBHOOK_TOKEN mesmo valor cadastrado no painel Asaas (Webhooks)
-# Opcionais: SMTP_* (e-mail transacional), MAX_*, WORKER_* (ver .env.example)
+#   JWT_SECRET          node -e "crypto.randomBytes(48).toString('hex')"
+#   APP_SECRET_KEY      node -e "crypto.randomBytes(48).toString('hex')"  (GUARDE)
+#   ADMIN_EMAIL         seu e-mail de admin
+#   ADMIN_PASSWORD      minimo 8 chars
+#   OPENROUTER_API_KEY  chave OpenRouter (sk-or-v1-...)
+#   FALOU_DB_PASSWORD   senha forte para o Postgres interno
+#   ASAAS_API_KEY       chave Asaas de producao
+#   ASAAS_WEBHOOK_TOKEN token gerado por voce (mesmo no painel Asaas)
+#   GHCR_USER           seu usuario GitHub (ex: pedroleondev)
+#   GHCR_TOKEN          PAT GitHub com permissao read:packages
+#
+# AUTO-ATUALIZACAO (substitui o Stack Webhook Business do Portainer):
+#   O Watchtower verifica o GHCR a cada 5 minutos e recria o falou_app
+#   automaticamente quando uma nova imagem :latest e publicada.
+#   Fluxo: git push main -> GitHub Actions -> GHCR -> Watchtower -> deploy
 # ============================================================================
 version: "3.8"
 
 services:
 
-  ## --------------------------- FALOU.APP --------------------------- ##
+  ## ----------------------- FALOU.APP ----------------------- ##
 
   falou_app:
     image: ghcr.io/pedroleondev/falou-ai:latest
@@ -35,34 +40,24 @@ services:
     networks:
       - PegazusNet
     environment:
-      ## 🌐 Identidade e URL pública (links de e-mail, webhook Asaas)
       - PUBLIC_BASE_URL=https://${FALOU_DOMAIN}
-      ## 🔐 Segredos (obrigatórios — o app recusa subir sem eles em produção)
       - JWT_SECRET=${JWT_SECRET}
       - APP_SECRET_KEY=${APP_SECRET_KEY}
-      ## 👤 Admin inicial (seed único; depois troque pelo painel)
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      ## 🗄️ Banco interno (só na PegazusNet, sem porta exposta)
       - DB_DRIVER=postgres
       - DATABASE_URL=postgres://falou:${FALOU_DB_PASSWORD}@falou_db:5432/falou
-      ## 🤖 OpenRouter — seed da 1ª chave; o pool completo é gerido no painel admin
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      ## 💳 Asaas (produção por padrão aqui; sandbox só para homologação)
       - ASAAS_API_KEY=${ASAAS_API_KEY}
       - ASAAS_API_URL=${ASAAS_API_URL:-https://www.asaas.com/api/v3}
       - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
       - BILLING_STRICT=true
-      ## 📧 E-mail transacional (cadastro/esqueci senha). Sem SMTP, o
-      ## cadastro público fica fechado com aviso (503).
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_SECURE=${SMTP_SECURE:-false}
-      - MAIL_FROM=${MAIL_FROM:-Falou.ai <no-reply@${FALOU_DOMAIN}>}
       - REGISTRATION_REQUIRES_SMTP=${REGISTRATION_REQUIRES_SMTP:-true}
-      ## 🛡️ Anti-SSRF: downloads de URL só de hosts públicos
       - ALLOW_PRIVATE_DOWNLOADS=false
     deploy:
       mode: replicated
@@ -76,16 +71,14 @@ services:
           memory: 2048M
       labels:
         - traefik.enable=true
-        - traefik.http.routers.falou_app.rule=Host(`${FALOU_DOMAIN}`)
+        - "traefik.http.routers.falou_app.rule=Host(`${FALOU_DOMAIN}`)"
         - traefik.http.routers.falou_app.entrypoints=websecure
         - traefik.http.services.falou_app.loadbalancer.server.port=3000
         - traefik.http.routers.falou_app.service=falou_app
         - traefik.http.routers.falou_app.tls.certresolver=letsencryptresolver
         - com.centurylinklabs.watchtower.enable=true
-    ## Healthcheck nativo da imagem (/api/health): o swarm só roteia quando
-    ## app + banco respondem. Nada de bind-mount — o código é a imagem.
 
-  ## --------------------------- FALOU.DB --------------------------- ##
+  ## ----------------------- FALOU.DB ----------------------- ##
 
   falou_db:
     image: postgres:16-alpine
@@ -97,8 +90,6 @@ services:
       - falou_pgdata:/var/lib/postgresql/data
     networks:
       - PegazusNet
-    ## Sem ports: — o banco fica acessível SOMENTE dentro da PegazusNet.
-    ## Backup: docker exec $(docker ps -q -f name=falou_db) pg_dump -U falou falou
     deploy:
       placement:
         constraints:
@@ -108,7 +99,32 @@ services:
           cpus: "1"
           memory: 1024M
 
-## --------------------------- ORION --------------------------- ##
+  ## ----------------------- WATCHTOWER ----------------------- ##
+  ## Substitui o Stack Webhook (Business Feature) do Portainer.
+  ## Verifica o GHCR a cada 5 minutos e recria falou_app quando
+  ## uma nova imagem :latest e publicada pelo GitHub Actions.
+  ## So atualiza containers com label watchtower.enable=true.
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+      - REPO_USER=${GHCR_USER}
+      - REPO_PASS=${GHCR_TOKEN}
+    networks:
+      - PegazusNet
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - com.centurylinklabs.watchtower.enable=false
+
+## ----------------------- VOLUMES E REDES ----------------------- ##
 
 volumes:
   falou_uploads:
